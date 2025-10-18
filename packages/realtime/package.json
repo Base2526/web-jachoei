@@ -1,0 +1,17 @@
+{
+  "name": "realtime",
+  "private": true,
+  "type": "module",
+  "main": "dist/pubsub.js",
+  "types": "dist/pubsub.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "graphql-redis-subscriptions": "^2.7.0",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

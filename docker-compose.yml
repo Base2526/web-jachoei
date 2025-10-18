@@ -1,0 +1,62 @@
+# version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  pgadmin:
+    image: dpage/pgadmin4:8.14
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports: ["5050:80"]
+    depends_on: [postgres]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  ws:
+    image: node:20-alpine
+    working_dir: /app/apps/ws
+    command: sh -c "npm ci && npm --prefix ../../packages/realtime ci && npm --prefix ../../packages/graphql-core ci && npm run dev"
+    environment:
+      WS_PORT: "8080"
+      WS_PATH: "/graphql"
+      REDIS_URL: ${REDIS_URL}
+      NODE_ENV: development
+    ports: ["8080:8080"]
+    volumes:
+      - ./apps/ws:/app/apps/ws
+      - ./packages:/app/packages
+
+  web:
+    image: node:20-alpine
+    working_dir: /app/apps/web
+    # command: sh -c "npm ci && npm run dev -w"
+    command: sh -c "npm ci && npm run dev"
+    environment:
+      NEXT_PUBLIC_GRAPHQL_HTTP: ${NEXT_PUBLIC_GRAPHQL_HTTP}
+      NEXT_PUBLIC_GRAPHQL_WS: ${NEXT_PUBLIC_GRAPHQL_WS}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      NODE_ENV: development
+    ports: ["3000:3000"]
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+    depends_on: [postgres, redis, ws]
+
+volumes:
+  pgdata:
