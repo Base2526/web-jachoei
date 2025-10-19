@@ -1,9 +1,16 @@
 node_modules/
 **/node_modules/
 .env
-.env.*
+# .env.*
 .next/
 dist/
 build/
 out/
 .DS_Store
+
+
+apps/web/package-lock.json
+apps/ws/package-lock.json
+
+package/graphql-core/package-lock.json
+package/realtime/package-lock.json

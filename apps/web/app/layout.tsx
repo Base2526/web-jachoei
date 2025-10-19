@@ -1,3 +1,4 @@
+'use client';
 import 'antd/dist/reset.css';
 import { Layout } from 'antd';
 import React from 'react';

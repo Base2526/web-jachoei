@@ -2,7 +2,8 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: { appDir: true },
+  experimental: { appDir: true, optimizePackageImports: ['antd'] },
+  transpilePackages: ['antd']
 };
 
 export default nextConfig;
