@@ -12,6 +12,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@core/*": [
+        "../../packages/graphql-core/src/*"
       ]
     },
     "strict": true,

@@ -23,11 +23,20 @@ export const typeDefs = /* GraphQL */ `
     updated_at: String!
   }
 
+  type Chat { id: ID!, name: String, is_group: Boolean!, created_at: String! }
+
+  type Message { 
+    id: ID!, chat_id: ID!, sender_id: ID!, text: String!, created_at: String! 
+  }
+
   type Query {
     _health: String!
     meRole: String!
     posts(search: String): [Post!]!
     post(id: ID!): Post
+
+    getOrCreateDm(userId: ID!): Chat!
+    messages(chatId: ID!): [Message!]!
   }
 
   input PostInput {
@@ -41,5 +50,7 @@ export const typeDefs = /* GraphQL */ `
   type Mutation {
     upsertPost(id: ID, data: PostInput!): Post!
     deletePost(id: ID!): Boolean!
+
+    sendMessage(chatId: ID!, text: String!): Message!
   }
 `;

@@ -5,11 +5,17 @@ import { mergedTypeDefs as typeDefs, mergedResolvers as resolvers } from "@/grap
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
-const server = new ApolloServer({ schema, introspection: true, csrfPrevention: false });
+const server = new ApolloServer({
+  schema,
+  introspection: process.env.NODE_ENV !== "production", // ✅ dev เท่านั้น
+  csrfPrevention: false,
+});
+
 const handler = startServerAndCreateNextHandler(server, {
   context: async (req) => {
-    const role = req?.cookies?.get?.("role")?.value || "Subscriber";
-    return { role };
+    // const role = req?.cookies?.get?.("role")?.value || "Subscriber";
+    // return { role };
+    return "Subscriber";
   }
 });
 
