@@ -11,6 +11,19 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  type LoginResult {
+    ok: Boolean!
+    message: String
+    token: String
+    user: User
+  }
+
+  input LoginInput {
+    email: String
+    username: String
+    password: String!
+  }
+
   type Post {
     id: ID!
     title: String!
@@ -48,6 +61,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+    login(input: LoginInput!): LoginResult!
     upsertPost(id: ID, data: PostInput!): Post!
     deletePost(id: ID!): Boolean!
 

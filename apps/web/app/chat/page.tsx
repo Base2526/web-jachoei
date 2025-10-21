@@ -15,7 +15,7 @@ function ChatUI({ to }:{ to:string }){
   const { data:dm } = useQuery(GET_OR_CREATE_DM, { variables:{ userId: to }, skip: !to });
 
   useEffect(()=>{
-    // console.log("ChatUI ", chatId, httpUri, dm, to)
+    console.log("ChatUI ", chatId, dm, to)
   }, [chatId, dm, to]);
 
   useEffect(()=>{ if (dm?.getOrCreateDm?.id) setChatId(dm.getOrCreateDm.id); },[dm?.getOrCreateDm?.id]);
@@ -23,8 +23,8 @@ function ChatUI({ to }:{ to:string }){
   const { data:msgData, refetch } = useQuery(MESSAGES, { variables:{ chatId }, skip: !chatId });
   const [send] = useMutation(SEND, { variables:{ chatId, text }, onCompleted: ()=>setText("") });
 
-  useSubscription(SUB, { variables:{ chatId }, skip: !chatId, onData: ()=>{
-    console.log("SUB >> " );
+  useSubscription(SUB, { variables:{ chatId }, skip: !chatId, onData: ({ data })=>{
+    console.log("SUB >> ", data);
     refetch() 
   }});
 

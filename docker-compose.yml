@@ -32,6 +32,7 @@ services:
       WS_PATH: "/graphql"
       REDIS_URL: ${REDIS_URL}
       NODE_ENV: development
+      DATABASE_URL: postgres://app:app@postgres:5432/appdb 
     ports: ["8081:8080"]
     volumes:
       - ./apps/ws:/app/apps/ws
