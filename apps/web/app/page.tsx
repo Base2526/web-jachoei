@@ -82,6 +82,8 @@ function PostsList(){
       <Input placeholder="Search title/phone" value={q} onChange={e=>setQ(e.target.value)} />
       <Button onClick={()=>refetch({ q })}>Search</Button>
       <Link href="/post/new"><Button type="primary">New Post</Button></Link>
+
+      <Link href="/admin/users"><Button type="primary">Users</Button></Link>
       {/* <Link href="/login">Login</Link> */}
 
       {isLogin ? (

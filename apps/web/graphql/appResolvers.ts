@@ -90,6 +90,30 @@ export const resolvers = {
         `SELECT * FROM messages WHERE chat_id=$1 ORDER BY created_at ASC`, [chatId]
       );
       return rows;
+    },
+    users: async (_: any, { search }: { search?: string }, ctx: any) => {
+
+      if (!ctx?.user?.id) {
+        // throw new Error("Unauthorized");
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+
+      if (search) {
+        const { rows } = await query(
+          `SELECT * FROM users
+           WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
+           ORDER BY created_at DESC`, ['%' + search + '%']
+        );
+        return rows;
+      }
+      const { rows } = await query(`SELECT * FROM users ORDER BY created_at DESC`);
+      return rows;
+    },
+    user: async (_: any, { id }: { id: string }) => {
+      const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
+      return rows[0] || null;
     }
   },
   Mutation: {
@@ -221,6 +245,61 @@ export const resolvers = {
 
       console.log("[sendMessage]", chatId, text );
       return msg;
-    }
+    },
+    upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
+
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+
+      // (ทางเลือก) ทำความสะอาดค่าเล็กน้อย
+      const name = (data.name ?? '').trim();
+      const avatar = data.avatar ?? null;
+      const phone = data.phone ?? null;
+      const email = data.email ? String(data.email).trim().toLowerCase() : null;
+      const role = (data.role ?? 'Subscriber').trim();
+      const passwordHash = data.passwordHash ?? null;
+
+      if (id) {
+        // อัปเดต: อัปเดต password_hash เฉพาะเมื่อส่งมาเท่านั้น
+        const { rows } = await query(
+          `
+          UPDATE users
+          SET
+            name = $1,
+            avatar = $2,
+            phone = $3,
+            role = $4,
+            password_hash = CASE
+              WHEN $5 IS NULL THEN password_hash
+              ELSE $5
+            END
+          WHERE id = $6
+          RETURNING *;
+          `,
+          [name, avatar, phone, role, passwordHash, id]
+        );
+        return rows[0] || null;
+      } else {
+        // สร้างใหม่: ใส่ลำดับพารามิเตอร์ให้ตรงกับคอลัมน์!
+        // (name, avatar, phone, email, role, password_hash)
+        if (!email) throw new Error("email is required");
+        const { rows } = await query(
+          `
+          INSERT INTO users (name, avatar, phone, email, role, password_hash)
+          VALUES ($1,   $2,    $3,   $4,   $5,   $6)
+          RETURNING *;
+          `,
+          [name, avatar, phone, email, role, passwordHash] // ✅ role มาก่อน hash
+        );
+        return rows[0] || null;
+      }
+    },
+    deleteUser: async (_: any, { id }: { id: string }) => {
+      const res = await query(`DELETE FROM users WHERE id=$1`, [id]);
+      return res.rowCount === 1;
+    },
   }
 };
