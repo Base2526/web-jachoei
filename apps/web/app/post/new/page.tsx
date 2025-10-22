@@ -10,23 +10,21 @@ function CreateForm(){
   const router = useRouter();
   const [save,{ loading }] = useMutation(UPSERT);
   const onFinish = async (v:any)=>{
-    // await save({ variables:{ data:v }});
-    // message.success("Created");
-    // router.push("/");
-
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
-    await save({
-      variables:{ data:v },
-      context: {
-        headers: {
-          authorization: token ? `Bearer ${token}` : ''
-        }
-      }
-    });
-
+    await save({ variables:{ id: null, data:v }});
     message.success("Created");
     router.push("/");
+
+    // const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    // await save({
+    //   variables:{ data:v },
+    //   context: {
+    //     headers: {
+    //       authorization: token ? `Bearer ${token}` : ''
+    //     }
+    //   }
+    // });
+    // message.success("Created");
+    // router.push("/");
   };
   return <Card title="New Post" style={{maxWidth:720}}>
     <Form layout="vertical" form={form} onFinish={onFinish} initialValues={{ status:'public' }}>

@@ -42,6 +42,8 @@ export default function Page() {
 
       message.success(`Welcome ${res.user?.name || ''}!`);
       // TODO: redirect ถ้าต้องการ เช่น window.location.href = '/'
+
+      window.location.href = "/";
     } catch (err: any) {
       message.error(err?.message || 'Login failed');
     }

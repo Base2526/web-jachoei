@@ -165,7 +165,7 @@ export const resolvers = {
       };
     },
     upsertPost: async (_:any, { id, data }:{id?:string, data:any}, ctx:any) => {
-      console.log("[Mutation] upsertPost :", ctx);
+      console.log("[Mutation] upsertPost :", data);
       if (!ctx?.user?.id) {
         // throw new Error("Unauthorized");
         throw new GraphQLError('Unauthenticated', {
