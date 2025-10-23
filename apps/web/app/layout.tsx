@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }){
     <html lang="en"><body>
       <ApolloProvider client={client}>
         <Layout style={{minHeight:'100vh'}}>
-          <Layout.Header style={{color:'#fff'}}>Simple Realtime Starter [x]</Layout.Header>
+          <Layout.Header style={{color:'#fff'}} onClick={()=>window.location.href = "/"}>Simple Realtime Starter [x]</Layout.Header>
           <Layout.Content style={{padding:24}}>{children}</Layout.Content>
         </Layout>
       </ApolloProvider>

@@ -46,7 +46,34 @@ export const resolvers = {
       const r = rows[0]; if (!r) return null;
       return { ...r, author: r.author_json };
     },
+    myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
 
+      console.log("[myPosts] :", ctx);
+      if (!ctx?.user?.id) {
+        // throw new Error("Unauthorized");
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+
+      if (search) {
+        const { rows } = await query(
+          `SELECT p.*, row_to_json(u.*) as author_json
+           FROM posts p LEFT JOIN users u ON p.author_id = u.id
+           WHERE p.author_id=$1 AND (p.title ILIKE $2 OR p.phone ILIKE $2)
+           ORDER BY p.created_at DESC`, [author_id, '%' + search + '%']
+        );
+        return rows.map((r :any)=>({ ...r, author: r.author_json }));
+      }
+      const { rows } = await query(
+        `SELECT p.*, row_to_json(u.*) as author_json
+         FROM posts p LEFT JOIN users u ON p.author_id = u.id
+         WHERE p.author_id=$1
+         ORDER BY p.created_at DESC`, [author_id]
+      );
+      return rows.map((r :any)=>({ ...r, author: r.author_json }));
+    },
     getOrCreateDm: async (_:any, { userId }:{userId:string}, ctx: any) => {
 
       if (!ctx?.user?.id) {
@@ -74,22 +101,32 @@ export const resolvers = {
       // await query(`INSERT INTO chat_members(chat_id, user_id) VALUES ($1,$2),($1,$3)`, [chat.id, meId, userId]);
       return chat;
     },
+    // messages: async (_:any, { chatId }:{chatId:string}, ctx: any) => {
+    //   if (!ctx?.user?.id) {
+    //     // throw new Error("Unauthorized");
+    //     throw new GraphQLError('Unauthenticated', {
+    //       extensions: { code: 'UNAUTHENTICATED' }
+    //     });
+    //   }
+    //   const author_id = ctx.user.id;
+    //   console.log("[messages] current user id:", author_id);
 
-    messages: async (_:any, { chatId }:{chatId:string}, ctx: any) => {
-      if (!ctx?.user?.id) {
-        // throw new Error("Unauthorized");
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
-      console.log("[messages] current user id:", author_id);
+    //   console.log("[Query]messages : ", chatId)
+    //   const { rows } = await query(
+    //     `SELECT * FROM messages WHERE chat_id=$1 ORDER BY created_at ASC`, [chatId]
+    //   );
+    //   return rows;
+    // },
 
-      console.log("[Query]messages : ", chatId)
+    messages: async (_:any, { chatId, limit=50, offset=0 }:{chatId:string, limit?:number, offset?:number}) => {
       const { rows } = await query(
-        `SELECT * FROM messages WHERE chat_id=$1 ORDER BY created_at ASC`, [chatId]
+        `SELECT m.*, row_to_json(u.*) as sender_json
+         FROM messages m LEFT JOIN users u ON m.sender_id=u.id
+         WHERE m.chat_id=$1
+         ORDER BY m.created_at ASC
+         LIMIT $2 OFFSET $3`, [chatId, limit, offset]
       );
-      return rows;
+      return rows.map((r: any)=>({ ...r, sender: r.sender_json }));
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {
 
@@ -114,6 +151,15 @@ export const resolvers = {
     user: async (_: any, { id }: { id: string }) => {
       const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
       return rows[0] || null;
+    },
+    postsByUserId: async (_:any, { userId }:{userId:string}) => {
+      const { rows } = await query(
+        `SELECT p.*, row_to_json(u.*) as author_json
+         FROM posts p LEFT JOIN users u ON p.author_id = u.id
+         WHERE p.author_id = $1
+         ORDER BY p.created_at DESC`, [userId]
+      );
+      return rows.map((r: any)=>({ ...r, author: r.author_json }));
     }
   },
   Mutation: {
@@ -225,8 +271,28 @@ export const resolvers = {
       const res = await query(`DELETE FROM posts WHERE id=$1`, [id]);
       return res.rowCount === 1;
     },
+    // sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
+    //   if (!ctx?.user?.id) {
+    //     throw new GraphQLError('Unauthenticated', {
+    //       extensions: { code: 'UNAUTHENTICATED' }
+    //     });
+    //   }
+    //   const author_id = ctx.user.id;
 
-    sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
+    //   const { rows } = await query(
+    //     `INSERT INTO messages(chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
+    //     [chatId, author_id, text]
+    //   );
+    //   const msg = rows[0];
+    //   await pubsub.publish('MSG:' + chatId, { messageAdded: {
+    //     id: msg.id, chat_id: msg.chat_id, sender_id: msg.sender_id, text: msg.text, ts: (msg.created_at instanceof Date ? msg.created_at.toISOString() : String(msg.created_at))
+    //   }});
+
+    //   console.log("[sendMessage]", chatId, text );
+    //   return msg;
+    // },
+    createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
+      // const me = await currentUserId();
       if (!ctx?.user?.id) {
         throw new GraphQLError('Unauthenticated', {
           extensions: { code: 'UNAUTHENTICATED' }
@@ -235,16 +301,43 @@ export const resolvers = {
       const author_id = ctx.user.id;
 
       const { rows } = await query(
-        `INSERT INTO messages(chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
+        `INSERT INTO chats (name, is_group, created_by) VALUES ($1,$2,$3) RETURNING *`,
+        [name || null, isGroup, author_id]
+      );
+      const chat = rows[0];
+      const allMembers = Array.from(new Set([author_id, ...memberIds]));
+      for (const uid of allMembers){
+        await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chat.id, uid]);
+      }
+      const mem = await query(
+        `SELECT u.* FROM chat_members m JOIN users u ON m.user_id=u.id WHERE m.chat_id=$1`, [chat.id]
+      );
+      const creator = await query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
+      return { ...chat, created_by: creator.rows[0], members: mem.rows };
+    },
+
+    addMember: async (_:any, { chatId, userId }:{chatId:string, userId:string}) => {
+      await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chatId, userId]);
+      return true;
+    },
+
+    sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
+      // const me = await currentUserId();
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+      const { rows } = await query(
+        `INSERT INTO messages (chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
         [chatId, author_id, text]
       );
       const msg = rows[0];
-      await pubsub.publish('MSG:' + chatId, { messageAdded: {
-        id: msg.id, chat_id: msg.chat_id, sender_id: msg.sender_id, text: msg.text, ts: (msg.created_at instanceof Date ? msg.created_at.toISOString() : String(msg.created_at))
-      }});
-
-      console.log("[sendMessage]", chatId, text );
-      return msg;
+      const senderQ = await query(`SELECT * FROM users WHERE id=$1`, [msg.sender_id]);
+      const shaped = { id: msg.id, chat_id: msg.chat_id, sender: senderQ.rows[0], text: msg.text, created_at: msg.created_at };
+      await pubsub.publish("MSG", { messageAdded: { id: msg.id, chatId, senderId: msg.sender_id, text: msg.text, ts: new Date(msg.created_at).toISOString() } });
+      return shaped;
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
 

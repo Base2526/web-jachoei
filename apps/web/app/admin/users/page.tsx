@@ -27,6 +27,7 @@ function UsersList(){
     { title:'Role', dataIndex:'role', render:(v:string)=><Tag color={v==='Administrator'?'red':v==='Author'?'blue':'default'}>{v}</Tag> },
     { title:'Created', dataIndex:'created_at' },
     { title:'Actions', render:(_:any,r:any)=><Space>
+       <a href={`/profile/${r.id}`}>View</a>
         <a href={`/admin/users/${r.id}`}>Edit</a>
         <Popconfirm title="Delete user?" onConfirm={()=>del({ variables:{ id:r.id }})}>
           <a>Delete</a>
@@ -45,9 +46,5 @@ function UsersList(){
 }
 
 export default function Page(){
-  const client = useMemo(()=> new ApolloClient({
-    link: new HttpLink({ uri: process.env.NEXT_PUBLIC_GRAPHQL_HTTP! }),
-    cache: new InMemoryCache(),
-  }),[]);
-  return <ApolloProvider client={client}><UsersList/></ApolloProvider>;
+  return <UsersList/>;
 }
