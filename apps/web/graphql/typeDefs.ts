@@ -11,6 +11,32 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  type Chat {
+    id: ID!
+    name: String
+    is_group: Boolean!
+    created_by: User
+    created_at: String!
+    members: [User!]!
+  }
+
+  type Message {
+    id: ID!
+    chat_id: ID!
+    sender: User
+    text: String!
+    created_at: String!
+  }
+
+  input UserInput {
+    name: String!
+    avatar: String
+    phone: String
+    email: String
+    role: String!
+    passwordHash: String
+  }
+
   type LoginResult {
     ok: Boolean!
     message: String
@@ -47,9 +73,21 @@ export const typeDefs = /* GraphQL */ `
     meRole: String!
     posts(search: String): [Post!]!
     post(id: ID!): Post
+    myPosts(search: String): [Post!]!
 
     getOrCreateDm(userId: ID!): Chat!
-    messages(chatId: ID!): [Message!]!
+    # messages(chatId: ID!): [Message!]!
+
+    users(search: String): [User!]!
+    user(id: ID!): User
+
+    postsByUserId(userId: ID!): [Post!]!
+
+
+    myChats: [Chat!]!
+    messages(chatId: ID!, limit: Int, offset: Int): [Message!]!
+
+    me: User
   }
 
   input PostInput {
@@ -60,11 +98,27 @@ export const typeDefs = /* GraphQL */ `
     status: PostStatus!
   }
 
+  input MyProfileInput {
+    name: String
+    avatar: String
+    phone: String
+  }
+
   type Mutation {
     login(input: LoginInput!): LoginResult!
     upsertPost(id: ID, data: PostInput!): Post!
     deletePost(id: ID!): Boolean!
 
+    upsertUser(id: ID, data: UserInput!): User!
+    deleteUser(id: ID!): Boolean!
+
+    createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
+    addMember(chatId: ID!, userId: ID!): Boolean!
     sendMessage(chatId: ID!, text: String!): Message!
+
+    updateMyProfile(data: MyProfileInput!): User!
+
+    renameChat(chatId: ID!, name: String): Boolean!
+    deleteChat(chatId: ID!): Boolean!
   }
 `;

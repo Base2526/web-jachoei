@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { GraphQLError } from "graphql/error";
 
-import { query } from "@/lib/db";
+import { query, runInTransaction } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 
 const TOKEN_TTL_DAYS = 7;
@@ -46,7 +46,34 @@ export const resolvers = {
       const r = rows[0]; if (!r) return null;
       return { ...r, author: r.author_json };
     },
+    myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
 
+      console.log("[myPosts] :", ctx);
+      if (!ctx?.user?.id) {
+        // throw new Error("Unauthorized");
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+
+      if (search) {
+        const { rows } = await query(
+          `SELECT p.*, row_to_json(u.*) as author_json
+           FROM posts p LEFT JOIN users u ON p.author_id = u.id
+           WHERE p.author_id=$1 AND (p.title ILIKE $2 OR p.phone ILIKE $2)
+           ORDER BY p.created_at DESC`, [author_id, '%' + search + '%']
+        );
+        return rows.map((r :any)=>({ ...r, author: r.author_json }));
+      }
+      const { rows } = await query(
+        `SELECT p.*, row_to_json(u.*) as author_json
+         FROM posts p LEFT JOIN users u ON p.author_id = u.id
+         WHERE p.author_id=$1
+         ORDER BY p.created_at DESC`, [author_id]
+      );
+      return rows.map((r :any)=>({ ...r, author: r.author_json }));
+    },
     getOrCreateDm: async (_:any, { userId }:{userId:string}, ctx: any) => {
 
       if (!ctx?.user?.id) {
@@ -74,22 +101,110 @@ export const resolvers = {
       // await query(`INSERT INTO chat_members(chat_id, user_id) VALUES ($1,$2),($1,$3)`, [chat.id, meId, userId]);
       return chat;
     },
+    // messages: async (_:any, { chatId }:{chatId:string}, ctx: any) => {
+    //   if (!ctx?.user?.id) {
+    //     // throw new Error("Unauthorized");
+    //     throw new GraphQLError('Unauthenticated', {
+    //       extensions: { code: 'UNAUTHENTICATED' }
+    //     });
+    //   }
+    //   const author_id = ctx.user.id;
+    //   console.log("[messages] current user id:", author_id);
 
-    messages: async (_:any, { chatId }:{chatId:string}, ctx: any) => {
+    //   console.log("[Query]messages : ", chatId)
+    //   const { rows } = await query(
+    //     `SELECT * FROM messages WHERE chat_id=$1 ORDER BY created_at ASC`, [chatId]
+    //   );
+    //   return rows;
+    // },
+
+    myChats: async (_:any, { }:{}, ctx: any) => {
+      console.log("[myChats] :", ctx);
       if (!ctx?.user?.id) {
         // throw new Error("Unauthorized");
         throw new GraphQLError('Unauthenticated', {
           extensions: { code: 'UNAUTHENTICATED' }
         });
       }
-      const author_id = ctx.user.id;
-      console.log("[messages] current user id:", author_id);
 
-      console.log("[Query]messages : ", chatId)
+      const author_id = ctx.user.id;
+
+      // const me = await currentUserId();
       const { rows } = await query(
-        `SELECT * FROM messages WHERE chat_id=$1 ORDER BY created_at ASC`, [chatId]
+        `SELECT c.*, row_to_json(uc.*) as creator_json
+         FROM chats c 
+         LEFT JOIN users uc ON c.created_by = uc.id
+         WHERE EXISTS (SELECT 1 FROM chat_members m WHERE m.chat_id = c.id AND m.user_id = $1)
+         ORDER BY c.created_at DESC`, [author_id]
       );
+      const out:any[] = [];
+      for (const c of rows){
+        const mem = await query(
+          `SELECT u.* FROM chat_members m JOIN users u ON m.user_id=u.id WHERE m.chat_id=$1`, [c.id]
+        );
+        out.push({ 
+          ...c, 
+          created_by: c.creator_json, 
+          members: mem.rows 
+        });
+      }
+      return out;
+    },
+
+    messages: async (_:any, { chatId, limit=50, offset=0 }:{chatId:string, limit?:number, offset?:number}) => {
+      const { rows } = await query(
+        `SELECT m.*, row_to_json(u.*) as sender_json
+         FROM messages m LEFT JOIN users u ON m.sender_id=u.id
+         WHERE m.chat_id=$1
+         ORDER BY m.created_at ASC
+         LIMIT $2 OFFSET $3`, [chatId, limit, offset]
+      );
+      return rows.map((r: any)=>({ ...r, sender: r.sender_json }));
+    },
+    users: async (_: any, { search }: { search?: string }, ctx: any) => {
+
+      if (!ctx?.user?.id) {
+        // throw new Error("Unauthorized");
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+
+      if (search) {
+        const { rows } = await query(
+          `SELECT * FROM users
+           WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
+           ORDER BY created_at DESC`, ['%' + search + '%']
+        );
+        return rows;
+      }
+      const { rows } = await query(`SELECT * FROM users ORDER BY created_at DESC`);
       return rows;
+    },
+    user: async (_: any, { id }: { id: string }) => {
+      const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
+      return rows[0] || null;
+    },
+    postsByUserId: async (_:any, { userId }:{userId:string}) => {
+      const { rows } = await query(
+        `SELECT p.*, row_to_json(u.*) as author_json
+         FROM posts p LEFT JOIN users u ON p.author_id = u.id
+         WHERE p.author_id = $1
+         ORDER BY p.created_at DESC`, [userId]
+      );
+      return rows.map((r: any)=>({ ...r, author: r.author_json }));
+    },
+    me: async (_: any, {  }: { }, ctx: any) => {
+      // return await currentUser();
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+
+      const { rows } = await query(`SELECT * FROM users WHERE id=$1 LIMIT 1`, [author_id]);
+      return rows[0];
     }
   },
   Mutation: {
@@ -201,8 +316,28 @@ export const resolvers = {
       const res = await query(`DELETE FROM posts WHERE id=$1`, [id]);
       return res.rowCount === 1;
     },
+    // sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
+    //   if (!ctx?.user?.id) {
+    //     throw new GraphQLError('Unauthenticated', {
+    //       extensions: { code: 'UNAUTHENTICATED' }
+    //     });
+    //   }
+    //   const author_id = ctx.user.id;
 
-    sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
+    //   const { rows } = await query(
+    //     `INSERT INTO messages(chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
+    //     [chatId, author_id, text]
+    //   );
+    //   const msg = rows[0];
+    //   await pubsub.publish('MSG:' + chatId, { messageAdded: {
+    //     id: msg.id, chat_id: msg.chat_id, sender_id: msg.sender_id, text: msg.text, ts: (msg.created_at instanceof Date ? msg.created_at.toISOString() : String(msg.created_at))
+    //   }});
+
+    //   console.log("[sendMessage]", chatId, text );
+    //   return msg;
+    // },
+    createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
+      // const me = await currentUserId();
       if (!ctx?.user?.id) {
         throw new GraphQLError('Unauthenticated', {
           extensions: { code: 'UNAUTHENTICATED' }
@@ -211,16 +346,143 @@ export const resolvers = {
       const author_id = ctx.user.id;
 
       const { rows } = await query(
-        `INSERT INTO messages(chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
+        `INSERT INTO chats (name, is_group, created_by) VALUES ($1,$2,$3) RETURNING *`,
+        [name || null, isGroup, author_id]
+      );
+      const chat = rows[0];
+      const allMembers = Array.from(new Set([author_id, ...memberIds]));
+      for (const uid of allMembers){
+        await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chat.id, uid]);
+      }
+      const mem = await query(
+        `SELECT u.* FROM chat_members m JOIN users u ON m.user_id=u.id WHERE m.chat_id=$1`, [chat.id]
+      );
+      const creator = await query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
+      return { ...chat, created_by: creator.rows[0], members: mem.rows };
+    },
+
+    addMember: async (_:any, { chatId, userId }:{chatId:string, userId:string}) => {
+      await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chatId, userId]);
+      return true;
+    },
+
+    sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
+      // const me = await currentUserId();
+
+      console.log("[sendMessage] @1 ", chatId, text);
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+      const { rows } = await query(
+        `INSERT INTO messages (chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
         [chatId, author_id, text]
       );
       const msg = rows[0];
-      await pubsub.publish('MSG:' + chatId, { messageAdded: {
-        id: msg.id, chat_id: msg.chat_id, sender_id: msg.sender_id, text: msg.text, ts: (msg.created_at instanceof Date ? msg.created_at.toISOString() : String(msg.created_at))
-      }});
+      const senderQ = await query(`SELECT * FROM users WHERE id=$1`, [msg.sender_id]);
+      const shaped = { id: msg.id, chat_id: msg.chat_id, sender: senderQ.rows[0], text: msg.text, created_at: msg.created_at };
+      await pubsub.publish("MSG", { messageAdded: { id: msg.id, chatId, senderId: msg.sender_id, text: msg.text, ts: new Date(msg.created_at).toISOString() } });
+      
+      console.log("[sendMessage] @2 ", msg, shaped);
+      
+      return shaped;
+    },
+    upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
 
-      console.log("[sendMessage]", chatId, text );
-      return msg;
-    }
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+
+      // (ทางเลือก) ทำความสะอาดค่าเล็กน้อย
+      const name = (data.name ?? '').trim();
+      const avatar = data.avatar ?? null;
+      const phone = data.phone ?? null;
+      const email = data.email ? String(data.email).trim().toLowerCase() : null;
+      const role = (data.role ?? 'Subscriber').trim();
+      const passwordHash = data.passwordHash ?? null;
+
+      if (id) {
+        // อัปเดต: อัปเดต password_hash เฉพาะเมื่อส่งมาเท่านั้น
+        const { rows } = await query(
+          `
+          UPDATE users
+          SET
+            name = $1,
+            avatar = $2,
+            phone = $3,
+            role = $4,
+            password_hash = CASE
+              WHEN $5 IS NULL THEN password_hash
+              ELSE $5
+            END
+          WHERE id = $6
+          RETURNING *;
+          `,
+          [name, avatar, phone, role, passwordHash, id]
+        );
+        return rows[0] || null;
+      } else {
+        // สร้างใหม่: ใส่ลำดับพารามิเตอร์ให้ตรงกับคอลัมน์!
+        // (name, avatar, phone, email, role, password_hash)
+        if (!email) throw new Error("email is required");
+        const { rows } = await query(
+          `
+          INSERT INTO users (name, avatar, phone, email, role, password_hash)
+          VALUES ($1,   $2,    $3,   $4,   $5,   $6)
+          RETURNING *;
+          `,
+          [name, avatar, phone, email, role, passwordHash] // ✅ role มาก่อน hash
+        );
+        return rows[0] || null;
+      }
+    },
+    deleteUser: async (_: any, { id }: { id: string }) => {
+      const res = await query(`DELETE FROM users WHERE id=$1`, [id]);
+      return res.rowCount === 1;
+    },
+    updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+
+      const { rows } = await query(
+        `UPDATE users SET 
+            name = COALESCE($1, name),
+            avatar = COALESCE($2, avatar),
+            phone = COALESCE($3, phone)
+         WHERE id=$4 RETURNING *`,
+        [data.name ?? '', data.avatar ?? '', data.phone ?? '', author_id]
+      );
+      return rows[0];
+    },
+    renameChat: async (_:any, { chatId, name }:{chatId:string, name?:string}, ctx:any) => {
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+
+      await query(`UPDATE chats SET name=$1 WHERE id=$2`, [name || null, chatId]);
+      return true;
+    },
+    deleteChat: async (_:any, { chatId }:{chatId:string}, ctx:any) => {
+      if (!ctx?.user?.id) {
+        throw new GraphQLError('Unauthenticated', {
+          extensions: { code: 'UNAUTHENTICATED' }
+        });
+      }
+      const author_id = ctx.user.id;
+
+      await query(`DELETE FROM chats WHERE id=$1`, [chatId]);
+      return true;
+    },
   }
 };

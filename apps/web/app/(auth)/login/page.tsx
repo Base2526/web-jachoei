@@ -50,7 +50,7 @@ export default function Page() {
   };
 
   return (
-    <Card title="Sign in" style={{ maxWidth: 420 }}>
+    <Card title="Sign in" style={{ maxWidth: 420, margin: '0 auto' }}>
       <Form
         form={form}
         layout="vertical"

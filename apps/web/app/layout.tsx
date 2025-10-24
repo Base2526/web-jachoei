@@ -5,6 +5,8 @@ import React, { useEffect } from "react";
 import { ApolloProvider } from "@apollo/client";
 import { client } from "lib/apollo"
 
+import AppLayout from "@/components/AppLayout";
+
 export default function RootLayout({ children }: { children: React.ReactNode }){
 
   useEffect(() => {
@@ -20,10 +22,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }){
   return (
     <html lang="en"><body>
       <ApolloProvider client={client}>
-        <Layout style={{minHeight:'100vh'}}>
-          <Layout.Header style={{color:'#fff'}}>Simple Realtime Starter [x]</Layout.Header>
-          <Layout.Content style={{padding:24}}>{children}</Layout.Content>
-        </Layout>
+        {/* <AppLayout>{children}</AppLayout> */}
+        {children}
       </ApolloProvider>
     </body></html>
   );
