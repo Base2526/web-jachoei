@@ -86,6 +86,8 @@ export const typeDefs = /* GraphQL */ `
 
     myChats: [Chat!]!
     messages(chatId: ID!, limit: Int, offset: Int): [Message!]!
+
+    me: User
   }
 
   input PostInput {
@@ -94,6 +96,12 @@ export const typeDefs = /* GraphQL */ `
     image_url: String
     phone: String
     status: PostStatus!
+  }
+
+  input MyProfileInput {
+    name: String
+    avatar: String
+    phone: String
   }
 
   type Mutation {
@@ -107,5 +115,10 @@ export const typeDefs = /* GraphQL */ `
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
     addMember(chatId: ID!, userId: ID!): Boolean!
     sendMessage(chatId: ID!, text: String!): Message!
+
+    updateMyProfile(data: MyProfileInput!): User!
+
+    renameChat(chatId: ID!, name: String): Boolean!
+    deleteChat(chatId: ID!): Boolean!
   }
 `;
