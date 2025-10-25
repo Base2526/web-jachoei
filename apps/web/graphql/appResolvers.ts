@@ -5,16 +5,25 @@ import { query, runInTransaction } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 
 const TOKEN_TTL_DAYS = 7;
+const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
+const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
+
+function requireAuth(ctx: any): string {
+  const uid = ctx?.user?.id;
+  if (!uid) {
+    throw new GraphQLError("Unauthenticated", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
+  return uid;
+}
 
 export const resolvers = {
   Query: {
     _health: () => "ok",
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
     posts: async (_:any, { search }:{search?:string}, ctx: any) => {
-      if (ctx?.user?.id) {
-        const author_id = ctx.user.id;
-        console.log("[posts] current user id:", author_id);
-      }
+      const author_id = requireAuth(ctx);
 
       if (search) {
         const { rows } = await query(
@@ -33,10 +42,7 @@ export const resolvers = {
       return rows.map((r: { author_json: any; })=>({ ...r, author: r.author_json }));
     },
     post: async (_:any, { id }:{id:string}, ctx: any) => {
-      if (ctx?.user?.id) {
-        const author_id = ctx.user.id;
-        console.log("[post] current user id:", author_id);
-      }
+      const author_id = requireAuth(ctx);
 
       const { rows } = await query(
         `SELECT p.*, row_to_json(u.*) as author_json
@@ -49,13 +55,8 @@ export const resolvers = {
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
 
       console.log("[myPosts] :", ctx);
-      if (!ctx?.user?.id) {
-        // throw new Error("Unauthorized");
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
+
+      const author_id = requireAuth(ctx);
 
       if (search) {
         const { rows } = await query(
@@ -74,22 +75,16 @@ export const resolvers = {
       );
       return rows.map((r :any)=>({ ...r, author: r.author_json }));
     },
-    getOrCreateDm: async (_:any, { userId }:{userId:string}, ctx: any) => {
+    getOrCreateDm: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
 
-      if (!ctx?.user?.id) {
-        // throw new Error("Unauthorized");
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
+      const author_id = requireAuth(ctx);
 
       if (!author_id) throw new Error("No demo user found");
       const { rows:exist } = await query(
         `SELECT c.* FROM chats c
          JOIN chat_members m1 ON m1.chat_id=c.id AND m1.user_id=$1
          JOIN chat_members m2 ON m2.chat_id=c.id AND m2.user_id=$2
-         WHERE c.is_group=false LIMIT 1`, [author_id, userId]
+         WHERE c.is_group=false LIMIT 1`, [author_id, user_id]
       );
       if (exist[0]) return exist[0];
       const { rows:crows } = await query(
@@ -97,39 +92,15 @@ export const resolvers = {
       );
       const chat = crows[0];
 
-      console.log("[getOrCreateDm]" , chat.id, author_id, userId);
-      // await query(`INSERT INTO chat_members(chat_id, user_id) VALUES ($1,$2),($1,$3)`, [chat.id, meId, userId]);
+      console.log("[getOrCreateDm]" , chat.id, author_id, user_id);
+      // await query(`INSERT INTO chat_members(chat_id, user_id) VALUES ($1,$2),($1,$3)`, [chat.id, meId, user_id]);
       return chat;
     },
-    // messages: async (_:any, { chatId }:{chatId:string}, ctx: any) => {
-    //   if (!ctx?.user?.id) {
-    //     // throw new Error("Unauthorized");
-    //     throw new GraphQLError('Unauthenticated', {
-    //       extensions: { code: 'UNAUTHENTICATED' }
-    //     });
-    //   }
-    //   const author_id = ctx.user.id;
-    //   console.log("[messages] current user id:", author_id);
-
-    //   console.log("[Query]messages : ", chatId)
-    //   const { rows } = await query(
-    //     `SELECT * FROM messages WHERE chat_id=$1 ORDER BY created_at ASC`, [chatId]
-    //   );
-    //   return rows;
-    // },
-
     myChats: async (_:any, { }:{}, ctx: any) => {
       console.log("[myChats] :", ctx);
-      if (!ctx?.user?.id) {
-        // throw new Error("Unauthorized");
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
 
-      const author_id = ctx.user.id;
+      const author_id = requireAuth(ctx);
 
-      // const me = await currentUserId();
       const { rows } = await query(
         `SELECT c.*, row_to_json(uc.*) as creator_json
          FROM chats c 
@@ -151,24 +122,21 @@ export const resolvers = {
       return out;
     },
 
-    messages: async (_:any, { chatId, limit=50, offset=0 }:{chatId:string, limit?:number, offset?:number}) => {
+    messages: async (_:any, { chat_id, limit=50, offset=0 }:{chat_id:string, limit?:number, offset?:number},  ctx: any) => {
+      console.log("[messages] :", ctx);
+
       const { rows } = await query(
         `SELECT m.*, row_to_json(u.*) as sender_json
          FROM messages m LEFT JOIN users u ON m.sender_id=u.id
          WHERE m.chat_id=$1
          ORDER BY m.created_at ASC
-         LIMIT $2 OFFSET $3`, [chatId, limit, offset]
+         LIMIT $2 OFFSET $3`, [chat_id, limit, offset]
       );
-      return rows.map((r: any)=>({ ...r, sender: r.sender_json }));
+      return rows.map((r: any)=>({ ...r, sender: r.sender_json, created_at: new Date(r.created_at).toISOString()}));
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {
 
-      if (!ctx?.user?.id) {
-        // throw new Error("Unauthorized");
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
+      const author_id = requireAuth(ctx);
 
       if (search) {
         const { rows } = await query(
@@ -185,27 +153,50 @@ export const resolvers = {
       const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
       return rows[0] || null;
     },
-    postsByUserId: async (_:any, { userId }:{userId:string}) => {
+    postsByUserId: async (_:any, { user_id }:{user_id:string}) => {
       const { rows } = await query(
         `SELECT p.*, row_to_json(u.*) as author_json
          FROM posts p LEFT JOIN users u ON p.author_id = u.id
          WHERE p.author_id = $1
-         ORDER BY p.created_at DESC`, [userId]
+         ORDER BY p.created_at DESC`, [user_id]
       );
       return rows.map((r: any)=>({ ...r, author: r.author_json }));
     },
     me: async (_: any, {  }: { }, ctx: any) => {
       // return await currentUser();
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
+      const author_id = requireAuth(ctx);
 
       const { rows } = await query(`SELECT * FROM users WHERE id=$1 LIMIT 1`, [author_id]);
       return rows[0];
-    }
+    },
+    unreadCount: async (_:any, { chatId }:{ chatId: string }, ctx:any) => {
+      const meId = requireAuth(ctx);
+      const { rows } = await query(
+        `SELECT unread_count FROM chat_unread_counts WHERE user_id=$1 AND chat_id=$2`,
+        [meId, chatId]
+      ).catch(()=>({ rows:[] as any[] }));
+      if (rows[0]) return Number(rows[0].unread_count || 0);
+
+      const { rows:rows2 } = await query(
+        `SELECT COUNT(*)::BIGINT AS unread_count
+         FROM messages m
+         LEFT JOIN message_receipts r ON r.message_id=m.id AND r.user_id=$1
+         WHERE m.chat_id=$2 AND m.sender_id <> $1 AND (r.read_at IS NULL)`,
+        [meId, chatId]
+      );
+      return Number(rows2[0]?.unread_count || 0);
+    },
+    whoRead: async (_:any, { messageId }:{messageId:string}, ctx:any) => {
+      requireAuth(ctx);
+      const { rows } = await query(
+        `SELECT u.* FROM message_receipts r
+         JOIN users u ON u.id = r.user_id
+         WHERE r.message_id=$1 AND r.read_at IS NOT NULL
+         ORDER BY r.read_at ASC`,
+        [messageId]
+      );
+      return rows;
+    },
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -316,26 +307,6 @@ export const resolvers = {
       const res = await query(`DELETE FROM posts WHERE id=$1`, [id]);
       return res.rowCount === 1;
     },
-    // sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
-    //   if (!ctx?.user?.id) {
-    //     throw new GraphQLError('Unauthenticated', {
-    //       extensions: { code: 'UNAUTHENTICATED' }
-    //     });
-    //   }
-    //   const author_id = ctx.user.id;
-
-    //   const { rows } = await query(
-    //     `INSERT INTO messages(chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
-    //     [chatId, author_id, text]
-    //   );
-    //   const msg = rows[0];
-    //   await pubsub.publish('MSG:' + chatId, { messageAdded: {
-    //     id: msg.id, chat_id: msg.chat_id, sender_id: msg.sender_id, text: msg.text, ts: (msg.created_at instanceof Date ? msg.created_at.toISOString() : String(msg.created_at))
-    //   }});
-
-    //   console.log("[sendMessage]", chatId, text );
-    //   return msg;
-    // },
     createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
       // const me = await currentUserId();
       if (!ctx?.user?.id) {
@@ -361,15 +332,15 @@ export const resolvers = {
       return { ...chat, created_by: creator.rows[0], members: mem.rows };
     },
 
-    addMember: async (_:any, { chatId, userId }:{chatId:string, userId:string}) => {
-      await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chatId, userId]);
+    addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}) => {
+      await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chat_id, user_id]);
       return true;
     },
 
-    sendMessage: async (_:any, { chatId, text }:{chatId:string, text:string}, ctx:any) => {
+    sendMessage: async (_:any, { chat_id, text, to_user_ids}:{chat_id:string, text:string, to_user_ids: string[]}, ctx:any) => {
       // const me = await currentUserId();
 
-      console.log("[sendMessage] @1 ", chatId, text);
+      console.log("[sendMessage] @1 ", chat_id, text);
       if (!ctx?.user?.id) {
         throw new GraphQLError('Unauthenticated', {
           extensions: { code: 'UNAUTHENTICATED' }
@@ -378,16 +349,19 @@ export const resolvers = {
       const author_id = ctx.user.id;
       const { rows } = await query(
         `INSERT INTO messages (chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
-        [chatId, author_id, text]
+        [chat_id, author_id, text]
       );
       const msg = rows[0];
       const senderQ = await query(`SELECT * FROM users WHERE id=$1`, [msg.sender_id]);
-      const shaped = { id: msg.id, chat_id: msg.chat_id, sender: senderQ.rows[0], text: msg.text, created_at: msg.created_at };
-      await pubsub.publish("MSG", { messageAdded: { id: msg.id, chatId, senderId: msg.sender_id, text: msg.text, ts: new Date(msg.created_at).toISOString() } });
+      const message = { id: msg.id, chat_id: msg.chat_id, sender: senderQ.rows[0], text: msg.text, created_at: new Date(msg.created_at).toISOString(), to_user_ids };
+
+      await pubsub.publish(topicChat(chat_id), { messageAdded: message });
+      await Promise.all(
+        to_user_ids.map(uid => pubsub.publish(topicUser(uid), { userMessageAdded: message }))
+      );
+      console.log("[sendMessage] @2 ", message);
       
-      console.log("[sendMessage] @2 ", msg, shaped);
-      
-      return shaped;
+      return message;
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
 
@@ -462,7 +436,7 @@ export const resolvers = {
       );
       return rows[0];
     },
-    renameChat: async (_:any, { chatId, name }:{chatId:string, name?:string}, ctx:any) => {
+    renameChat: async (_:any, { chat_id, name }:{chat_id:string, name?:string}, ctx:any) => {
       if (!ctx?.user?.id) {
         throw new GraphQLError('Unauthenticated', {
           extensions: { code: 'UNAUTHENTICATED' }
@@ -470,10 +444,10 @@ export const resolvers = {
       }
       const author_id = ctx.user.id;
 
-      await query(`UPDATE chats SET name=$1 WHERE id=$2`, [name || null, chatId]);
+      await query(`UPDATE chats SET name=$1 WHERE id=$2`, [name || null, chat_id]);
       return true;
     },
-    deleteChat: async (_:any, { chatId }:{chatId:string}, ctx:any) => {
+    deleteChat: async (_:any, { chat_id }:{chat_id:string}, ctx:any) => {
       if (!ctx?.user?.id) {
         throw new GraphQLError('Unauthenticated', {
           extensions: { code: 'UNAUTHENTICATED' }
@@ -481,8 +455,71 @@ export const resolvers = {
       }
       const author_id = ctx.user.id;
 
-      await query(`DELETE FROM chats WHERE id=$1`, [chatId]);
+      await query(`DELETE FROM chats WHERE id=$1`, [chat_id]);
       return true;
     },
+    markMessageRead: async (_:any, { messageId }:{ messageId:string }, ctx:any) => {
+      const meId = requireAuth(ctx);
+      await query(
+        `UPDATE message_receipts
+         SET read_at = COALESCE(read_at, NOW())
+         WHERE message_id=$1 AND user_id=$2`,
+        [messageId, meId]
+      );
+      return true;
+    },
+    markChatReadUpTo: async (_:any, { chatId, cursor }:{ chatId:string, cursor:string }, ctx:any) => {
+      const meId = requireAuth(ctx);
+      await query(
+        `UPDATE message_receipts r
+         SET read_at = COALESCE(r.read_at, NOW())
+         FROM messages m
+         WHERE r.message_id = m.id
+           AND r.user_id = $1
+           AND m.chat_id = $2
+           AND m.created_at <= $3::timestamptz`,
+        [meId, chatId, cursor]
+      );
+      return true;
+    },
+  },
+
+  // Message
+  Message: {
+    myReceipt: async (parent:any, _args:any, ctx:any) => {
+
+      console.log("[myReceipt]" , ctx);
+      
+      const meId = requireAuth(ctx);
+      const { rows } = await query(
+        `SELECT delivered_at, read_at, (read_at IS NOT NULL) AS is_read
+         FROM message_receipts
+         WHERE message_id=$1 AND user_id=$2`,
+        [parent.id, meId]
+      );
+      const r = rows[0] || null;
+      return {
+        deliveredAt: r?.delivered_at ? new Date(r.delivered_at).toISOString() : new Date(parent.created_at).toISOString(),
+        readAt: r?.read_at ? new Date(r.read_at).toISOString() : null,
+        isRead: !!r?.is_read
+      };
+    },
+    readers: async (parent:any) => {
+      const { rows } = await query(
+        `SELECT u.* FROM message_receipts r
+         JOIN users u ON u.id = r.user_id
+         WHERE r.message_id=$1 AND r.read_at IS NOT NULL
+         ORDER BY r.read_at ASC`,
+        [parent.id]
+      );
+      return rows;
+    },
+    readersCount: async (parent:any) => {
+      const { rows } = await query(
+        `SELECT COUNT(*)::INT AS c FROM message_receipts WHERE message_id=$1 AND read_at IS NOT NULL`,
+        [parent.id]
+      );
+      return Number(rows[0]?.c || 0);
+    }
   }
 };

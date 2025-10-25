@@ -19,6 +19,12 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     members: [User!]!
   }
+  
+  type MessageReceipt {
+    deliveredAt: String!
+    readAt: String
+    isRead: Boolean!
+  }
 
   type Message {
     id: ID!
@@ -26,6 +32,11 @@ export const typeDefs = /* GraphQL */ `
     sender: User
     text: String!
     created_at: String!
+    to_user_ids: [ID!]!
+
+    myReceipt: MessageReceipt!
+    readers: [User!]!
+    readersCount: Int!
   }
 
   input UserInput {
@@ -64,9 +75,9 @@ export const typeDefs = /* GraphQL */ `
 
   type Chat { id: ID!, name: String, is_group: Boolean!, created_at: String! }
 
-  type Message { 
-    id: ID!, chat_id: ID!, sender_id: ID!, text: String!, created_at: String! 
-  }
+  # type Message { 
+  #  id: ID!, chat_id: ID!, sender_id: ID!, text: String!, created_at: String! 
+  # }
 
   type Query {
     _health: String!
@@ -75,19 +86,21 @@ export const typeDefs = /* GraphQL */ `
     post(id: ID!): Post
     myPosts(search: String): [Post!]!
 
-    getOrCreateDm(userId: ID!): Chat!
-    # messages(chatId: ID!): [Message!]!
+    getOrCreateDm(user_id: ID!): Chat!
 
     users(search: String): [User!]!
     user(id: ID!): User
 
-    postsByUserId(userId: ID!): [Post!]!
+    postsByUserId(user_id: ID!): [Post!]!
 
 
     myChats: [Chat!]!
-    messages(chatId: ID!, limit: Int, offset: Int): [Message!]!
+    messages(chat_id: ID!, limit: Int, offset: Int): [Message!]!
 
     me: User
+
+    unreadCount(chatId: ID!): Int!
+    whoRead(messageId: ID!): [User!]!
   }
 
   input PostInput {
@@ -113,12 +126,15 @@ export const typeDefs = /* GraphQL */ `
     deleteUser(id: ID!): Boolean!
 
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
-    addMember(chatId: ID!, userId: ID!): Boolean!
-    sendMessage(chatId: ID!, text: String!): Message!
+    addMember(chat_id: ID!, user_id: ID!): Boolean!
+    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!): Message!
 
     updateMyProfile(data: MyProfileInput!): User!
 
-    renameChat(chatId: ID!, name: String): Boolean!
-    deleteChat(chatId: ID!): Boolean!
+    renameChat(chat_id: ID!, name: String): Boolean!
+    deleteChat(chat_id: ID!): Boolean!
+
+    markMessageRead(messageId: ID!): Boolean!
+    markChatReadUpTo(chatId: ID!, cursor: String!): Boolean!
   }
 `;
