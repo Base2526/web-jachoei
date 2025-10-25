@@ -29,6 +29,9 @@ export default function Page() {
     try {
       const { data } = await login({ variables: { input } });
       const res = data?.login;
+
+      console.log("[login]", res);
+
       if (!res?.ok) {
         message.error(res?.message || 'Invalid credentials');
         return;
@@ -36,6 +39,7 @@ export default function Page() {
 
       // เก็บ token แบบง่าย (แนะนำทำ httpOnly cookie ที่ฝั่ง server ในงานจริง)
       if (res.token) {
+        localStorage.setItem("user", JSON.stringify(res.user));
         localStorage.setItem('token', res.token);
         document.cookie = `token=${res.token}; path=/; samesite=lax`;
       }

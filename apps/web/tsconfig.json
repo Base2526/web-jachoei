@@ -35,6 +35,7 @@
     "app",
     "graphql",
     "lib",
+    "utils",
     "components",
     "next-env.d.ts",
     ".next/types/**/*.ts"

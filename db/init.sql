@@ -6,13 +6,13 @@ CREATE TABLE IF NOT EXISTS users (
   phone TEXT,
   email TEXT UNIQUE,
   role TEXT NOT NULL DEFAULT 'Subscriber',
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS files (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   url TEXT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   uploader_id UUID REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS posts (
@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS posts (
   phone TEXT,
   author_id UUID REFERENCES users(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'public',
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS post_revisions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -33,14 +33,14 @@ CREATE TABLE IF NOT EXISTS post_revisions (
   title TEXT,
   body TEXT,
   note TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS chats (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT,
   is_group BOOLEAN NOT NULL DEFAULT FALSE,
   created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS chat_members (
   chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
@@ -52,14 +52,14 @@ CREATE TABLE IF NOT EXISTS messages (
   chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
   sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
   text TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS system_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
   action TEXT NOT NULL,
   meta JSONB,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 INSERT INTO users (name, role, email, phone) VALUES
  ('Alice Subscriber','Subscriber','alice@example.com','080-000-0001'),
