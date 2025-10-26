@@ -1,27 +1,33 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { useState, useEffect, useMemo } from "react";
-import {
-  List, Card, Input, Button, Space, Typography, Divider, Modal, message, Tag, Dropdown, Radio, Select
-} from "antd";
+import { List, Card, Input, Button, Space, Typography, Divider, Modal, message, Tag, Dropdown, Radio, Select } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 
 import SendMessageSection from "@/components/chat/SendMessageSection";
 
 // ===== GraphQL =====
+const Q_ME   = gql`query { me { id } }`;
 const Q_CHATS = gql`query{ myChats { id name is_group created_at members { id name } } }`;
-const Q_MSGS  = gql`query($chat_id:ID!){ messages(chat_id:$chat_id){ id chat_id text created_at sender{ id name } myReceipt { deliveredAt isRead readAt } readers{ id name } readersCount } }`;
+const Q_MSGS  = gql`query($chat_id:ID!){ messages(chat_id:$chat_id){ id chat_id text created_at sender{ id name } myReceipt { deliveredAt isRead readAt } readers{ id name phone email created_at } readersCount deleted_at is_deleted  } }`;
 const Q_USERS = gql`query($q:String){ users(search:$q){ id name } }`;
 
-// id chat_id sender{id name phone email} text created_at to_user_ids
-const SUB     = gql`subscription($chat_id:ID!){ messageAdded(chat_id:$chat_id){ id chat_id sender text created_at to_user_ids } }`;
 
+
+
+const MUT_DELETE_MSG = gql`mutation($message_id: ID!) { deleteMessage(message_id: $message_id) }`;
+const MUT_MARK_READ = gql`mutation($message_id:ID!){ markMessageRead(message_id:$message_id) }`;
+const MUT_MARK_UPTO = gql`mutation($chat_id:ID!,$cursor:String!){ markChatReadUpTo(chat_id:$chat_id,cursor:$cursor) }`;
 const MUT_SEND    = gql`mutation($chat_id:ID!,$text:String!,$to_user_ids: [ID!]!){ sendMessage(chat_id:$chat_id,text:$text,to_user_ids:$to_user_ids){ id } }`;
 const MUT_CREATE  = gql`mutation($name:String,$isGroup:Boolean!,$memberIds:[ID!]!){ createChat(name:$name,isGroup:$isGroup,memberIds:$memberIds){ id name } }`;
 const MUT_ADD     = gql`mutation($chat_id:ID!,$user_id:ID!){ addMember(chat_id:$chat_id,user_id:$user_id) }`;
 
 const MUT_RENAME  = gql`mutation($chat_id:ID!,$name:String!){ renameChat(chat_id:$chat_id,name:$name) }`;
 const MUT_DELETE  = gql`mutation($chat_id:ID!){ deleteChat(chat_id:$chat_id) }`;
+
+
+const SUB         = gql`subscription($chat_id:ID!){ messageAdded(chat_id:$chat_id){ id chat_id sender{ id name } text created_at to_user_ids myReceipt{deliveredAt isRead readAt} readers { id name phone email created_at } readersCount deleted_at is_deleted } }`;
+const SUB_DELETED = gql`subscription($chat_id: ID!) { messageDeleted(chat_id: $chat_id) } `;
 
 type Member = { id: string; name?: string };
 type Chat = { id: string; name: string; is_group: string; members?: Member[] };
@@ -52,26 +58,74 @@ function ChatUI(){
   const [renameChat]= useMutation(MUT_RENAME, { onError:()=>{} });
   const [deleteChat]= useMutation(MUT_DELETE, { onError:()=>{} });
 
+  const [markRead]  = useMutation(MUT_MARK_READ);
+  const [markUpTo]  = useMutation(MUT_MARK_UPTO);
+
+  const { data: me } = useQuery(Q_ME);
+
+  const [deleteMessageMut] = useMutation(MUT_DELETE_MSG, { onError: ()=>{} });
+
+  // useEffect(()=>{
+  //   console.log("[msgs]" , msgs);
+  // }, [msgs])
+
   useEffect(()=>{
-    console.log("[msgs]" , msgs);
-  }, [msgs])
+    // console.log("[sel, msgs, markUpTo]" , sel, msgs, markUpTo);
+    if(!sel) return;
+    const list = msgs?.messages || [];
+    if (list.length > 0) {
+      const lastTs = list[list.length - 1].created_at;
+      markUpTo({ variables: { chat_id: sel, cursor: lastTs } }).catch(()=>{});
+    }
+  }, [sel, msgs, markUpTo]);
 
   useEffect(()=>{
     if(!sel) return;
-    const unsub = subscribeToMore({
+
+    console.log("SUB @0 :", sel)
+    const unsubAdded = subscribeToMore({
       document: SUB, variables: { chat_id: sel },
       updateQuery(prev, { subscriptionData }){
         const m = subscriptionData.data?.messageAdded;
+
+        console.log("SUB @1: ", m);
         if (!m) return prev;
         const appended = (prev.messages || []).concat([{
-          id: m.id, chat_id: m.chat_id, text: m.text, created_at: m.created_at, sender: { id: m.sender_id, name: m.name }
+          id: m.id, 
+          chat_id: m.chat_id, 
+          text: m.text, 
+          created_at: m.created_at, 
+          sender: m.sender, 
+          myReceipt: m.myReceipt, 
+          readers: m.readers, 
+          readersCount: m.readersCount, 
+          deleted_at: m.deleted_at ?? null
         }]);
-
-        console.log("SUB : ", m, appended);
+        console.log("SUB @2: ", m, appended);
         return { ...prev, messages: appended };
       }
     });
-    return ()=>unsub();
+
+    const unsubDeleted = subscribeToMore({
+      document: SUB_DELETED,
+      variables: { chat_id: sel },
+      updateQuery(prev, { subscriptionData }) {
+
+        console.log("SUB_DELETED @1: ");
+
+
+        const deletedId = subscriptionData?.data?.messageDeleted;
+        if (!deletedId) return prev;
+        const next = { ...prev, messages: (prev.messages || []).filter((x:any) => x.id !== deletedId) };
+        return next;
+      }
+    });
+    
+    return () => {
+      console.log("SUB cleanup", sel);
+      if (typeof unsubAdded === "function") unsubAdded();
+      if (typeof unsubDeleted === "function") unsubDeleted();
+    };
   }, [sel, subscribeToMore]);
 
   const onEdit = (c: any) => {
@@ -199,9 +253,45 @@ function ChatUI(){
       {sel && <>
         <div style={{height: '60vh', overflow:'auto', border:'1px solid #eee', padding:12}}>
           {(msgs?.messages||[]).map((m:any)=>(
-            <div key={m.id} style={{marginBottom:8}}>
+            <div 
+              key={m.id} 
+              style={{marginBottom:8}}
+              onDoubleClick={()=>markRead({ variables:{ message_id: m.id } }).catch(()=>{})}>
               <Typography.Text strong>{m.sender?.name||'—'}:</Typography.Text> {m.text}
               <div style={{fontSize:12, color:'#888'}}>{new Date(m.created_at).toLocaleString()}</div>
+              <div style={{marginTop:4}}>
+                <Tag color={m?.myReceipt?.isRead ? 'green' : 'default'}>
+                  {m?.myReceipt?.isRead ? 'Read' : 'Unread'}
+                </Tag>
+                <Tag>{m?.readersCount ?? 0} read</Tag>
+
+                {(me?.me?.id && m.sender?.id === me.me.id) && (
+                  <Button
+                    danger
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      Modal.confirm({
+                        title: 'Delete this message?',
+                        okType: 'danger',
+                        onOk: async () => {
+                          try {
+                            await deleteMessageMut({ variables: { message_id: m.id } });
+                            // ให้แน่ใจว่า list sync ทันที (เลือกอย่างใดอย่างหนึ่ง)
+                            // 1) refetch ทั้งห้อง:
+                            await refetchMsgs({ chat_id: sel });
+                            // 2) หรือจะไม่ refetch ก็ได้ เพราะ SUB_DELETED จะเด้งมาแล้ว filter ออกให้
+                          } catch (err:any) {
+                            message.error(err.message || 'Delete failed');
+                          }
+                        }
+                      });
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>

@@ -25,7 +25,7 @@ function Clover() {
 
 type Lang = "th" | "en";
 const labelOf: Record<Lang, string> = { th: "ภาษาไทย", en: "English" };
-const flagOf: Record<Lang, string> = { th: "🇹🇭", en: "🇺🇸" };
+const flagOf: Record<Lang, string> = { th: "TH", en: "EN" };
 
 function readCookie(name: string) {
   if (typeof document === "undefined") return null;
@@ -58,7 +58,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
     disabled: lang === currentLang,
     label: (
       <span style={{ display: "flex", alignItems: "center", gap: 10, opacity: lang === currentLang ? 0.45 : 1 }}>
-        <span style={{ fontSize: 18 }}>{flagOf[lang]}</span>
+        {/* <span style={{ fontSize: 18 }}>{flagOf[lang]}</span> */}
         <span>{labelOf[lang]}</span>
       </span>
     ),
@@ -142,7 +142,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
             title="เปลี่ยนภาษา"
             onClick={(e) => e.preventDefault()}
           >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>{flagOf[currentLang]}</span>
+            {/* <span style={{ fontSize: 18, lineHeight: 1 }}>{flagOf[currentLang]}</span> */}
             <span style={{ fontSize: 14 }}>{labelOf[currentLang]}</span>
           </div>
         </Dropdown>

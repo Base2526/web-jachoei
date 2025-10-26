@@ -8,6 +8,8 @@ const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 
+type Iso = string;
+
 function requireAuth(ctx: any): string {
   const uid = ctx?.user?.id;
   if (!uid) {
@@ -122,17 +124,100 @@ export const resolvers = {
       return out;
     },
 
-    messages: async (_:any, { chat_id, limit=50, offset=0 }:{chat_id:string, limit?:number, offset?:number},  ctx: any) => {
-      console.log("[messages] :", ctx);
+    // messages: async (_:any, { chat_id, limit=50, offset=0 }:{chat_id:string, limit?:number, offset?:number},  ctx: any) => {
+    //   console.log("[messages] :", chat_id);
 
+    //   const { rows } = await query(
+    //     `SELECT m.*, row_to_json(u.*) as sender_json
+    //      FROM messages m LEFT JOIN users u ON m.sender_id=u.id
+    //      WHERE m.chat_id=$1
+    //      ORDER BY m.created_at ASC
+    //      LIMIT $2 OFFSET $3`, [chat_id, limit, offset]
+    //   );
+    //   return rows.map((r: any)=>({ ...r, sender: r.sender_json, created_at: new Date(r.created_at).toISOString()}));
+    // },
+
+    messages: async (
+                      _: any,
+                      { chat_id, limit = 50, offset = 0, includeDeleted = false }: { chat_id: string; limit?: number; offset?: number; includeDeleted?: boolean },
+                      ctx: any
+                    ) => {
+      const meId = requireAuth(ctx); // ⬅️ เอา user ปัจจุบัน
+
+      const filter = includeDeleted ? "" : "AND m.deleted_at IS NULL";
       const { rows } = await query(
-        `SELECT m.*, row_to_json(u.*) as sender_json
-         FROM messages m LEFT JOIN users u ON m.sender_id=u.id
-         WHERE m.chat_id=$1
-         ORDER BY m.created_at ASC
-         LIMIT $2 OFFSET $3`, [chat_id, limit, offset]
+        `
+        SELECT
+          m.*,
+          (m.deleted_at IS NOT NULL) AS is_deleted,
+          row_to_json(u.*) AS sender_json,
+
+          -- myReceipt ของคนที่ล็อกอิน
+          (
+            SELECT json_build_object(
+              'delivered_at', r.delivered_at,
+              'read_at',      r.read_at,
+              'is_read',      (r.read_at IS NOT NULL)
+            )
+            FROM message_receipts r
+            WHERE r.message_id = m.id AND r.user_id = $2
+            LIMIT 1
+          ) AS my_receipt_json,
+
+          -- ผู้อ่านทั้งหมด (ที่มี read_at)
+          (
+            SELECT COALESCE(json_agg(row_to_json(ru.*) ORDER BY r2.read_at ASC), '[]'::json)
+            FROM message_receipts r2
+            JOIN users ru ON ru.id = r2.user_id
+            WHERE r2.message_id = m.id AND r2.read_at IS NOT NULL
+          ) AS readers_json,
+
+          -- จำนวนผู้อ่าน
+          (
+            SELECT COUNT(*)::INT
+            FROM message_receipts r3
+            WHERE r3.message_id = m.id AND r3.read_at IS NOT NULL
+          ) AS readers_count
+
+        FROM messages m
+        LEFT JOIN users u ON u.id = m.sender_id
+        WHERE m.chat_id = $1 ${filter}
+        ORDER BY m.created_at ASC
+        LIMIT $3 OFFSET $4
+        `,
+        [chat_id, meId, limit, offset]
       );
-      return rows.map((r: any)=>({ ...r, sender: r.sender_json, created_at: new Date(r.created_at).toISOString()}));
+
+      
+
+      const results =  rows.map((r: any) => {
+        const createdISO = new Date(r.created_at).toISOString();
+        const mr = r.my_receipt_json || null;
+
+        console.log("[r.is_deleted]", r.is_deleted, r.deleted_at);
+        return {
+          ...r,
+          sender: r.sender_json,
+          created_at: createdISO,
+
+          myReceipt: {
+            deliveredAt: mr?.delivered_at ? new Date(mr.delivered_at).toISOString() : createdISO,
+            readAt:      mr?.read_at      ? new Date(mr.read_at).toISOString()      : null,
+            isRead:      !!mr?.is_read,
+          },
+
+          readers: Array.isArray(r.readers_json) ? r.readers_json : [],
+          readersCount: Number(r.readers_count) || 0,
+
+          is_deleted: r.is_deleted ?? false,
+          deleted_at: r.deleted_at ? new Date(r.deleted_at).toISOString() : '',
+          text: r.is_deleted ? "" : r.text,
+        };
+      });
+
+      console.log("[messages - results] :", results);
+
+      return results;
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {
 
@@ -181,7 +266,10 @@ export const resolvers = {
         `SELECT COUNT(*)::BIGINT AS unread_count
          FROM messages m
          LEFT JOIN message_receipts r ON r.message_id=m.id AND r.user_id=$1
-         WHERE m.chat_id=$2 AND m.sender_id <> $1 AND (r.read_at IS NULL)`,
+         WHERE m.chat_id=$2 
+          AND m.sender_id <> $1 
+          AND (r.read_at IS NULL)
+          AND m.deleted_at IS NULL`,
         [meId, chatId]
       );
       return Number(rows2[0]?.unread_count || 0);
@@ -337,31 +425,167 @@ export const resolvers = {
       return true;
     },
 
-    sendMessage: async (_:any, { chat_id, text, to_user_ids}:{chat_id:string, text:string, to_user_ids: string[]}, ctx:any) => {
-      // const me = await currentUserId();
+    // sendMessage: async (_:any, { chat_id, text, to_user_ids}:{chat_id:string, text:string, to_user_ids: string[]}, ctx:any) => {
+    //   // const me = await currentUserId();
 
-      console.log("[sendMessage] @1 ", chat_id, text);
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
-      const { rows } = await query(
-        `INSERT INTO messages (chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
-        [chat_id, author_id, text]
-      );
-      const msg = rows[0];
-      const senderQ = await query(`SELECT * FROM users WHERE id=$1`, [msg.sender_id]);
-      const message = { id: msg.id, chat_id: msg.chat_id, sender: senderQ.rows[0], text: msg.text, created_at: new Date(msg.created_at).toISOString(), to_user_ids };
+    //   console.log("[sendMessage] @1 ", chat_id, text);
+    //   if (!ctx?.user?.id) {
+    //     throw new GraphQLError('Unauthenticated', {
+    //       extensions: { code: 'UNAUTHENTICATED' }
+    //     });
+    //   }
+    //   const author_id = ctx.user.id;
+    //   const { rows } = await query(
+    //     `INSERT INTO messages (chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
+    //     [chat_id, author_id, text]
+    //   );
+    //   const msg = rows[0];
+    //   const senderQ = await query(`SELECT * FROM users WHERE id=$1`, [msg.sender_id]);
+    //   const message = { id: msg.id, chat_id: msg.chat_id, sender: senderQ.rows[0], text: msg.text, created_at: new Date(msg.created_at).toISOString(), to_user_ids };
 
-      await pubsub.publish(topicChat(chat_id), { messageAdded: message });
-      await Promise.all(
-        to_user_ids.map(uid => pubsub.publish(topicUser(uid), { userMessageAdded: message }))
-      );
-      console.log("[sendMessage] @2 ", message);
+    //   await pubsub.publish(topicChat(chat_id), { messageAdded: message });
+    //   await Promise.all(
+    //     to_user_ids.map(uid => pubsub.publish(topicUser(uid), { userMessageAdded: message }))
+    //   );
+    //   console.log("[sendMessage] @2 ", message);
       
-      return message;
+    //   return message;
+    // },
+     sendMessage: async (
+      _: any,
+      { chat_id, text, to_user_ids }: { chat_id: string; text: string; to_user_ids: string[] },
+      ctx: any
+    ) => {
+      const  sender_id = requireAuth(ctx);
+      
+      const cleanTo = Array.from(
+        new Set((to_user_ids || []).filter(Boolean).filter((id) => id !== sender_id))
+      );
+
+      // ✅ ใช้ runInTransaction แทน
+      const fullMessage = await runInTransaction(async (client) => {
+        // 1) insert message
+        const msgRes = await client.query(
+          `INSERT INTO messages (chat_id, sender_id, text)
+           VALUES ($1,$2,$3)
+           RETURNING *`,
+          [chat_id, sender_id, text]
+        );
+        const msg = msgRes.rows[0];
+
+        // 2) insert receipts (recipients)
+        if (cleanTo.length > 0) {
+          await client.query(
+            `
+            INSERT INTO message_receipts (message_id, user_id, delivered_at, read_at)
+            SELECT $1 AS message_id, uid, NOW() AS delivered_at, NULL::timestamptz AS read_at
+            FROM UNNEST($2::uuid[]) AS u(uid)
+            ON CONFLICT (message_id, user_id) DO NOTHING
+            `,
+            [msg.id, cleanTo]
+          );
+        }
+
+        // 3) insert sender receipt
+        await client.query(
+          `
+          INSERT INTO message_receipts (message_id, user_id, delivered_at, read_at)
+          VALUES ($1,$2,NOW(),NOW())
+          ON CONFLICT (message_id, user_id) DO NOTHING
+          `,
+          [msg.id, sender_id]
+        );
+
+        // 4) ดึงข้อมูลประกอบ
+        const senderQ = await client.query(`SELECT * FROM users WHERE id=$1`, [sender_id]);
+        const readersQ = await client.query(
+          `
+          SELECT u.*
+          FROM message_receipts r
+          JOIN users u ON u.id = r.user_id
+          WHERE r.message_id=$1 AND r.read_at IS NOT NULL
+          ORDER BY r.read_at ASC
+          `,
+          [msg.id]
+        );
+
+        const cntQ = await client.query(
+          `SELECT COUNT(*)::INT AS c
+           FROM message_receipts
+           WHERE message_id=$1 AND read_at IS NOT NULL`,
+          [msg.id]
+        );
+        const readersCount: number = Number(cntQ.rows[0]?.c || 0);
+
+        const myRecQ = await client.query(
+          `
+          SELECT delivered_at, read_at, (read_at IS NOT NULL) AS is_read
+          FROM message_receipts
+          WHERE message_id=$1 AND user_id=$2
+          LIMIT 1
+          `,
+          [msg.id, sender_id]
+        );
+        const mr = myRecQ.rows[0] || {};
+        const myReceipt = {
+          deliveredAt: mr?.delivered_at
+            ? new Date(mr.delivered_at).toISOString()
+            : new Date(msg.created_at).toISOString(),
+          readAt: mr?.read_at ? new Date(mr.read_at).toISOString() : null,
+          isRead: !!mr?.is_read,
+        };
+
+        const fullMsg = {
+          id: msg.id,
+          chat_id: msg.chat_id,
+          sender: senderQ.rows[0],
+          text: msg.text,
+          created_at:
+            msg.created_at instanceof Date
+              ? msg.created_at.toISOString()
+              : new Date(msg.created_at).toISOString(),
+          to_user_ids: cleanTo,
+          myReceipt,
+          readers: readersQ.rows,
+          readersCount,
+
+          is_deleted: false,
+          deletedAt: null,
+        };
+
+        return fullMsg;
+      });
+
+      // 5) publish หลัง transaction commit
+      await pubsub.publish(topicChat(fullMessage.chat_id), { messageAdded: fullMessage });
+
+      await Promise.all(
+        fullMessage.to_user_ids.map(async (uid) => {
+          const r = await query(
+            `
+            SELECT delivered_at, read_at, (read_at IS NOT NULL) AS is_read
+            FROM message_receipts
+            WHERE message_id=$1 AND user_id=$2
+            LIMIT 1
+            `,
+            [fullMessage.id, uid]
+          );
+          const pr = r.rows[0] || {};
+          const perUserMessage = {
+            ...fullMessage,
+            myReceipt: {
+              deliveredAt: pr?.delivered_at
+                ? new Date(pr.delivered_at).toISOString()
+                : fullMessage.created_at,
+              readAt: pr?.read_at ? new Date(pr.read_at).toISOString() : null,
+              isRead: !!pr?.is_read,
+            },
+          };
+          await pubsub.publish(topicUser(uid), { userMessageAdded: perUserMessage });
+        })
+      );
+
+      return fullMessage;
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
 
@@ -458,18 +682,22 @@ export const resolvers = {
       await query(`DELETE FROM chats WHERE id=$1`, [chat_id]);
       return true;
     },
-    markMessageRead: async (_:any, { messageId }:{ messageId:string }, ctx:any) => {
+    markMessageRead: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
+      console.log("[markMessageRead]");
       const meId = requireAuth(ctx);
       await query(
         `UPDATE message_receipts
          SET read_at = COALESCE(read_at, NOW())
          WHERE message_id=$1 AND user_id=$2`,
-        [messageId, meId]
+        [message_id, meId]
       );
       return true;
     },
-    markChatReadUpTo: async (_:any, { chatId, cursor }:{ chatId:string, cursor:string }, ctx:any) => {
+    markChatReadUpTo: async (_:any, { chat_id, cursor }:{ chat_id:string, cursor:string }, ctx:any) => {
+      console.log("[markChatReadUpTo]");
       const meId = requireAuth(ctx);
+
+      console.log("[markChatReadUpTo]", meId, chat_id, cursor);
       await query(
         `UPDATE message_receipts r
          SET read_at = COALESCE(r.read_at, NOW())
@@ -477,49 +705,58 @@ export const resolvers = {
          WHERE r.message_id = m.id
            AND r.user_id = $1
            AND m.chat_id = $2
-           AND m.created_at <= $3::timestamptz`,
-        [meId, chatId, cursor]
+           AND m.created_at <= ( $3::timestamptz + interval '1 millisecond' )`,
+        [meId, chat_id, cursor]
       );
+      return true;
+    },
+
+    deleteMessage: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
+      const  meId = requireAuth(ctx);
+      const { rows } = await query(`SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`, [message_id]);
+      const msg = rows[0];
+      if (!msg) return false;
+      // const canDelete = (msg.sender_id === meId) || (role === 'Administrator');
+      // if (!canDelete) throw new GraphQLError('FORBIDDEN', { extensions: { code: 'FORBIDDEN' } });
+      await query(`UPDATE messages SET deleted_at = NOW() WHERE id=$1 AND deleted_at IS NULL`, [message_id]);
+      await pubsub.publish(topicChat(msg.chat_id), { messageDeleted: message_id });
       return true;
     },
   },
 
-  // Message
-  Message: {
-    myReceipt: async (parent:any, _args:any, ctx:any) => {
-
-      console.log("[myReceipt]" , ctx);
-      
-      const meId = requireAuth(ctx);
-      const { rows } = await query(
-        `SELECT delivered_at, read_at, (read_at IS NOT NULL) AS is_read
-         FROM message_receipts
-         WHERE message_id=$1 AND user_id=$2`,
-        [parent.id, meId]
-      );
-      const r = rows[0] || null;
-      return {
-        deliveredAt: r?.delivered_at ? new Date(r.delivered_at).toISOString() : new Date(parent.created_at).toISOString(),
-        readAt: r?.read_at ? new Date(r.read_at).toISOString() : null,
-        isRead: !!r?.is_read
-      };
-    },
-    readers: async (parent:any) => {
-      const { rows } = await query(
-        `SELECT u.* FROM message_receipts r
-         JOIN users u ON u.id = r.user_id
-         WHERE r.message_id=$1 AND r.read_at IS NOT NULL
-         ORDER BY r.read_at ASC`,
-        [parent.id]
-      );
-      return rows;
-    },
-    readersCount: async (parent:any) => {
-      const { rows } = await query(
-        `SELECT COUNT(*)::INT AS c FROM message_receipts WHERE message_id=$1 AND read_at IS NOT NULL`,
-        [parent.id]
-      );
-      return Number(rows[0]?.c || 0);
-    }
-  }
+  // // Message
+  // Message: {
+  //   myReceipt: async (parent:any, _args:any, ctx:any) => {
+  //     const meId = requireAuth(ctx);
+  //     const { rows } = await query(
+  //       `SELECT delivered_at, read_at, (read_at IS NOT NULL) AS is_read
+  //        FROM message_receipts
+  //        WHERE message_id=$1 AND user_id=$2`,
+  //       [parent.id, meId]
+  //     );
+  //     const r = rows[0] || null;
+  //     return {
+  //       deliveredAt: r?.delivered_at ? new Date(r.delivered_at).toISOString() : new Date(parent.created_at).toISOString(),
+  //       readAt: r?.read_at ? new Date(r.read_at).toISOString() : null,
+  //       isRead: !!r?.is_read
+  //     };
+  //   },
+  //   readers: async (parent:any) => {
+  //     const { rows } = await query(
+  //       `SELECT u.* FROM message_receipts r
+  //        JOIN users u ON u.id = r.user_id
+  //        WHERE r.message_id=$1 AND r.read_at IS NOT NULL
+  //        ORDER BY r.read_at ASC`,
+  //       [parent.id]
+  //     );
+  //     return rows;
+  //   },
+  //   readersCount: async (parent:any) => {
+  //     const { rows } = await query(
+  //       `SELECT COUNT(*)::INT AS c FROM message_receipts WHERE message_id=$1 AND read_at IS NOT NULL`,
+  //       [parent.id]
+  //     );
+  //     return Number(rows[0]?.c || 0);
+  //   }
+  // }
 };

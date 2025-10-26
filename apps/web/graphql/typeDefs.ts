@@ -34,6 +34,9 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     to_user_ids: [ID!]!
 
+    is_deleted: Boolean!
+    deleted_at: String
+
     myReceipt: MessageReceipt!
     readers: [User!]!
     readersCount: Int!
@@ -95,7 +98,7 @@ export const typeDefs = /* GraphQL */ `
 
 
     myChats: [Chat!]!
-    messages(chat_id: ID!, limit: Int, offset: Int): [Message!]!
+    messages(chat_id: ID!, limit: Int, offset: Int, includeDeleted: Boolean): [Message!]!
 
     me: User
 
@@ -134,7 +137,9 @@ export const typeDefs = /* GraphQL */ `
     renameChat(chat_id: ID!, name: String): Boolean!
     deleteChat(chat_id: ID!): Boolean!
 
-    markMessageRead(messageId: ID!): Boolean!
-    markChatReadUpTo(chatId: ID!, cursor: String!): Boolean!
+    markMessageRead(message_id: ID!): Boolean!
+    markChatReadUpTo(chat_id: ID!, cursor: String!): Boolean!
+
+    deleteMessage(message_id: ID!): Boolean!
   }
 `;
