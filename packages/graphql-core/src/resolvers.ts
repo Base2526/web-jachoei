@@ -2,6 +2,9 @@ import { pubsub } from "../../realtime/src/pubsub.js";
 
 import { withFilter } from "graphql-subscriptions";
 
+const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
+const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
+
 export const coreResolvers = {
   Query: { _ok: () => "ok" },
   Mutation: {
@@ -12,39 +15,25 @@ export const coreResolvers = {
       console.log("[ graphql-core send ]", text);
       return true;
     },
-    // sendMessage: async (_: unknown, { chatId, text }: { chatId: string; text: string }, ctx: any) => {
-      
-    //   console.log("[package graphql-core sendMessage]", chatId, text);
-    //   const msg = {
-    //     id: Date.now().toString(),
-    //     chatId,
-    //     senderId: ctx?.userId || "demo",
-    //     text,
-    //     ts: new Date().toISOString()
-    //   };
-    //   await pubsub.publish("MSG", { messageAdded: msg });
-    //   return true;
-    // },
   },
   Subscription: {
-    // messageAdded: {
-    //   subscribe(_: unknown, { chatId }: { chatId: string }): AsyncIterableIterator<unknown> {
-    //     console.log("[ graphql-core subscribe ]", chatId);
-
-    //     return pubsub.asyncIterator('MSG:' + chatId) as AsyncIterableIterator<unknown>;
-    //   },
-    // },
-
-messageAdded: {
+    messageAdded: {
       subscribe: withFilter(
-        () => pubsub.asyncIterator("MSG"),
+        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),
         (payload, variables) => {
-          console.log("[withFilter]", variables);
-          return payload?.messageAdded?.chatId === variables?.chatId;
+          console.log("[graphql-core withFilter : messageAdded]", payload, variables);
+          return payload?.messageAdded?.id === variables?.chat_id;
+        }
+      )
+    },
+    userMessageAdded: {
+      subscribe: withFilter(
+        (_:any, { user_id }:{user_id:string}) => pubsub.asyncIterator(topicUser(user_id)),
+        (payload, variables) => {
+          console.log("[graphql-core withFilter : userMessageAdded]", payload, variables, payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id) ? "T" : "N");
+          return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
         }
       )
     }
-
-
   },
 };

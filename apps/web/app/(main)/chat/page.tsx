@@ -1,24 +1,30 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   List, Card, Input, Button, Space, Typography, Divider, Modal, message, Tag, Dropdown, Radio, Select
 } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 
+import SendMessageSection from "@/components/chat/SendMessageSection";
+
 // ===== GraphQL =====
-const Q_CHATS = gql`query { myChats { id name is_group created_at members { id name } } }`;
-const Q_MSGS  = gql`query($chatId:ID!){ messages(chatId:$chatId){ id chat_id text created_at sender{ id name } } }`;
+const Q_CHATS = gql`query{ myChats { id name is_group created_at members { id name } } }`;
+const Q_MSGS  = gql`query($chat_id:ID!){ messages(chat_id:$chat_id){ id chat_id text created_at sender{ id name } myReceipt { deliveredAt isRead readAt } readers{ id name } readersCount } }`;
 const Q_USERS = gql`query($q:String){ users(search:$q){ id name } }`;
 
-const SUB     = gql`subscription($chatId:ID!){ messageAdded(chatId:$chatId){ id chatId senderId text ts } }`;
+// id chat_id sender{id name phone email} text created_at to_user_ids
+const SUB     = gql`subscription($chat_id:ID!){ messageAdded(chat_id:$chat_id){ id chat_id sender text created_at to_user_ids } }`;
 
-const MUT_SEND    = gql`mutation($chatId:ID!,$text:String!){ sendMessage(chatId:$chatId,text:$text){ id } }`;
+const MUT_SEND    = gql`mutation($chat_id:ID!,$text:String!,$to_user_ids: [ID!]!){ sendMessage(chat_id:$chat_id,text:$text,to_user_ids:$to_user_ids){ id } }`;
 const MUT_CREATE  = gql`mutation($name:String,$isGroup:Boolean!,$memberIds:[ID!]!){ createChat(name:$name,isGroup:$isGroup,memberIds:$memberIds){ id name } }`;
-const MUT_ADD     = gql`mutation($chatId:ID!,$userId:ID!){ addMember(chatId:$chatId,userId:$userId) }`;
+const MUT_ADD     = gql`mutation($chat_id:ID!,$user_id:ID!){ addMember(chat_id:$chat_id,user_id:$user_id) }`;
 
-const MUT_RENAME  = gql`mutation($chatId:ID!,$name:String!){ renameChat(chatId:$chatId,name:$name) }`;
-const MUT_DELETE  = gql`mutation($chatId:ID!){ deleteChat(chatId:$chatId) }`;
+const MUT_RENAME  = gql`mutation($chat_id:ID!,$name:String!){ renameChat(chat_id:$chat_id,name:$name) }`;
+const MUT_DELETE  = gql`mutation($chat_id:ID!){ deleteChat(chat_id:$chat_id) }`;
+
+type Member = { id: string; name?: string };
+type Chat = { id: string; name: string; is_group: string; members?: Member[] };
 
 function ChatUI(){
   const [sel, setSel] = useState<string|null>(null);
@@ -36,7 +42,7 @@ function ChatUI(){
 
   const { data:chats, refetch:refetchChats } = useQuery(Q_CHATS);
   const { data:msgs, refetch:refetchMsgs, subscribeToMore } = useQuery(Q_MSGS, {
-    skip: !sel, variables: { chatId: sel }
+    skip: !sel, variables: { chat_id: sel }
   });
   const { data:users, refetch:refetchUsers } = useQuery(Q_USERS, { variables: { q: "" } });
 
@@ -47,15 +53,21 @@ function ChatUI(){
   const [deleteChat]= useMutation(MUT_DELETE, { onError:()=>{} });
 
   useEffect(()=>{
+    console.log("[msgs]" , msgs);
+  }, [msgs])
+
+  useEffect(()=>{
     if(!sel) return;
     const unsub = subscribeToMore({
-      document: SUB, variables: { chatId: sel },
+      document: SUB, variables: { chat_id: sel },
       updateQuery(prev, { subscriptionData }){
         const m = subscriptionData.data?.messageAdded;
         if (!m) return prev;
         const appended = (prev.messages || []).concat([{
-          id: m.id, chat_id: m.chatId, text: m.text, created_at: m.ts, sender: { id: m.senderId, name: m.senderId }
+          id: m.id, chat_id: m.chat_id, text: m.text, created_at: m.created_at, sender: { id: m.sender_id, name: m.name }
         }]);
+
+        console.log("SUB : ", m, appended);
         return { ...prev, messages: appended };
       }
     });
@@ -75,7 +87,7 @@ function ChatUI(){
       okType: 'danger',
       onOk: async () => {
         try{
-          await deleteChat({ variables: { chatId: c.id }});
+          await deleteChat({ variables: { chat_id: c.id }});
           message.success('Deleted');
           if (sel === c.id) setSel(null);
           refetchChats();
@@ -106,7 +118,7 @@ function ChatUI(){
     });
     if (!pick) return;
     try{
-      await addMember({ variables: { chatId: c.id, userId: pick }});
+      await addMember({ variables: { chat_id: c.id, user_id: pick }});
       message.success('Member added');
       refetchChats();
     }catch(e:any){
@@ -148,6 +160,11 @@ function ChatUI(){
     refetchChats();
   };
 
+  const chat: Chat | undefined = useMemo(
+      () => chats?.myChats?.find((i: any) => i.id === sel),
+      [chats, sel]
+  );
+
   return <div style={{display:'grid', gridTemplateColumns:'360px 1fr', gap:16}}>
     <Card
       title="Chats"
@@ -157,7 +174,10 @@ function ChatUI(){
         dataSource={chats?.myChats||[]}
         renderItem={(c:any)=>(
           <List.Item
-            onClick={()=>{ setSel(c.id); refetchMsgs({ chatId: c.id }); }}
+            onClick={()=>{ 
+              setSel(c.id); 
+              refetchMsgs({ chat_id: c.id }); 
+            }}
             style={{cursor:'pointer'}}
             actions={[
               c.is_group ? <Tag color="blue" key="tag">Group</Tag> : <Tag key="tag">1:1</Tag>,
@@ -175,7 +195,7 @@ function ChatUI(){
       />
     </Card>
 
-    <Card title={sel ? `Chat ${sel}` : 'Select a chat'}>
+    <Card title={sel ? `Chat ${chat?.name}` : 'Select a chat'}>
       {sel && <>
         <div style={{height: '60vh', overflow:'auto', border:'1px solid #eee', padding:12}}>
           {(msgs?.messages||[]).map((m:any)=>(
@@ -188,11 +208,13 @@ function ChatUI(){
         <Divider/>
         <Space.Compact style={{width:'100%'}}>
           <Input value={text} onChange={e=>setText(e.target.value)} placeholder="Type message..."/>
-          <Button type="primary" onClick={async ()=>{
-            if (!text.trim() || !sel) return;
-            await send({ variables: { chatId: sel, text } });
-            setText('');
-          }}>Send</Button>
+          <SendMessageSection
+            chats={chats}
+            sel={sel || "1"}
+            text={text}
+            setText={setText}
+            send={send}
+          />
         </Space.Compact>
       </>}
     </Card>
@@ -225,7 +247,7 @@ function ChatUI(){
     <Modal open={openEdit} title="Edit chat name" onCancel={()=>setOpenEdit(false)} onOk={async()=>{
       if (!editTarget?.id) return;
       try{
-        await renameChat({ variables: { chatId: editTarget.id, name: editName || null }});
+        await renameChat({ variables: { chat_id: editTarget.id, name: editName || null }});
         setOpenEdit(false);
         message.success('Renamed');
         refetchChats();
