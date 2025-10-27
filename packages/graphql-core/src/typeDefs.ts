@@ -9,6 +9,12 @@ export const coreTypeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  type MessageReceipt {
+    deliveredAt: String!
+    readAt: String
+    isRead: Boolean!
+  }
+
   type Message { 
     id: ID!, 
     chat_id: ID!,
@@ -16,6 +22,13 @@ export const coreTypeDefs = /* GraphQL */ `
     text: String!, 
     created_at: String! 
     to_user_ids: [ID!]! 
+
+    is_deleted: Boolean!
+    deleted_at: String
+
+    myReceipt: MessageReceipt!
+    readers: [User!]!
+    readersCount: Int!
   }
 
   type Query { _ok: String! }
@@ -25,5 +38,7 @@ export const coreTypeDefs = /* GraphQL */ `
   type Subscription { 
     messageAdded(chat_id: ID!): Message! 
     userMessageAdded(user_id: ID!): Message! 
+
+    messageDeleted(chat_id: ID!): ID!
   }
 `;

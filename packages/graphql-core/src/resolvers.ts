@@ -21,8 +21,8 @@ export const coreResolvers = {
       subscribe: withFilter(
         (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),
         (payload, variables) => {
-          console.log("[graphql-core withFilter : messageAdded]", payload, variables);
-          return payload?.messageAdded?.id === variables?.chat_id;
+          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id);
+          return payload?.messageAdded?.chat_id === variables?.chat_id;
         }
       )
     },
@@ -30,10 +30,21 @@ export const coreResolvers = {
       subscribe: withFilter(
         (_:any, { user_id }:{user_id:string}) => pubsub.asyncIterator(topicUser(user_id)),
         (payload, variables) => {
-          console.log("[graphql-core withFilter : userMessageAdded]", payload, variables, payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id) ? "T" : "N");
+          console.log("[graphql-core withFilter : userMessageAdded]");
           return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
         }
       )
-    }
+    },
+    messageDeleted: {
+      subscribe: withFilter(
+        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicUser(chat_id)),
+        (payload, variables) => {
+          console.log("[graphql-core withFilter : messageDeleted]");
+          // return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
+
+          return payload.asyncIterator(topicChat(variables?.chat_id));
+        }
+      )
+    },
   },
 };
