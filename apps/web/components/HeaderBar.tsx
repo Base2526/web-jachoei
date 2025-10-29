@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   ShoppingCartOutlined, BellOutlined, BulbOutlined,
-  UserOutlined, SettingOutlined, ToolOutlined, ReloadOutlined,
+  UserOutlined, SettingOutlined, ToolOutlined, ReloadOutlined, MessageOutlined
 } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -69,7 +69,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
   const profileMenu: MenuProps["items"] = [
     { key: "account", label: <Link href="/my/profile">Account</Link>, icon: <UserOutlined /> },
     { key: "settings", label: <Link href="/settings">Settings</Link>, icon: <SettingOutlined /> },
-    { key: "admin", label: <Link href="/admin">Administrator</Link>, icon: <ToolOutlined /> },
+    // { key: "admin", label: <Link href="/admin">Administrator</Link>, icon: <ToolOutlined /> },
     { type: "divider" },
     { key: "logout", label: <span onClick={onLogout}>Logout</span>, icon: <ReloadOutlined /> },
   ];
@@ -102,6 +102,10 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
       <Space size={8} align="center">
         <Tooltip title="ตะกร้าสินค้า">
           <Button type="text" icon={<ShoppingCartOutlined style={{ fontSize: 18, color: "#000" }} />} />
+        </Tooltip>
+        {/* MessageOutlined */}
+         <Tooltip title="ข้อความ">
+          <Button type="text" icon={<MessageOutlined style={{ fontSize: 18, color: "#000" }} />} />
         </Tooltip>
         <Tooltip title="ธีม">
           <Button type="text" icon={<BulbOutlined style={{ fontSize: 18, color: "#000" }} />} />

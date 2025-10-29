@@ -1,5 +1,5 @@
 // app/(admin)/admin/layout.tsx
-import AdminHeader from '@/components/AdminHeader';
+// import AdminHeader from '@/components/AdminHeader';
 import { cookies } from 'next/headers';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
