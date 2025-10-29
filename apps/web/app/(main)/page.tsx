@@ -84,10 +84,10 @@ function PostsList(){
       {/* <Link href="/post/new"><Button type="primary">+ New Post</Button></Link> */}
 
       {/* <Link href="/my/profile"><Button type="primary">My Profile</Button></Link> */}
-      <Link href="/my/posts"><Button type="primary">My Post</Button></Link>
+      {/* <Link href="/my/posts"><Button type="primary">My Post</Button></Link> */}
 
-      <Link href="/admin/users"><Button type="primary">Users</Button></Link>
-      <Link href="/chat"><Button type="primary">Chat UI</Button></Link>
+      {/* <Link href="/admin/users"><Button type="primary">Users</Button></Link> */}
+      {/* <Link href="/chat"><Button type="primary">Chat UI</Button></Link> */}
       {/* <Link href="/login">Login</Link> */}
 
       {/* {isLogin ? (

@@ -13,6 +13,7 @@
     "@graphql-tools/schema": "^10.0.0",
     "antd": "^5.19.2",
     "crypto": "^1.0.1",
+    "fs": "^0.0.1-security",
     "graphql": "^16.9.0",
     "graphql-redis-subscriptions": "^2.7.0",
     "graphql-ws": "^6.0.6",

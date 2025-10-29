@@ -67,7 +67,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
 
   // --- เมนูโปรไฟล์ เดิม -------------------------------------
   const profileMenu: MenuProps["items"] = [
-    { key: "account", label: <Link href="/my/profile">Account</Link>, icon: <UserOutlined /> },
+    // { key: "account", label: <Link href="/my/profile">Account</Link>, icon: <UserOutlined /> },
     { key: "settings", label: <Link href="/settings">Settings</Link>, icon: <SettingOutlined /> },
     // { key: "admin", label: <Link href="/admin">Administrator</Link>, icon: <ToolOutlined /> },
     { type: "divider" },
@@ -105,7 +105,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
         </Tooltip>
         {/* MessageOutlined */}
          <Tooltip title="ข้อความ">
-          <Button type="text" icon={<MessageOutlined style={{ fontSize: 18, color: "#000" }} />} />
+          <Button type="text" onClick={() => router.push("/chat")} icon={<MessageOutlined style={{ fontSize: 18, color: "#000" }} />} />
         </Tooltip>
         <Tooltip title="ธีม">
           <Button type="text" icon={<BulbOutlined style={{ fontSize: 18, color: "#000" }} />} />
