@@ -15,3 +15,6 @@ apps/ws/src/db/package-lock.json
 
 packages/graphql-core/package-lock.json
 packages/realtime/package-lock.json
+
+/storage/*
+!/storage/.gitkeep
