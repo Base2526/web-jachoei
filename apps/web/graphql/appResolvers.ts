@@ -123,20 +123,6 @@ export const resolvers = {
       }
       return out;
     },
-
-    // messages: async (_:any, { chat_id, limit=50, offset=0 }:{chat_id:string, limit?:number, offset?:number},  ctx: any) => {
-    //   console.log("[messages] :", chat_id);
-
-    //   const { rows } = await query(
-    //     `SELECT m.*, row_to_json(u.*) as sender_json
-    //      FROM messages m LEFT JOIN users u ON m.sender_id=u.id
-    //      WHERE m.chat_id=$1
-    //      ORDER BY m.created_at ASC
-    //      LIMIT $2 OFFSET $3`, [chat_id, limit, offset]
-    //   );
-    //   return rows.map((r: any)=>({ ...r, sender: r.sender_json, created_at: new Date(r.created_at).toISOString()}));
-    // },
-
     messages: async (
                       _: any,
                       { chat_id, limit = 50, offset = 0, includeDeleted = false }: { chat_id: string; limit?: number; offset?: number; includeDeleted?: boolean },
@@ -285,9 +271,48 @@ export const resolvers = {
       );
       return rows;
     },
+
+    stats: async (_:any, __:any, ctx:any) => {
+      const results = await Promise.all([
+        query(`SELECT COUNT(*)::int AS c FROM users`),
+        query(`SELECT COUNT(*)::int AS c FROM posts`),
+        query(`SELECT COUNT(*)::int AS c FROM files WHERE deleted_at IS NULL`),
+        query(`SELECT COUNT(*)::int AS c FROM system_logs`),
+      ]);
+
+      const [users, posts, files, logs] = results.map(( r:any)=> r.rows[0].c);
+
+      return { users, posts, files, logs };
+    },
+    latestUsers: async (_:any,{limit=5}:any, ctx:any)=>{
+      const {rows}=await query(`SELECT id,name,email,role,created_at FROM users ORDER BY created_at DESC LIMIT $1`,[limit]);
+      return rows;
+    },
+    latestPosts: async (_:any,{limit=5}:any, ctx:any)=>{
+      const {rows}=await query(`SELECT id,title,status,created_at FROM posts ORDER BY created_at DESC LIMIT $1`,[limit]);
+      return rows;
+    },
+    pending: async () => {
+      const [posts, users, files, logs] = await Promise.all([
+        query(`SELECT COUNT(*)::int AS c FROM posts WHERE status = 'pending'`),
+        query(`SELECT COUNT(*)::int AS c FROM users WHERE status = 'invited' OR email_verified = false`),
+        query(`SELECT COUNT(*)::int AS c FROM files WHERE category IS NULL AND deleted_at IS NULL`),
+        query(`SELECT COUNT(*)::int AS c FROM system_logs WHERE level = 'error' AND created_at >= NOW() - INTERVAL '24 hours'`)
+      ]);
+
+      return {
+        posts_awaiting_approval: posts.rows[0]?.c || 0,
+        users_pending_invite: users.rows[0]?.c || 0,
+        files_unclassified: files.rows[0]?.c || 0,
+        errors_last24h: logs.rows[0]?.c || 0,
+      };
+    },
+
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
+      
+      console.log("[login]");
       const { email, username, password } = input || {};
       if (!password || (!email && !username)) {
         throw new Error("Email/Username and password are required");

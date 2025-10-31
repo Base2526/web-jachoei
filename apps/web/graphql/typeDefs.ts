@@ -82,6 +82,42 @@ export const typeDefs = /* GraphQL */ `
   #  id: ID!, chat_id: ID!, sender_id: ID!, text: String!, created_at: String! 
   # }
 
+  type Stats {
+    users: Int!
+    posts: Int!
+    files: Int!
+    logs: Int!
+  }
+
+  type DashboardUser {
+    id: ID!
+    name: String
+    email: String
+    role: String
+    created_at: String
+  }
+
+  type DashboardPost {
+    id: ID!
+    title: String
+    status: String
+    created_at: String
+  }
+
+  type PendingSummary {
+    posts_awaiting_approval: Int!
+    users_pending_invite: Int!
+    files_unclassified: Int!
+    errors_last24h: Int!
+  }
+
+  type StatsSummary {
+    users: Int!
+    posts: Int!
+    files: Int!
+    logs: Int!
+  }
+
   type Query {
     _health: String!
     meRole: String!
@@ -104,6 +140,13 @@ export const typeDefs = /* GraphQL */ `
 
     unreadCount(chatId: ID!): Int!
     whoRead(messageId: ID!): [User!]!
+
+
+    stats: StatsSummary!
+    pending: PendingSummary!
+    # stats: Stats!
+    latestUsers(limit: Int = 5): [DashboardUser!]!
+    latestPosts(limit: Int = 5): [DashboardPost!]!
   }
 
   input PostInput {

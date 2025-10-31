@@ -7,6 +7,7 @@ import { client } from "lib/apollo"
 import { getStoredUser, type StoredUser } from "@/utils/storage";
 import GlobalChatSub from "@/components/GlobalChatSub";
 
+
 export default function RootLayout({ children }: { children: React.ReactNode }){
 
   const user: StoredUser | null = useMemo(() => getStoredUser(), []);

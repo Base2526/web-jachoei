@@ -300,11 +300,11 @@ export default function SettingsPage() {
     { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
     { key: 'account', icon: <SettingOutlined />, label: 'Account' },
     { key: 'posts', icon: <FileTextOutlined />, label: 'My Posts' },
-    { key: 'users', icon: <TeamOutlined />, label: 'Users' },
+    // { key: 'users', icon: <TeamOutlined />, label: 'Users' },
     { key: 'security', icon: <LockOutlined />, label: 'Security' },
     { key: 'notifications', icon: <BellOutlined />, label: 'Notifications' },
-    { key: 'files', icon: <FileImageOutlined />, label: 'Files' },
-    { key: 'logs', icon: <DatabaseOutlined />, label: 'Logs' },
+    // { key: 'files', icon: <FileImageOutlined />, label: 'Files' },
+    // { key: 'logs', icon: <DatabaseOutlined />, label: 'Logs' },
   ];
 
   return (

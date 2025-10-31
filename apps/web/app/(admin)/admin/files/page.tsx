@@ -80,7 +80,7 @@ export default function FilesPage(){
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">File Manager</h1>
+      {/* <h1 className="text-2xl font-semibold mb-4">File Manager</h1> */}
       <Space className="mb-4" wrap>
         <Input.Search placeholder="Search by name" onSearch={setQ} allowClear enterButton />
         <Upload name="file" action="/api/files" onChange={onUploaded} showUploadList={false}>
