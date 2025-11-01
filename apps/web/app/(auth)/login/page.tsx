@@ -5,7 +5,7 @@ import { gql, useMutation } from '@apollo/client';
 
 const LOGIN = gql`
   mutation Login($input: LoginInput!) {
-    login(input: $input) {
+    loginUser(input: $input) {
       ok
       message
       token
@@ -28,8 +28,7 @@ export default function Page() {
 
     try {
       const { data } = await login({ variables: { input } });
-      const res = data?.login;
-
+      const res = data?.loginUser
       console.log("[login]", res);
 
       if (!res?.ok) {
@@ -47,7 +46,7 @@ export default function Page() {
       message.success(`Welcome ${res.user?.name || ''}!`);
       // TODO: redirect ถ้าต้องการ เช่น window.location.href = '/'
 
-      window.location.href = "/";
+      // window.location.href = "/";
     } catch (err: any) {
       message.error(err?.message || 'Login failed');
     }

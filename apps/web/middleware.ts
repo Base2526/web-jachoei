@@ -3,6 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 const ADMIN_COOKIE = "ADMIN_SESSION";
 const PUBLIC = ["/admin/login"];
 
+export const config = {
+  // จงใจรวมทั้ง /admin/** และ /api/** ด้วย
+  matcher: [
+    "/admin/:path*",
+    "/api/:path*",           // << สำคัญ: ให้มั่นใจว่า /api/graphql โดน middleware เสมอ
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp)$).*)",
+  ],
+};
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (!pathname.startsWith("/admin")) return NextResponse.next();
@@ -10,9 +19,35 @@ export function middleware(req: NextRequest) {
 
   const token = req.cookies.get(ADMIN_COOKIE)?.value;
 
-  console.log("middleware :", token);
   if (!token) return redirectToLogin(req);
-  return NextResponse.next(); // verification ทำใน layout/route handler
+
+  
+
+  // const pathname = url.pathname; // "/admin/posts"
+  // const hostname = url.hostname; // "admin.example.com"
+
+  const is_admin = pathname.startsWith("/admin"); // || pathname.startsWith("admin.");
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-scope", is_admin ? "admin" : "web"); // <— ใส่ scope ให้ทุก request
+
+  console.log("middleware :", pathname, token, is_admin ? "Y" : "N");
+
+  // return NextResponse.next({ request: { headers: requestHeaders } });
+
+  // return NextResponse.next(); // verification ทำใน layout/route handler
+
+  // 2) (ทางเลือก) ใส่ response header เผื่อ debug ใน Network
+  const res = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+  res.headers.set("x-mw-scope", is_admin ? "admin" : "web");
+
+  // 3) (กันพลาด) ถ้าอยากใช้ cookie เป็น fallback ฝั่ง server ด้วย
+  //    หมายเหตุ: cookie นี้จะใช้กับ request ถัดไป ไม่ใช่ตัวเดียวกัน
+  // res.cookies.set("scope", isAdmin ? "admin" : "web", { path: "/", sameSite: "lax" });
+
+  console.log("[MW]", pathname, "→ x-scope:", is_admin ? "admin" : "web");
+  return res;
 }
 
 function redirectToLogin(req: NextRequest) {
@@ -21,4 +56,4 @@ function redirectToLogin(req: NextRequest) {
   url.searchParams.set("next", req.nextUrl.pathname + (req.nextUrl.search || ""));
   return NextResponse.redirect(url);
 }
-export const config = { matcher: ["/admin/:path*"] };
+// export const config = { matcher: ["/admin/:path*"] };

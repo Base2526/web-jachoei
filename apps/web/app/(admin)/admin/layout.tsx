@@ -1,11 +1,6 @@
 // apps/web/app/(admin)/admin/layout.tsx
-
 import { cookies } from "next/headers";
 import * as jwt from "jsonwebtoken";
-
-// import AdminHeader from "@/components/AdminHeader";
-
-
 import AdminLayoutClient from "@/components/AdminLayoutClient";
 
 // --- ค่าคงที่ ---
@@ -28,6 +23,8 @@ function verifyAdminSession(): JWTPayload | null {
     const token = cookieStore.get(ADMIN_COOKIE)?.value;
     if (!token) return null;
     const payload = jwt.verify(token, JWT_SECRET) as JWTPayload;
+
+    console.log("[verifyAdminSession]", payload);
     if (payload.role !== "Administrator") return null;
     return payload;
   } catch {
@@ -41,7 +38,16 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // ตรวจสิทธิ์ก่อน render
+  const session = verifyAdminSession();
+  // if (!session) {
+  //   redirect("/admin/login");
+  // }
+
   const langCookie = cookies().get("lang")?.value ?? "th"; // 'th' | 'en'
+
+  
+
   return (
     <>
       <main style={{ padding: 24 }}>

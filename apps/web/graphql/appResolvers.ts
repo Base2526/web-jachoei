@@ -4,6 +4,10 @@ import { GraphQLError } from "graphql/error";
 import { query, runInTransaction } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 
+import * as jwt from "jsonwebtoken";
+import { cookies } from "next/headers";
+import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
+
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
@@ -20,13 +24,26 @@ function requireAuth(ctx: any): string {
   return uid;
 }
 
+function requireUser(ctx: any) {
+  const user = ctx?.user;
+  if (!user) throw new Error("Unauthorized");
+  return user;
+}
+
+function requireAdmin(ctx: any) {
+  const admin = ctx?.admin;
+  if (!admin) throw new Error("Forbidden (admin only)");
+  return admin;
+}
+
 export const resolvers = {
   Query: {
     _health: () => "ok",
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
     posts: async (_:any, { search }:{search?:string}, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      // const author_id = requireAuth(ctx);
 
+      console.log("[resolvers-posts] ", ctx);
       if (search) {
         const { rows } = await query(
           `SELECT p.*, row_to_json(u.*) as author_json
@@ -382,6 +399,52 @@ export const resolvers = {
         token,
         user,
       };
+    },
+
+    // loginUser: async (_: any, { email, password }: any) => {
+    loginUser: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
+      console.log("[loginUser] @1 ", input)
+      const { email, username, password } = input || {};
+      if (!password || (!email && !username)) {
+        throw new Error("Email/Username and password are required");
+      }
+
+      const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+      const user = rows[0];
+
+      console.log("[loginUser] @2 ", user)
+      if (!user) throw new Error("Invalid credentials");
+      // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      return {
+        ok: true,
+        message: "Login success",
+        token,
+        user,
+      };
+    },
+
+    loginAdmin: async (_: any, { email, password }: any) => {
+      const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+      const admin = rows[0];
+      if (!admin || admin.role !== "Administrator") throw new Error("Not admin");
+      // if (admin.password_hash !== hash(password)) throw new Error("Invalid credentials");
+
+      const token = jwt.sign(
+        { id: admin.id, email: admin.email, role: admin.role },
+        JWT_SECRET,
+        { expiresIn: "1d" }
+      );
+
+      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/admin" });
+      return true;
     },
     upsertPost: async (_:any, { id, data }:{id?:string, data:any}, ctx:any) => {
       console.log("[Mutation] upsertPost :", data);

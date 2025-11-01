@@ -147,6 +147,9 @@ export const typeDefs = /* GraphQL */ `
     # stats: Stats!
     latestUsers(limit: Int = 5): [DashboardUser!]!
     latestPosts(limit: Int = 5): [DashboardPost!]!
+
+
+   
   }
 
   input PostInput {
@@ -164,7 +167,13 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+    # login
     login(input: LoginInput!): LoginResult!
+    loginUser(input: LoginInput!): LoginResult!
+    loginAdmin(email: String!, password: String!): Boolean
+    loginMobile(email:String!, password:String!): LoginResult!
+
+
     upsertPost(id: ID, data: PostInput!): Post!
     deletePost(id: ID!): Boolean!
 
@@ -184,5 +193,7 @@ export const typeDefs = /* GraphQL */ `
     markChatReadUpTo(chat_id: ID!, cursor: String!): Boolean!
 
     deleteMessage(message_id: ID!): Boolean!
+
+    
   }
 `;

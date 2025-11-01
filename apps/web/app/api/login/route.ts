@@ -4,7 +4,7 @@ import { query } from "@/lib/db";
 // import crypto from "crypto";
 import * as jwt from "jsonwebtoken";
 
-const ADMIN_COOKIE = "ADMIN_SESSION";
+const ADMIN_COOKIE = "ADMIN_COOKIE";
 // const hash = (s:string)=> crypto.createHash("sha256").update(s).digest("hex");
 
 export async function POST(req: NextRequest){
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest){
 
   const token = jwt.sign(
     { sub:String(user.id), role:user.role, name:user.name, email:user.email },
-    process.env.JWT_SECRET || "dev_secret",
+    process.env.JWT_SECRET || "changeme_secret",
     { algorithm:"HS256", expiresIn:"7d" }
   );
 
