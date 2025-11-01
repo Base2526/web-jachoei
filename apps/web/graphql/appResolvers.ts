@@ -1,14 +1,26 @@
 import crypto from "crypto";
 import { GraphQLError } from "graphql/error";
+import bcrypt from 'bcryptjs';
 
 import { query, runInTransaction } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
+
+import * as jwt from "jsonwebtoken";
+import { cookies } from "next/headers";
+import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
 
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 
 type Iso = string;
+
+import { createHash } from "crypto";
+import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
+
+function sha256Hex(input: string) {
+  return createHash("sha256").update(input).digest("hex");
+}
 
 function requireAuth(ctx: any): string {
   const uid = ctx?.user?.id;
@@ -20,13 +32,26 @@ function requireAuth(ctx: any): string {
   return uid;
 }
 
+function requireUser(ctx: any) {
+  const user = ctx?.user;
+  if (!user) throw new Error("Unauthorized");
+  return user;
+}
+
+function requireAdmin(ctx: any) {
+  const admin = ctx?.admin;
+  if (!admin) throw new Error("Forbidden (admin only)");
+  return admin;
+}
+
 export const resolvers = {
   Query: {
     _health: () => "ok",
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
     posts: async (_:any, { search }:{search?:string}, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      // const author_id = requireAuth(ctx);
 
+      console.log("[resolvers-posts] ", ctx);
       if (search) {
         const { rows } = await query(
           `SELECT p.*, row_to_json(u.*) as author_json
@@ -123,20 +148,6 @@ export const resolvers = {
       }
       return out;
     },
-
-    // messages: async (_:any, { chat_id, limit=50, offset=0 }:{chat_id:string, limit?:number, offset?:number},  ctx: any) => {
-    //   console.log("[messages] :", chat_id);
-
-    //   const { rows } = await query(
-    //     `SELECT m.*, row_to_json(u.*) as sender_json
-    //      FROM messages m LEFT JOIN users u ON m.sender_id=u.id
-    //      WHERE m.chat_id=$1
-    //      ORDER BY m.created_at ASC
-    //      LIMIT $2 OFFSET $3`, [chat_id, limit, offset]
-    //   );
-    //   return rows.map((r: any)=>({ ...r, sender: r.sender_json, created_at: new Date(r.created_at).toISOString()}));
-    // },
-
     messages: async (
                       _: any,
                       { chat_id, limit = 50, offset = 0, includeDeleted = false }: { chat_id: string; limit?: number; offset?: number; includeDeleted?: boolean },
@@ -285,9 +296,48 @@ export const resolvers = {
       );
       return rows;
     },
+
+    stats: async (_:any, __:any, ctx:any) => {
+      const results = await Promise.all([
+        query(`SELECT COUNT(*)::int AS c FROM users`),
+        query(`SELECT COUNT(*)::int AS c FROM posts`),
+        query(`SELECT COUNT(*)::int AS c FROM files WHERE deleted_at IS NULL`),
+        query(`SELECT COUNT(*)::int AS c FROM system_logs`),
+      ]);
+
+      const [users, posts, files, logs] = results.map(( r:any)=> r.rows[0].c);
+
+      return { users, posts, files, logs };
+    },
+    latestUsers: async (_:any,{limit=5}:any, ctx:any)=>{
+      const {rows}=await query(`SELECT id,name,email,role,created_at FROM users ORDER BY created_at DESC LIMIT $1`,[limit]);
+      return rows;
+    },
+    latestPosts: async (_:any,{limit=5}:any, ctx:any)=>{
+      const {rows}=await query(`SELECT id,title,status,created_at FROM posts ORDER BY created_at DESC LIMIT $1`,[limit]);
+      return rows;
+    },
+    pending: async () => {
+      const [posts, users, files, logs] = await Promise.all([
+        query(`SELECT COUNT(*)::int AS c FROM posts WHERE status = 'pending'`),
+        query(`SELECT COUNT(*)::int AS c FROM users WHERE status = 'invited' OR email_verified = false`),
+        query(`SELECT COUNT(*)::int AS c FROM files WHERE category IS NULL AND deleted_at IS NULL`),
+        query(`SELECT COUNT(*)::int AS c FROM system_logs WHERE level = 'error' AND created_at >= NOW() - INTERVAL '24 hours'`)
+      ]);
+
+      return {
+        posts_awaiting_approval: posts.rows[0]?.c || 0,
+        users_pending_invite: users.rows[0]?.c || 0,
+        files_unclassified: files.rows[0]?.c || 0,
+        errors_last24h: logs.rows[0]?.c || 0,
+      };
+    },
+
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
+      
+      console.log("[login]");
       const { email, username, password } = input || {};
       if (!password || (!email && !username)) {
         throw new Error("Email/Username and password are required");
@@ -357,6 +407,120 @@ export const resolvers = {
         token,
         user,
       };
+    },
+
+    // loginUser: async (_: any, { email, password }: any) => {
+    loginUser: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
+      console.log("[loginUser] @1 ", input)
+      const { email, username, password } = input || {};
+      if (!password || (!email && !username)) {
+        throw new Error("Email/Username and password are required");
+      }
+
+      const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+      const user = rows[0];
+
+      console.log("[loginUser] @2 ", user)
+      if (!user) throw new Error("Invalid credentials");
+      // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      return {
+        ok: true,
+        message: "Login success",
+        token,
+        user,
+      };
+    },
+
+    loginAdmin: async (_: any, { email, password }: any) => {
+      const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+      const admin = rows[0];
+      if (!admin || admin.role !== "Administrator") throw new Error("Not admin");
+      // if (admin.password_hash !== hash(password)) throw new Error("Invalid credentials");
+
+      const token = jwt.sign(
+        { id: admin.id, email: admin.email, role: admin.role },
+        JWT_SECRET,
+        { expiresIn: "1d" }
+      );
+
+      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/admin" });
+      return true;
+    },
+
+    async registerUser(_: any, { input }: any) {
+      const { name, email, phone, password, agree } = input;
+      if (!agree) throw new Error('Please accept terms');
+      const { rows: exists } = await query('SELECT 1 FROM users WHERE email=$1', [email]);
+      if (exists.length) throw new Error('Email already registered');
+
+      const password_hash = await bcrypt.hash(password, 10);
+      const { rows: [u] } = await query(
+        `INSERT INTO users(name,email,phone,role,password_hash)
+        VALUES($1,$2,$3,'Subscriber',$4) RETURNING id,email,role`,
+        [name, email, phone, password_hash]
+      );
+
+      const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: true, path: '/' });
+
+      return true;
+    },
+
+    async requestPasswordReset(_: any, { email }: { email: string }, ctx: any) {
+      // 1) หา user จากอีเมล (อย่า leak ว่ามี/ไม่มี)
+      const { rows } = await query(`SELECT id, email FROM users WHERE email = $1`, [email]);
+      if (rows.length === 0) {
+        // กลับ true เสมอเพื่อไม่ให้เดาอีเมลง่าย
+        return true;
+      }
+      const user = rows[0];
+
+      // (ออปชัน) ทำ rate-limit by IP/email เพื่อลด spam
+
+      // 2) สร้าง token + insert
+      const { token } = await createResetToken(user.id);
+
+      // 3) สร้างลิงก์ไปหน้า /reset
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://yourapp.com";
+      const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
+
+      // 4) ส่งเมล
+      await sendPasswordResetEmail(user.email, resetUrl);
+      return true;
+    },
+
+    async resetPassword(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any) {
+      // 1) หา token
+      const { rows } = await query(
+        `SELECT prt.id, prt.user_id, prt.expires_at, prt.used
+           FROM password_reset_tokens prt
+           WHERE prt.token = $1`,
+        [token]
+      );
+      if (rows.length === 0) throw new Error("Invalid token");
+
+      const t = rows[0];
+      if (t.used) throw new Error("Token already used");
+      if (new Date(t.expires_at).getTime() < Date.now()) throw new Error("Token expired");
+
+      // 2) อัปเดตรหัสผ่าน (แนะนำใช้ bcrypt/argon2; ที่นี่ตัวอย่าง sha256 เพื่อความง่าย)
+      const password_hash = sha256Hex(newPassword);
+      await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [password_hash, t.user_id]);
+
+      // 3) มาร์ค token เป็นใช้แล้ว
+      await query(`UPDATE password_reset_tokens SET used = true WHERE id = $1`, [t.id]);
+
+      // (ออปชัน) revoke sessions อื่นๆ ของ user นี้
+
+      return true;
     },
     upsertPost: async (_:any, { id, data }:{id?:string, data:any}, ctx:any) => {
       console.log("[Mutation] upsertPost :", data);

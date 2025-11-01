@@ -53,10 +53,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_URL: ${REDIS_URL}
       NODE_ENV: development
+      STORAGE_DIR: /app/storage
     ports: ["3000:3000"]
     volumes:
       - ./apps/web:/app/apps/web
       - ./packages:/app/packages
+      - ./storage:/app/storage
     depends_on: [postgres, redis, ws]
 
 volumes:

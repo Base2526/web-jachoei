@@ -82,6 +82,42 @@ export const typeDefs = /* GraphQL */ `
   #  id: ID!, chat_id: ID!, sender_id: ID!, text: String!, created_at: String! 
   # }
 
+  type Stats {
+    users: Int!
+    posts: Int!
+    files: Int!
+    logs: Int!
+  }
+
+  type DashboardUser {
+    id: ID!
+    name: String
+    email: String
+    role: String
+    created_at: String
+  }
+
+  type DashboardPost {
+    id: ID!
+    title: String
+    status: String
+    created_at: String
+  }
+
+  type PendingSummary {
+    posts_awaiting_approval: Int!
+    users_pending_invite: Int!
+    files_unclassified: Int!
+    errors_last24h: Int!
+  }
+
+  type StatsSummary {
+    users: Int!
+    posts: Int!
+    files: Int!
+    logs: Int!
+  }
+
   type Query {
     _health: String!
     meRole: String!
@@ -104,6 +140,16 @@ export const typeDefs = /* GraphQL */ `
 
     unreadCount(chatId: ID!): Int!
     whoRead(messageId: ID!): [User!]!
+
+
+    stats: StatsSummary!
+    pending: PendingSummary!
+    # stats: Stats!
+    latestUsers(limit: Int = 5): [DashboardUser!]!
+    latestPosts(limit: Int = 5): [DashboardPost!]!
+
+
+   
   }
 
   input PostInput {
@@ -120,8 +166,23 @@ export const typeDefs = /* GraphQL */ `
     phone: String
   }
 
+  input RegisterInput {
+    name: String!
+    email: String!
+    phone: String
+    password: String!
+    agree: Boolean
+  }
+
   type Mutation {
+    # login
     login(input: LoginInput!): LoginResult!
+    loginUser(input: LoginInput!): LoginResult!
+    loginAdmin(email: String!, password: String!): Boolean
+    loginMobile(email:String!, password:String!): LoginResult!
+
+    registerUser(input: RegisterInput!): Boolean!
+
     upsertPost(id: ID, data: PostInput!): Post!
     deletePost(id: ID!): Boolean!
 
@@ -141,5 +202,8 @@ export const typeDefs = /* GraphQL */ `
     markChatReadUpTo(chat_id: ID!, cursor: String!): Boolean!
 
     deleteMessage(message_id: ID!): Boolean!
+
+    requestPasswordReset(email: String!): Boolean
+    resetPassword(token: String!, newPassword: String!): Boolean
   }
 `;

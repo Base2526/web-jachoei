@@ -5,10 +5,25 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+// import { verifyUserSession } from "@/lib/auth"
+
+import { verifyTokenString } from "@/lib/auth/token";
+
 const POSTS = gql`query($q:String){ posts(search:$q){ id title phone status created_at author { id name avatar } } }`;
 const DELETE_POST = gql`mutation ($id: ID!) { deletePost(id: $id) } `;
 
-function PostsList(){
+import { GetServerSideProps } from "next";
+import { verifyUserSessionFromReq } from "@/lib/auth/pages";
+
+// import { verifyUserSession } from "@/lib/auth/server"; 
+
+// export const getServerSideProps: GetServerSideProps = async ({ req }) => {
+//   const user = verifyUserSessionFromReq(req);
+//   if (!user) return { redirect: { destination: "/login?next=/account", permanent: false } };
+//   return { props: { user } };
+// };
+
+function PostsList({ user }: any){
   const [q, setQ] = useState('');
   const [isLogin, setIsLogin] = useState(false);
   const router = useRouter();
@@ -20,6 +35,13 @@ function PostsList(){
     // ตรวจว่า login ไหม (มี token)
     const token = localStorage.getItem("token");
     setIsLogin(!!token);
+    
+
+    // const user_session =  verifyUserSession();
+
+    // const user = verifyUserSession(); 
+
+    // console.log("[user_session]", user);
   }, []);
 
   useEffect(()=>{
@@ -84,10 +106,10 @@ function PostsList(){
       {/* <Link href="/post/new"><Button type="primary">+ New Post</Button></Link> */}
 
       {/* <Link href="/my/profile"><Button type="primary">My Profile</Button></Link> */}
-      <Link href="/my/posts"><Button type="primary">My Post</Button></Link>
+      {/* <Link href="/my/posts"><Button type="primary">My Post</Button></Link> */}
 
-      <Link href="/admin/users"><Button type="primary">Users</Button></Link>
-      <Link href="/chat"><Button type="primary">Chat UI</Button></Link>
+      {/* <Link href="/admin/users"><Button type="primary">Users</Button></Link> */}
+      {/* <Link href="/chat"><Button type="primary">Chat UI</Button></Link> */}
       {/* <Link href="/login">Login</Link> */}
 
       {/* {isLogin ? (
