@@ -88,7 +88,7 @@ export default function Page() {
 
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
             <Button type="link" href="/register">Register</Button>
-            <Button type="link" href="/forgot-password">Forgot password?</Button>
+            <Button type="link" href="/forgot">Forgot password?</Button>
           </Space>
         </Space>
       </Form>

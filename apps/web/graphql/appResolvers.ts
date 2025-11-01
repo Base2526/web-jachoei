@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { GraphQLError } from "graphql/error";
+import bcrypt from 'bcryptjs';
 
 import { query, runInTransaction } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
@@ -13,6 +14,13 @@ const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 
 type Iso = string;
+
+import { createHash } from "crypto";
+import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
+
+function sha256Hex(input: string) {
+  return createHash("sha256").update(input).digest("hex");
+}
 
 function requireAuth(ctx: any): string {
   const uid = ctx?.user?.id;
@@ -444,6 +452,74 @@ export const resolvers = {
       );
 
       cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/admin" });
+      return true;
+    },
+
+    async registerUser(_: any, { input }: any) {
+      const { name, email, phone, password, agree } = input;
+      if (!agree) throw new Error('Please accept terms');
+      const { rows: exists } = await query('SELECT 1 FROM users WHERE email=$1', [email]);
+      if (exists.length) throw new Error('Email already registered');
+
+      const password_hash = await bcrypt.hash(password, 10);
+      const { rows: [u] } = await query(
+        `INSERT INTO users(name,email,phone,role,password_hash)
+        VALUES($1,$2,$3,'Subscriber',$4) RETURNING id,email,role`,
+        [name, email, phone, password_hash]
+      );
+
+      const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: true, path: '/' });
+
+      return true;
+    },
+
+    async requestPasswordReset(_: any, { email }: { email: string }, ctx: any) {
+      // 1) หา user จากอีเมล (อย่า leak ว่ามี/ไม่มี)
+      const { rows } = await query(`SELECT id, email FROM users WHERE email = $1`, [email]);
+      if (rows.length === 0) {
+        // กลับ true เสมอเพื่อไม่ให้เดาอีเมลง่าย
+        return true;
+      }
+      const user = rows[0];
+
+      // (ออปชัน) ทำ rate-limit by IP/email เพื่อลด spam
+
+      // 2) สร้าง token + insert
+      const { token } = await createResetToken(user.id);
+
+      // 3) สร้างลิงก์ไปหน้า /reset
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://yourapp.com";
+      const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
+
+      // 4) ส่งเมล
+      await sendPasswordResetEmail(user.email, resetUrl);
+      return true;
+    },
+
+    async resetPassword(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any) {
+      // 1) หา token
+      const { rows } = await query(
+        `SELECT prt.id, prt.user_id, prt.expires_at, prt.used
+           FROM password_reset_tokens prt
+           WHERE prt.token = $1`,
+        [token]
+      );
+      if (rows.length === 0) throw new Error("Invalid token");
+
+      const t = rows[0];
+      if (t.used) throw new Error("Token already used");
+      if (new Date(t.expires_at).getTime() < Date.now()) throw new Error("Token expired");
+
+      // 2) อัปเดตรหัสผ่าน (แนะนำใช้ bcrypt/argon2; ที่นี่ตัวอย่าง sha256 เพื่อความง่าย)
+      const password_hash = sha256Hex(newPassword);
+      await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [password_hash, t.user_id]);
+
+      // 3) มาร์ค token เป็นใช้แล้ว
+      await query(`UPDATE password_reset_tokens SET used = true WHERE id = $1`, [t.id]);
+
+      // (ออปชัน) revoke sessions อื่นๆ ของ user นี้
+
       return true;
     },
     upsertPost: async (_:any, { id, data }:{id?:string, data:any}, ctx:any) => {

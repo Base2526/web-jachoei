@@ -124,28 +124,15 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
             </>
           }
           
-          <Tooltip title="ศูนย์ช่วยเหลือ">
-            <Button type="text" onClick={() => router.push("/help")} icon={<QuestionCircleOutlined style={{ fontSize: 18, color: "#000" }} />} />
-          </Tooltip>
+          
 
-          <Tooltip title="ธีม">
+          {/* <Tooltip title="ธีม">
             <Button type="text" icon={<BulbOutlined style={{ fontSize: 18, color: "#000" }} />} />
-          </Tooltip>
+          </Tooltip> */}
 
          
           {/* สลับภาษา */}
-          <Dropdown
-            menu={{ items: languageceries(languageMenu) }}
-            trigger={["click"]}
-            placement="bottomRight"
-            arrow
-            overlayStyle={{ minWidth: 160 }}
-          >
-            <Button type="text" icon={<GlobalOutlined />} onClick={e => e.preventDefault()}>
-              <span style={{ marginLeft: 6 }}>{labelOf[currentLang]}</span>
-            </Button>
-          </Dropdown>
-
+         
           {/* ถ้าล็อกอินแล้ว: แสดงโปรไฟล์ / ไม่ล็อกอิน: แสดงปุ่ม Login / Register */}
           {isAuthed ? (
             <Dropdown menu={{ items: profileMenu }} trigger={["click"]} placement="bottomRight" arrow>
@@ -161,6 +148,23 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
               </Button>
             </Space>
           )}
+
+          <Dropdown
+            menu={{ items: languageceries(languageMenu) }}
+            trigger={["click"]}
+            placement="bottomRight"
+            arrow
+            overlayStyle={{ minWidth: 160 }}
+          >
+            <Button type="text" icon={<GlobalOutlined />} onClick={e => e.preventDefault()}>
+              <span style={{ marginLeft: 6 }}>{labelOf[currentLang]}</span>
+            </Button>
+          </Dropdown>
+
+
+          <Tooltip title="ศูนย์ช่วยเหลือ">
+            <Button type="text" onClick={() => router.push("/help")} icon={<QuestionCircleOutlined style={{ fontSize: 18, color: "#000" }} />} />
+          </Tooltip>
         </Space>
       </Header>
 

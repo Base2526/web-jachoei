@@ -166,6 +166,14 @@ export const typeDefs = /* GraphQL */ `
     phone: String
   }
 
+  input RegisterInput {
+    name: String!
+    email: String!
+    phone: String
+    password: String!
+    agree: Boolean
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -173,6 +181,7 @@ export const typeDefs = /* GraphQL */ `
     loginAdmin(email: String!, password: String!): Boolean
     loginMobile(email:String!, password:String!): LoginResult!
 
+    registerUser(input: RegisterInput!): Boolean!
 
     upsertPost(id: ID, data: PostInput!): Post!
     deletePost(id: ID!): Boolean!
@@ -194,6 +203,7 @@ export const typeDefs = /* GraphQL */ `
 
     deleteMessage(message_id: ID!): Boolean!
 
-    
+    requestPasswordReset(email: String!): Boolean
+    resetPassword(token: String!, newPassword: String!): Boolean
   }
 `;
