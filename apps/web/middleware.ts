@@ -1,7 +1,9 @@
 // apps/web/middleware.ts
 import { NextRequest, NextResponse } from "next/server";
-const ADMIN_COOKIE = "ADMIN_SESSION";
+import { ADMIN_COOKIE } from "./lib/auth/token"
+
 const PUBLIC = ["/admin/login"];
+
 
 export const config = {
   // จงใจรวมทั้ง /admin/** และ /api/** ด้วย
@@ -21,7 +23,6 @@ export function middleware(req: NextRequest) {
 
   if (!token) return redirectToLogin(req);
 
-  
 
   // const pathname = url.pathname; // "/admin/posts"
   // const hostname = url.hostname; // "admin.example.com"

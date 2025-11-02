@@ -31,7 +31,7 @@ const handler = startServerAndCreateNextHandler(server, {
     const admin = verifyAdminSession(); // อ่าน cookie ฝั่ง server
     const user  = verifyUserSession();
 
-    console.log("[graphql-handler] x-scope:", scope ); // ควรเห็นค่าแล้ว
+    // console.log("[graphql-handler] x-scope:", scope ); // ควรเห็นค่าแล้ว
     return { scope, admin, user };
   },
   /*

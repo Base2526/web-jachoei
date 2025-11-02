@@ -49,9 +49,8 @@ export const resolvers = {
     _health: () => "ok",
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
     posts: async (_:any, { search }:{search?:string}, ctx: any) => {
-      // const author_id = requireAuth(ctx);
+      console.log("[Query] posts :", ctx);
 
-      console.log("[resolvers-posts] ", ctx);
       if (search) {
         const { rows } = await query(
           `SELECT p.*, row_to_json(u.*) as author_json
@@ -69,7 +68,7 @@ export const resolvers = {
       return rows.map((r: { author_json: any; })=>({ ...r, author: r.author_json }));
     },
     post: async (_:any, { id }:{id:string}, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      console.log("[Query] post :", ctx);
 
       const { rows } = await query(
         `SELECT p.*, row_to_json(u.*) as author_json
@@ -439,20 +438,49 @@ export const resolvers = {
       };
     },
 
-    loginAdmin: async (_: any, { email, password }: any) => {
+    // loginAdmin: async (_: any, { email, password }: any) => {
+    //   const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+    //   const admin = rows[0];
+    //   if (!admin || admin.role !== "Administrator") throw new Error("Not admin");
+    //   // if (admin.password_hash !== hash(password)) throw new Error("Invalid credentials");
+
+    //   const token = jwt.sign(
+    //     { id: admin.id, email: admin.email, role: admin.role },
+    //     JWT_SECRET,
+    //     { expiresIn: "1d" }
+    //   );
+
+    //   cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/admin" });
+    //   return true;
+    // },
+
+    loginAdmin: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
+      console.log("[loginAdmin] @1 ", input)
+      const { email, username, password } = input || {};
+      if (!password || (!email && !username)) {
+        throw new Error("Email/Username and password are required");
+      }
+
       const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
-      const admin = rows[0];
-      if (!admin || admin.role !== "Administrator") throw new Error("Not admin");
-      // if (admin.password_hash !== hash(password)) throw new Error("Invalid credentials");
+      const user = rows[0];
+
+      console.log("[loginAdmin] @2 ", user)
+      if (!user) throw new Error("Invalid credentials");
+      // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
 
       const token = jwt.sign(
-        { id: admin.id, email: admin.email, role: admin.role },
+        { id: user.id, email: user.email, role: user.role },
         JWT_SECRET,
         { expiresIn: "1d" }
       );
 
-      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/admin" });
-      return true;
+      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      return {
+        ok: true,
+        message: "Login success",
+        token,
+        user,
+      };
     },
 
     async registerUser(_: any, { input }: any) {

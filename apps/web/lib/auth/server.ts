@@ -12,6 +12,10 @@ export function verifyUserSession(): JWTPayload | null {
 export function verifyAdminSession(): JWTPayload | null {
   const token = cookies().get(ADMIN_COOKIE)?.value;
   const payload = verifyTokenString(token);
-  if (payload?.role !== "Administrator") return null;
+
+  // console.log("[verifyAdminSession]", payload, token);
+  // if (payload?.role !== "Administrator") return null;
+
+  // if (!payload?.role) return null;
   return payload;
 }

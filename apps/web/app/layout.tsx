@@ -4,38 +4,51 @@ import React, { useEffect, useState, useMemo} from "react";
 import { ApolloProvider } from "@apollo/client";
 import { client } from "lib/apollo"
 
-import { getStoredUser, type StoredUser } from "@/utils/storage";
+// import { getStoredUser, type StoredUser } from "@/utils/storage";
 import GlobalChatSub from "@/components/GlobalChatSub";
+import { SessionProvider, useSessionCtx } from '@/lib/session-context';
+// import { useSession } from '@/lib/useSession'
 
-
-export default function RootLayout({ children }: { children: React.ReactNode }){
-
-  const user: StoredUser | null = useMemo(() => getStoredUser(), []);
-  const [meId, setMeId] = useState<string>("");
+function GlobalWires() {
+  const { user, admin } = useSessionCtx();
+  const meId = user?.id?.toString() || admin?.id?.toString() || '';
 
   useEffect(() => {
-    setMeId(user?.id || "");
-
-    // force-logout event ที่คุณมีอยู่เดิม
     const h = () => {
-      console.log("force logout triggered!");
-      localStorage.removeItem("token");
-      window.location.href = "/login";
+      console.log('force logout triggered!');
+      window.location.href = '/login';
     };
-    window.addEventListener("force-logout", h);
-    return () => window.removeEventListener("force-logout", h);
+    window.addEventListener('force-logout', h);
+    return () => window.removeEventListener('force-logout', h);
   }, []);
 
-  useEffect(()=>{
-    console.log("[meId]", meId);
-  }, [meId])
+  return meId ? <GlobalChatSub meId={meId} client={client} /> : null;
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }){
+  // const { user, admin } = useSession();
+  // const meId = user?.id?.toString() || admin?.id?.toString() || "";
+
+  // useEffect(() => {
+  //   const h = () => {
+  //     console.log("force logout triggered!");
+  //     // ไม่ต้องยุ่งกับ localStorage แล้ว ถ้าใช้ cookie httpOnly
+  //     window.location.href = "/login";
+  //   };
+  //   window.addEventListener("force-logout", h);
+  //   return () => window.removeEventListener("force-logout", h);
+  // }, []);
 
   return (
     <html lang="en"><body>
       <ApolloProvider client={client}>
-        {/* subscriber ทั้งแอป */}
-        {meId ? <GlobalChatSub meId={meId} client={client}/> : null}
-        {children}
+        {/* {meId ? <GlobalChatSub meId={meId} client={client}/> : null}
+        {children} */}
+
+        <SessionProvider>
+          <GlobalWires />
+          {children}
+        </SessionProvider>
       </ApolloProvider>
     </body></html>
   );

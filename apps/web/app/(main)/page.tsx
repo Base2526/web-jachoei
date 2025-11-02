@@ -1,9 +1,20 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Table, Input, Space, Button, Tag, Popconfirm, message } from "antd";
+import { Table, Input, Space, Button, Tag, Popconfirm, message, Tooltip } from "antd";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  EyeOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  MessageOutlined,
+  BookOutlined
+} from "@ant-design/icons";
+
+// import { useSession } from '@/lib/useSession'
+
+import { useSessionCtx } from '@/lib/session-context';
 
 // import { verifyUserSession } from "@/lib/auth"
 
@@ -12,8 +23,8 @@ import { verifyTokenString } from "@/lib/auth/token";
 const POSTS = gql`query($q:String){ posts(search:$q){ id title phone status created_at author { id name avatar } } }`;
 const DELETE_POST = gql`mutation ($id: ID!) { deletePost(id: $id) } `;
 
-import { GetServerSideProps } from "next";
-import { verifyUserSessionFromReq } from "@/lib/auth/pages";
+// import { GetServerSideProps } from "next";
+// import { verifyUserSessionFromReq } from "@/lib/auth/pages";
 
 // import { verifyUserSession } from "@/lib/auth/server"; 
 
@@ -23,7 +34,7 @@ import { verifyUserSessionFromReq } from "@/lib/auth/pages";
 //   return { props: { user } };
 // };
 
-function PostsList({ user }: any){
+function PostsList(){
   const [q, setQ] = useState('');
   const [isLogin, setIsLogin] = useState(false);
   const router = useRouter();
@@ -31,18 +42,26 @@ function PostsList({ user }: any){
   const { data, refetch } = useQuery(POSTS,{ variables:{ q:'' }});
   const [deletePost, { loading: deleting }] = useMutation(DELETE_POST);
 
+  // const { user, isAuthenticated, loading } = useSession('web')
+
+  const { user, admin, isAuthenticated, loading } = useSessionCtx();
+
   useEffect(() => {
     // ตรวจว่า login ไหม (มี token)
-    const token = localStorage.getItem("token");
-    setIsLogin(!!token);
+    // const token = localStorage.getItem("token");
+    // setIsLogin(!!token);
     
 
     // const user_session =  verifyUserSession();
 
     // const user = verifyUserSession(); 
 
-    // console.log("[user_session]", user);
+    // console.log("[user_session]", user, isAuthenticated, loading);
   }, []);
+
+  // useEffect(()=>{
+  //   if(!loading) console.log('[user_session-web]', user, isAuthenticated, loading);
+  // }, [loading, user, isAuthenticated]);
 
   useEffect(()=>{
     console.log("PostsList : [data] =", data);
@@ -72,53 +91,117 @@ function PostsList({ user }: any){
     router.push("/login");
   };
 
+  function handleClick(e: React.MouseEvent) {
+    if (loading) return; // ยังเช็ก session ไม่เสร็จ
+    if (!isAuthenticated) {
+      e.preventDefault(); // ยกเลิกการเปิด Link ปกติ
+      message.info('Please login first');
+      // router.push('/login?next=' + encodeURIComponent(`/chat?to=${toId}`));
+      router.push('/login');
+    }
+  }
+
   const cols = [
     { title:'Title', dataIndex:'title' },
     { title:'Phone', dataIndex:'phone' },
     { title:'Status', dataIndex:'status', render:(s:string)=><Tag color={s==='public'?'green':'red'}>{s}</Tag> },
     { title:'Author', render:(_:any,r:any)=>r.author?.name || '-' },
-    { title:'Action', render:(_:any,r:any)=><Space>
-        <Link href={`/post/${r.id}`}>view</Link>
-        <Link href={`/post/${r.id}/edit`}>edit</Link>
-        <Popconfirm
+    { title:'Action', render:(_:any,r:any)=>
+      // <Space>
+      //   <Link href={`/post/${r.id}`}>view</Link>
+      //   <Link href={`/post/${r.id}/edit`}>edit</Link>
+      //   <Popconfirm
+      //       title="Confirm delete?"
+      //       onConfirm={() => handleDelete(r.id)}
+      //       okText="Yes"
+      //       cancelText="No"
+      //     >
+      //       <Button
+      //         type="link"
+      //         danger
+      //         size="small"
+      //         loading={deleting}
+      //       >
+      //         delete
+      //       </Button>
+      //     </Popconfirm>
+
+      //      {r.author?.id ? <Link href={`/chat?to=${r.author.id}`}>chat</Link> : null}
+      // </Space> 
+      <Space>
+
+        {/*  */}
+        <Tooltip title="View">
+          <Link href={`/post/${r.id}`} prefetch={false}>
+            <Button
+              type="text"
+              size="small"
+              icon={<BookOutlined />}
+            />
+          </Link>
+        </Tooltip>
+
+        <Tooltip title="View">
+          <Link href={`/post/${r.id}`} prefetch={false}>
+            <Button
+              type="text"
+              size="small"
+              icon={<EyeOutlined />}
+            />
+          </Link>
+        </Tooltip>
+
+        {
+          user && 
+          <Tooltip title="Edit">
+            <Link href={`/post/${r.id}/edit`} prefetch={false}>
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+              />
+            </Link>
+          </Tooltip>
+        }
+        
+        {
+          user && 
+          <Popconfirm
             title="Confirm delete?"
-            onConfirm={() => handleDelete(r.id)}
             okText="Yes"
             cancelText="No"
+            onConfirm={() => handleDelete(r.id)}
           >
-            <Button
-              type="link"
-              danger
-              size="small"
-              loading={deleting}
-            >
-              delete
-            </Button>
+            <Tooltip title="Delete">
+              <Button
+                type="text"
+                size="small"
+                danger
+                loading={deleting}
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
           </Popconfirm>
-
-           {r.author?.id ? <Link href={`/chat?to=${r.author.id}`}>chat</Link> : null}
-      </Space> }
+        }
+        
+        {r.author?.id ? (
+          <Tooltip title="Chat">
+            <Link href={`/chat?to=${r.author.id}`} prefetch={false}  onClick={handleClick}>
+              <Button
+                type="text"
+                size="small"
+                icon={<MessageOutlined />}
+              />
+            </Link>
+          </Tooltip>
+        ) : null}
+      </Space>
+    }
   ];
   return (<>
     <Space style={{marginBottom:16}}>
       <Input placeholder="Search title/phone" value={q} onChange={e=>setQ(e.target.value)} />
       <Button onClick={()=>refetch({ q })}>Search</Button>
-      {/* <Link href="/post/new"><Button type="primary">+ New Post</Button></Link> */}
-
-      {/* <Link href="/my/profile"><Button type="primary">My Profile</Button></Link> */}
-      {/* <Link href="/my/posts"><Button type="primary">My Post</Button></Link> */}
-
-      {/* <Link href="/admin/users"><Button type="primary">Users</Button></Link> */}
-      {/* <Link href="/chat"><Button type="primary">Chat UI</Button></Link> */}
-      {/* <Link href="/login">Login</Link> */}
-
-      {/* {isLogin ? (
-          <Button onClick={handleLogout} danger>
-            Logout
-          </Button>
-        ) : (
-          <Link href="/login">Login</Link>
-        )} */}
     </Space>
     <Table rowKey="id" dataSource={data?.posts||[]} columns={cols as any} />
   </>);
