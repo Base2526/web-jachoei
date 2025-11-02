@@ -22,7 +22,7 @@ export default function AdminHeader() {
     { text: 'Posts', icon: <FileTextOutlined />, href: '/admin/posts', badge: 2 },
     { text: 'Files', icon: <FileImageOutlined />, href: '/admin/files', badge: 5 },
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
-    { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/fake', badge: 0 },
+    { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },
   ];
 
   const router = useRouter();

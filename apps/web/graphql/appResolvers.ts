@@ -230,8 +230,7 @@ export const resolvers = {
       return results;
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {
-
-      const author_id = requireAuth(ctx);
+      // const author_id = requireAuth(ctx);
 
       if (search) {
         const { rows } = await query(
