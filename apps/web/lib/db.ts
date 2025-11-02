@@ -1,15 +1,3 @@
-// import { Pool } from 'pg';
-
-// const pool = new Pool({
-//   host: process.env.POSTGRES_HOST || 'localhost',
-//   port: Number(process.env.POSTGRES_PORT || 5432),
-//   database: process.env.POSTGRES_DB || 'appdb',
-//   user: process.env.POSTGRES_USER || 'app',
-//   password: process.env.POSTGRES_PASSWORD || 'app',
-// });
-
-// export const query = (text: string, params?: any[]) => pool.query(text, params);
-
 import { Pool, PoolClient, QueryResult } from "pg";
 
 const pool = new Pool({
@@ -20,9 +8,37 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD || "app",
 });
 
+// helper: แปลง params เป็น string สำหรับ debug
+function formatParams(params?: any[]): string {
+  if (!params) return "";
+  return params.map((p, i) => `$${i + 1}=${JSON.stringify(p)}`).join(", ");
+}
+
 // ใช้สำหรับ query ปกติ (auto-acquire/auto-release)
-export const query = <T = any>(text: string, params?: any[]): Promise<QueryResult<T>> =>
-  pool.query<T>(text, params);
+// export const query = <T = any>(text: string, params?: any[]): Promise<QueryResult<T>> =>
+//   pool.query<T>(text, params);
+
+export async function query<T = any>(
+  text: string,
+  params?: any[]
+): Promise<QueryResult<T>> {
+  const start = Date.now();
+  try {
+    const res = await pool.query<T>(text, params);
+    const duration = Date.now() - start;
+
+    // === Print log after successful query ===
+    console.log(
+      `[SQL ${duration}ms]\n${text.trim()}\nParams: ${formatParams(params)}`
+    );
+    return res;
+  } catch (err: any) {
+    console.error(
+      `[SQL ERROR] ${err.message}\n${text.trim()}\nParams: ${formatParams(params)}`
+    );
+    throw err;
+  }
+}
 
 /**
  * รันงานภายใน Transaction ให้หมดใน callback

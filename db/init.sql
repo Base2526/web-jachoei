@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
   phone TEXT,
   email TEXT UNIQUE,
   role TEXT NOT NULL DEFAULT 'Subscriber',
+  meta TEXT,
+  fake_test BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS files (
@@ -23,6 +25,8 @@ CREATE TABLE IF NOT EXISTS posts (
   phone TEXT,
   author_id UUID REFERENCES users(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'public',
+  meta TEXT,
+  fake_test BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
