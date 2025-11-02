@@ -1,15 +1,17 @@
 'use client';
 import React from 'react';
 import Link from 'next/link';
-import { Space, Button, Badge, Typography, Layout } from 'antd';
+import { Space, Button, Badge, Typography, Layout, message } from 'antd';
 import {
   UserOutlined,
   FileTextOutlined,
   FileImageOutlined,
   DatabaseOutlined,
   LogoutOutlined,
+  SnippetsOutlined 
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
+import { useSession } from '@/lib/useSession'
 
 const { Title } = Typography;
 const { Header } = Layout;
@@ -20,12 +22,30 @@ export default function AdminHeader() {
     { text: 'Posts', icon: <FileTextOutlined />, href: '/admin/posts', badge: 2 },
     { text: 'Files', icon: <FileImageOutlined />, href: '/admin/files', badge: 5 },
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
+    { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/fake', badge: 0 },
   ];
 
   const router = useRouter();
-  async function logout() {
-    await fetch('/api/logout', { method: 'POST' });
-    router.replace('/admin/login');
+  // async function logout() {
+  //   await fetch('/api/logout', { method: 'POST' });
+  //   router.replace('/admin/login');
+  // }
+
+  const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()
+
+  // /admin/api/auth/me
+  async function onLogout() {
+    const res = await fetch("/api/auth/logout-admin", { method: "POST" });
+
+    console.log("[onLogout-Admin] res :", res.ok);
+    refreshSession();
+    if (res.ok) {
+      message.success("Logged out");
+      refreshSession(); // รีโหลดสถานะ session
+      window.location.href = "/admin/login"; // หรือ router.push('/login');
+    } else {
+      message.error("Logout failed");
+    }
   }
 
   return (
@@ -69,7 +89,7 @@ export default function AdminHeader() {
         {/* Right */}
         <Button
           icon={<LogoutOutlined />}
-          onClick={logout}
+          onClick={onLogout}
           danger
           type="primary"
           style={{ minWidth: 100 }}

@@ -13,6 +13,8 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { useSession } from '@/lib/useSession'
+
 const { Header } = Layout;
 const { Text } = Typography;
 
@@ -36,9 +38,12 @@ function readCookie(name: string) {
 
 export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }) {
   const router = useRouter();
-  const [isAuthed, setIsAuthed] = useState(false);
+  // const [isAuthed, setIsAuthed] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [registerOpen, setRegisterOpen] = useState(false);
+
+
+  const { user: userSession, loading, refreshSession } = useSession()
 
   // ----- auth check: มี token ไหม (ทั้ง cookie / localStorage) -----
   useEffect(() => {
@@ -48,13 +53,16 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
     // setIsAuthed(Boolean(has));
   }, []);
 
-  const onLogout = () => {
-    localStorage.removeItem("token");
-    document.cookie = "token=; Max-Age=0; path=/";
-    message.info("You have been logged out");
-    setIsAuthed(false);
-    router.push("/login");
-  };
+  async function onLogout() {
+    const res = await fetch("/api/auth/logout", { method: "POST" });
+    if (res.ok) {
+      message.success("Logged out");
+      refreshSession(); // รีโหลดสถานะ session
+      window.location.href = "/"; // หรือ router.push('/login');
+    } else {
+      message.error("Logout failed");
+    }
+  }
 
   const currentLang = (readCookie("lang") as Lang) || "th";
   const changeLang = (lang: Lang) => {
@@ -108,22 +116,36 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
         {/* ขวา */}
         <Space size={8} align="center">
           {
-            isAuthed && 
+            userSession && 
             <>
               <Tooltip title="ตะกร้าสินค้า">
                 <Button type="text" icon={<ShoppingCartOutlined style={{ fontSize: 18, color: "#000" }} />} />
               </Tooltip>
 
               <Tooltip title="ข้อความ">
-                <Button type="text" onClick={() => isAuthed ? router.push("/chat") : setLoginOpen(true)} icon={<MessageOutlined style={{ fontSize: 18, color: "#000" }} />} />
+                <Button type="text" onClick={() => userSession ? router.push("/chat") : setLoginOpen(true)} icon={<MessageOutlined style={{ fontSize: 18, color: "#000" }} />} />
               </Tooltip>
 
               <Tooltip title="แจ้งเตือน">
-                <Button type="text" onClick={() => isAuthed ? router.push("/notifications") : setLoginOpen(true)} icon={<BellOutlined style={{ fontSize: 18, color: "#000" }} />} />
+                <Button type="text" onClick={() => userSession ? router.push("/notifications") : setLoginOpen(true)} icon={<BellOutlined style={{ fontSize: 18, color: "#000" }} />} />
               </Tooltip>
             </>
           }
           
+          <Dropdown
+            menu={{ items: languageceries(languageMenu) }}
+            trigger={["click"]}
+            placement="bottomRight"
+            arrow
+            overlayStyle={{ minWidth: 160 }}
+          >
+            <Button type="text" icon={<GlobalOutlined />} onClick={e => e.preventDefault()}>
+              <span style={{ marginLeft: 6 }}>{labelOf[currentLang]}</span>
+            </Button>
+          </Dropdown>
+          <Tooltip title="ศูนย์ช่วยเหลือ">
+            <Button type="text" onClick={() => router.push("/help")} icon={<QuestionCircleOutlined style={{ fontSize: 18, color: "#000" }} />} />
+          </Tooltip>
           
 
           {/* <Tooltip title="ธีม">
@@ -134,7 +156,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
           {/* สลับภาษา */}
          
           {/* ถ้าล็อกอินแล้ว: แสดงโปรไฟล์ / ไม่ล็อกอิน: แสดงปุ่ม Login / Register */}
-          {isAuthed ? (
+          {userSession ? (
             <Dropdown menu={{ items: profileMenu }} trigger={["click"]} placement="bottomRight" arrow>
               <Avatar size={36} style={{ background: "#666", cursor: "pointer" }} icon={<UserOutlined />} />
             </Dropdown>
@@ -149,22 +171,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
             </Space>
           )}
 
-          <Dropdown
-            menu={{ items: languageceries(languageMenu) }}
-            trigger={["click"]}
-            placement="bottomRight"
-            arrow
-            overlayStyle={{ minWidth: 160 }}
-          >
-            <Button type="text" icon={<GlobalOutlined />} onClick={e => e.preventDefault()}>
-              <span style={{ marginLeft: 6 }}>{labelOf[currentLang]}</span>
-            </Button>
-          </Dropdown>
-
-
-          <Tooltip title="ศูนย์ช่วยเหลือ">
-            <Button type="text" onClick={() => router.push("/help")} icon={<QuestionCircleOutlined style={{ fontSize: 18, color: "#000" }} />} />
-          </Tooltip>
+          
         </Space>
       </Header>
 

@@ -5,6 +5,7 @@ import { UserOutlined, FileTextOutlined, FileImageOutlined, DatabaseOutlined } f
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
 
+import { useSession } from '@/lib/useSession'
 
 const { Title } = Typography;
 
@@ -31,6 +32,9 @@ export default function AdminDashboard() {
   const s = data?.stats ?? { users:0, posts:0, files:0, logs:0 };
   const p = data?.pending ?? { posts_awaiting_approval:0, users_pending_invite:0, files_unclassified:0, errors_last24h:0 };
 
+
+  const { admin: adminSession, isAuthenticated, loading: sessionLoading } = useSession()
+
   // ===== Quick Actions (ปุ่มลัด + Badge) =====
   const quick = [
     { href:'/admin/users',  text:'Users', icon:<UserOutlined/>,  badge: 1/*p.users_pending_invite */ },
@@ -38,6 +42,10 @@ export default function AdminDashboard() {
     { href:'/admin/files',  text:'Files', icon:<FileImageOutlined/>, badge: 2/* p.files_unclassified */ },
     { href:'/admin/logs',   text:'Logs',  icon:<DatabaseOutlined/>, badge: 1/*p.errors_last24h*/  },
   ];
+
+  useEffect(()=>{
+    if(!sessionLoading) console.log('[useSession-admin]', adminSession, isAuthenticated, sessionLoading);
+  }, [sessionLoading, adminSession, isAuthenticated]);
 
   useEffect(()=>{
     console.log("[data]", data, data?.latestPosts);

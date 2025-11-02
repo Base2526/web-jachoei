@@ -37,16 +37,16 @@ export default function Page() {
       }
 
       // เก็บ token แบบง่าย (แนะนำทำ httpOnly cookie ที่ฝั่ง server ในงานจริง)
-      if (res.token) {
-        localStorage.setItem("user", JSON.stringify(res.user));
-        localStorage.setItem('token', res.token);
-        document.cookie = `token=${res.token}; path=/; samesite=lax`;
-      }
+      // if (res.token) {
+      //   // localStorage.setItem("user", JSON.stringify(res.user));
+      //   // localStorage.setItem('token', res.token);
+      //   // document.cookie = `token=${res.token}; path=/; samesite=lax`;
+      // }
 
       message.success(`Welcome ${res.user?.name || ''}!`);
       // TODO: redirect ถ้าต้องการ เช่น window.location.href = '/'
 
-      // window.location.href = "/";
+      window.location.href = "/";
     } catch (err: any) {
       message.error(err?.message || 'Login failed');
     }

@@ -178,7 +178,7 @@ export const typeDefs = /* GraphQL */ `
     # login
     login(input: LoginInput!): LoginResult!
     loginUser(input: LoginInput!): LoginResult!
-    loginAdmin(email: String!, password: String!): Boolean
+    loginAdmin(input: LoginInput!): LoginResult!
     loginMobile(email:String!, password:String!): LoginResult!
 
     registerUser(input: RegisterInput!): Boolean!
