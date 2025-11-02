@@ -35,9 +35,9 @@ export default function AdminHeader() {
 
   // /admin/api/auth/me
   async function onLogout() {
-    const res = await fetch("/admin/api/auth/logout", { method: "POST" });
+    const res = await fetch("/api/auth/logout-admin", { method: "POST" });
 
-    console.log("[onLogout] res :", res.ok);
+    console.log("[onLogout-Admin] res :", res.ok);
     refreshSession();
     if (res.ok) {
       message.success("Logged out");
