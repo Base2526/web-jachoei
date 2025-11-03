@@ -242,7 +242,7 @@ function PostsPanel(){
     { title:'Status', dataIndex:'status', render:(s:string)=><Tag color={s==='public'?'green':'red'}>{s}</Tag> },
     { title:'Action', render:(_:any,r:any)=>(
         <Space>
-          <a href={`/post/${r.id}`}>edit</a>
+          <a href={`/post/${r.id}/edit`}>edit</a>
           <a onClick={()=>{
             if(confirm('Delete this post?')){
               (async ()=>{
@@ -252,7 +252,7 @@ function PostsPanel(){
               })();
             }
           }}>delete</a>
-          <a href={`/post/${r.id}`}>view</a>
+          <a href={`/post/${r.id}/view`}>view</a>
         </Space>
       )
     }
@@ -319,7 +319,7 @@ export default function SettingsPage() {
         breakpoint="lg"
         style={{ background: 'transparent', borderRight: '1px solid #f0f0f0' }}
       >
-        <Card bodyStyle={{ padding: 0 }}>
+        <Card style={{ padding: 0 }}>
           <Menu
             mode="inline"
             selectedKeys={[active]}

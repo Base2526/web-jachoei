@@ -15,7 +15,7 @@ function MyPostsList(){
     { title:'Phone', dataIndex:'phone' },
     { title:'Status', dataIndex:'status', render:(s:string)=><Tag color={s==='public'?'green':'red'}>{s}</Tag> },
     { title:'Action', render:(_:any,r:any)=><Space>
-        <a href={`/post/${r.id}`}>edit</a>
+        <a href={`/post/${r.id}/edit`}>edit [x]</a>
         <a onClick={()=>{
           Modal.confirm({
             title: 'Delete this post?',
@@ -26,7 +26,7 @@ function MyPostsList(){
             }
           });
         }}>delete</a>
-        <a href={`/post/${r.id}`}>view</a>
+        <a href={`/post/${r.id}/view`}>view</a>
       </Space> }
   ];
   return (<>
