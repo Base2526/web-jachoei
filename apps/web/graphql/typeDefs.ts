@@ -1,4 +1,5 @@
 export const typeDefs = /* GraphQL */ `
+  scalar Upload
   enum PostStatus { public unpublic }
 
   type User {
@@ -74,6 +75,8 @@ export const typeDefs = /* GraphQL */ `
     status: PostStatus!
     created_at: String!
     updated_at: String!
+
+    images: [Image!]! 
   }
 
   type Chat { id: ID!, name: String, is_group: Boolean!, created_at: String! }
@@ -174,6 +177,11 @@ export const typeDefs = /* GraphQL */ `
     agree: Boolean
   }
 
+  type Image {
+    id: ID!
+    url: String!
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -183,7 +191,8 @@ export const typeDefs = /* GraphQL */ `
 
     registerUser(input: RegisterInput!): Boolean!
 
-    upsertPost(id: ID, data: PostInput!): Post!
+    # upsertPost(id: ID, data: PostInput!, images: [Upload!]): Post!
+    upsertPost(id: ID, data: PostInput!, images: [Upload!], image_ids_delete: [ID!]): Post!
     deletePost(id: ID!): Boolean!
 
     upsertUser(id: ID, data: UserInput!): User!

@@ -1,12 +1,12 @@
 import crypto from "crypto";
 import { GraphQLError } from "graphql/error";
 import bcrypt from 'bcryptjs';
-
 import { query, runInTransaction } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
-
 import * as jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
+
+import { saveUploads } from "@/lib/upload-helpers";
 import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
 
 const TOKEN_TTL_DAYS = 7;
@@ -17,6 +17,8 @@ type Iso = string;
 
 import { createHash } from "crypto";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
+
+import { persistWebFile, buildFileUrlById } from "@/lib/storage";
 
 function sha256Hex(input: string) {
   return createHash("sha256").update(input).digest("hex");
@@ -549,32 +551,130 @@ export const resolvers = {
 
       return true;
     },
-    upsertPost: async (_:any, { id, data }:{id?:string, data:any}, ctx:any) => {
-      console.log("[Mutation] upsertPost :", data);
-      if (!ctx?.user?.id) {
-        // throw new Error("Unauthorized");
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
+    // upsertPost_bak: async (_:any, { id, data, images }:{id?:string, data:any; images?: Array<Promise<any>> }, ctx:any) => {
+    //   console.log("[Mutation] upsertPost :", data, images, ctx);
+    //   if (!ctx?.user?.id) {
+    //     // throw new Error("Unauthorized");
+    //     throw new GraphQLError('Unauthenticated', {
+    //       extensions: { code: 'UNAUTHENTICATED' }
+    //     });
+    //   }
+    //   const author_id = ctx.user.id;
 
-      if (id) {
-        const { rows } = await query(
-          `UPDATE posts SET title=$1, body=$2, image_url=$3, phone=$4, status=$5, updated_at=NOW()
-           WHERE id=$6 RETURNING *`,
-          [data.title, data.body, data.image_url, data.phone, data.status, id]
-        );
-        return rows[0];
-      } else {
-        const { rows } = await query(
-          `INSERT INTO posts (title, body, image_url, phone, status, author_id)
-           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [data.title, data.body, data.image_url, data.phone, data.status, author_id]
-        );
-        return rows[0];
+
+    //   // let image_url = data.image_url || null;
+    //   // if (images) {
+    //   //   image_url = await saveUpload(images);
+    //   // }
+
+    //   // 1) upsert post
+    //   let postId: number;
+
+    //   if (id) {
+    //     const { rows } = await query(
+    //       `UPDATE posts SET title=$1, body=$2, image_url=$3, phone=$4, status=$5, updated_at=NOW()
+    //        WHERE id=$6 RETURNING *`,
+    //       [data.title, data.body, data.image_url, data.phone, data.status, id]
+    //     );
+    //     postId = rows[0].id;
+    //   } else {
+    //     const { rows } = await query(
+    //       `INSERT INTO posts (title, body, image_url, phone, status, author_id)
+    //        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    //       [data.title, data.body, data.image_url, data.phone, data.status, author_id]
+    //     );
+    //     postId = rows[0].id;
+    //   }
+
+    //   // 2) บันทึกรูปหลายไฟล์ (ถ้ามีอัปโหลดใหม่)
+    //   const uploadedUrls = await saveUploads(images); // ['/uploads/a.png', '/uploads/b.jpg', ...]
+    //   if (uploadedUrls.length) {
+    //     const valuesSql = uploadedUrls.map((_, i) => `($1, $${i + 2})`).join(", ");
+    //     await query(
+    //       `INSERT INTO post_images (post_id, url) VALUES ${valuesSql}`,
+    //       [postId, ...uploadedUrls]
+    //     );
+    //   }
+
+    //   // 3) โหลดโพสต์ + รูปกลับไป
+    //   const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
+    //   const { rows: imgs } = await query(`SELECT id, url FROM post_images WHERE post_id=$1 ORDER BY id`, [postId]);
+
+    //   return {
+    //     ...posts[0],
+    //     images: imgs,
+    //   };
+    // },
+    upsertPost: async (
+    _: any,
+    { id, data, images, image_ids_delete }: {
+      id?: string;
+      data: any;
+      images?: Array<Promise<File>>;       // Yoga: File (Web) มี .name .type .arrayBuffer()
+      image_ids_delete?: Array<string|number>;
+    }
+  ) => {
+    // 1) upsert post
+    let postId: number;
+    if (id) {
+      const { rows } = await query(
+        `UPDATE posts
+           SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
+         WHERE id=$5
+         RETURNING id`,
+        [data.title, data.body, data.phone || null, data.status, id]
+      );
+      postId = rows[0].id;
+    } else {
+      const { rows } = await query(
+        `INSERT INTO posts (title, body, phone, status, created_at)
+         VALUES ($1,$2,$3,$4,NOW())
+         RETURNING id`,
+        [data.title, data.body, data.phone || null, data.status]
+      );
+      postId = rows[0].id;
+    }
+
+    // 2) ลบรูปเก่า (ตามที่ส่งมา)
+    if (image_ids_delete?.length) {
+      await query(
+        `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::int[])`,
+        [postId, image_ids_delete.map(Number)]
+      );
+    }
+
+    // 3) บันทึกรูปใหม่ (ผ่าน persistWebFile => เข้าตาราง files เหมือน /api/files)
+    if (images?.length) {
+      const fileRows = [];
+      for (const pf of images) {
+        const f = await pf;
+        const row = await persistWebFile(f); // <- ใช้โมดูลเดียวกับ /api/files
+        fileRows.push(row);
       }
-    },
+      if (fileRows.length) {
+        const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
+        await query(
+          `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
+          [postId, ...fileRows.map(r => r.id)]
+        );
+      }
+    }
+
+    // 4) โหลดผลลัพธ์กลับ
+    const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
+    const { rows: imgs } = await query(
+      `SELECT f.id, f.relpath
+         FROM post_images pi
+         JOIN files f ON f.id = pi.file_id
+        WHERE pi.post_id=$1
+        ORDER BY pi.id`, [postId]
+    );
+
+    return {
+      ...posts[0],
+      images: imgs.map((r: any) => ({ id: r.id, url: buildFileUrlById(r.id) })), // เสิร์ฟผ่าน /api/files/:id
+    };
+  },
     deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
       if (!ctx?.user?.id) {
         throw new GraphQLError('Unauthenticated', {

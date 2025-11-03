@@ -1,4 +1,4 @@
-// apps/web/app/post/[id]/page.tsx
+// apps/web/app/(admin)/admin/posts/[id]/page.tsx
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -11,13 +11,9 @@ export default function Page(){
   const [loading, setLoading] = useState(true);
 
   useEffect(()=> {
-    console.log("[post/edit]");
-  }, []);
-
-  useEffect(()=> {
     (async ()=>{
       setLoading(true);
-      const res = await fetch(`/api/posts/${id}`, { credentials:'include', cache:'no-store' });
+      const res = await fetch(`/admin/api/post/${id}`, { credentials:'include', cache:'no-store' });
       const j = await res.json();
       if(res.ok) setData(j);
       setLoading(false);
@@ -27,14 +23,10 @@ export default function Page(){
   if (loading) return null;
   return (
     <PostForm
-      apiBase=""
+      apiBase="/admin"
       initialData={data!}
-      onSaved={(data: any)=>{
-        // router.refresh()
-
-        console.log("[onSaved] :", data);
-      }}
-      title="Edit Post"
+      onSaved={()=> router.refresh()}
+      title="Edit Post (Admin)"
     />
   );
 }

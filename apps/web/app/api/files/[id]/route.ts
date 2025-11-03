@@ -2,26 +2,50 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import fs from "fs";
 import path from "path";
+import { STORAGE_DIR } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
+
+
 // GET -> download
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const id = params.id;
-  const { rows } = await query(`SELECT * FROM files WHERE id=$1 AND deleted_at IS NULL`, [id]);
-  const file = rows[0];
-  if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
+// export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+//   const id = params.id;
+//   const { rows } = await query(`SELECT * FROM files WHERE id=$1 AND deleted_at IS NULL`, [id]);
+//   const file = rows[0];
+//   if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const full = path.join(process.env.STORAGE_DIR || "/app/storage", file.relpath);
-  const stat = await fs.promises.stat(full);
+//   const full = path.join(process.env.STORAGE_DIR || "/app/storage", file.relpath);
+//   const stat = await fs.promises.stat(full);
+//   const data = await fs.promises.readFile(full);
+
+//   return new NextResponse(data, {
+//     headers: {
+//       "Content-Type": file.mimetype || "application/octet-stream",
+//       "Content-Length": String(stat.size),
+//       "Content-Disposition": `attachment; filename="${encodeURIComponent(file.original_name || file.filename)}"`,
+//     }
+//   });
+// }
+
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const id = Number(params.id);
+  if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+
+  const { rows } = await query(`SELECT mimetype, relpath FROM files WHERE id=$1 AND deleted_at IS NULL`, [id]);
+  const row = rows[0];
+  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  const full = path.join(STORAGE_DIR, row.relpath);
+  if (!fs.existsSync(full)) return NextResponse.json({ error: "file missing" }, { status: 404 });
+
   const data = await fs.promises.readFile(full);
-
   return new NextResponse(data, {
+    status: 200,
     headers: {
-      "Content-Type": file.mimetype || "application/octet-stream",
-      "Content-Length": String(stat.size),
-      "Content-Disposition": `attachment; filename="${encodeURIComponent(file.original_name || file.filename)}"`,
-    }
+      "Content-Type": row.mimetype || "application/octet-stream",
+      "Cache-Control": "public, max-age=31536000, immutable",
+    },
   });
 }
 

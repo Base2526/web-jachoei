@@ -13,6 +13,8 @@ import { createClient } from "graphql-ws";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { onError } from "@apollo/client/link/error";
 
+import { createUploadLink } from 'apollo-upload-client';
+
 function hardLogout() {
   try { localStorage.removeItem("token"); } catch {}
   // แจ้งทั่วแอปว่าโดนบังคับออก
@@ -26,10 +28,18 @@ function hardLogout() {
 // ----------------------------
 // HTTP link
 // ----------------------------
-const httpLink = new HttpLink({
-  uri: process.env.NEXT_PUBLIC_GRAPHQL_HTTP, // e.g. "http://localhost:3000/api/graphql"
+// const httpLink = new HttpLink({
+//   uri: process.env.NEXT_PUBLIC_GRAPHQL_HTTP, // e.g. "http://localhost:3000/api/graphql"
+//   fetch,
+// });
+
+const httpLink = createUploadLink({
+  uri: process.env.NEXT_PUBLIC_GRAPHQL_HTTP, // e.g. http://localhost:3000/api/graphql
+  credentials: "include", // ให้ส่ง cookie ไปด้วยถ้ามี
   fetch,
 });
+
+
 
 // ----------------------------
 // Auth link (เพิ่ม header ทุก request อัตโนมัติ)

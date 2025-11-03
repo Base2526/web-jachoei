@@ -1,18 +1,14 @@
-// apps/web/app/post/[id]/page.tsx
+// apps/web/app/post/[id]/view/page.tsx
 'use client';
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import PostForm, { PostRecord } from '@/components/post/PostForm';
+import { useParams } from 'next/navigation';
+import PostView from '@/components/post/PostView';
+import type { PostRecord } from '@/components/post/PostForm';
 
 export default function Page(){
   const { id } = useParams<{id:string}>();
-  const router = useRouter();
   const [data, setData] = useState<PostRecord|null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(()=> {
-    console.log("[post/edit]");
-  }, []);
 
   useEffect(()=> {
     (async ()=>{
@@ -24,17 +20,5 @@ export default function Page(){
     })();
   }, [id]);
 
-  if (loading) return null;
-  return (
-    <PostForm
-      apiBase=""
-      initialData={data!}
-      onSaved={(data: any)=>{
-        // router.refresh()
-
-        console.log("[onSaved] :", data);
-      }}
-      title="Edit Post"
-    />
-  );
+  return <PostView post={data} loading={loading} title="Post" />;
 }
