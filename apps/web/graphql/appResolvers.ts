@@ -78,7 +78,23 @@ export const resolvers = {
          WHERE p.id = $1`, [id]
       );
       const r = rows[0]; if (!r) return null;
-      return { ...r, author: r.author_json };
+
+      const { rows: imgs } = await query(
+        `SELECT f.id, f.relpath
+           FROM post_images pi
+           JOIN files f ON f.id = pi.file_id
+          WHERE pi.post_id = $1
+          ORDER BY pi.id`,
+        [id]
+      );
+
+      return {  ...r, 
+                author: r.author_json,
+                images: (imgs || []).map((it: any) => ({
+                  id: it.id,
+                  url: buildFileUrlById(it.id),
+                })), // <<< ถ้าไม่มี = []  
+              };
     },
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
 

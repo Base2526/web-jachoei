@@ -24,7 +24,7 @@ function PostsList(){
     { title:'Status', dataIndex:'status', render:statusTag },
     { title:'Action', render:(_:any,r:any)=>
       <Space>
-        <Link href={`/admin/posts/${r.id}`}>edit</Link>
+        <Link href={`/admin/post/${r.id}/edit`}>edit</Link>
         <a onClick={()=>{
           Modal.confirm({
             title: 'Delete this post?',
@@ -35,7 +35,7 @@ function PostsList(){
             }
           });
         }}>delete</a>
-        <Link href={`/admin/posts/${r.id}/view`}>view</Link>
+        <Link href={`/admin/post/${r.id}/view`}>view</Link>
       </Space>
     }
   ];
@@ -46,7 +46,7 @@ function PostsList(){
         <Input placeholder="Search title/phone" value={q} onChange={e=>setQ(e.target.value)} onPressEnter={()=>refetch({ q })}/>
         <Button onClick={()=>refetch({ q })}>Search</Button>
         <Button type="primary">
-          <Link href="/admin/posts/new" style={{color:'#fff'}}>+ New Post</Link>
+          <Link href="/admin/post/new" style={{color:'#fff'}}>+ New Post</Link>
         </Button>
       </Space>
       <Table

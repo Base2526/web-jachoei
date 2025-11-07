@@ -1,4 +1,4 @@
-// apps/web/app/(admin)/admin/posts/[id]/page.tsx
+// apps/web/app/(admin)/admin/posts/[id]/edit/page.tsx
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -20,7 +20,7 @@ export default function Page(){
     })();
   }, [id]);
 
-  if (loading) return null;
+  if (loading) return <>Empty</>
   return (
     <PostForm
       apiBase="/admin"

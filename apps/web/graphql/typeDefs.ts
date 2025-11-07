@@ -150,9 +150,6 @@ export const typeDefs = /* GraphQL */ `
     # stats: Stats!
     latestUsers(limit: Int = 5): [DashboardUser!]!
     latestPosts(limit: Int = 5): [DashboardPost!]!
-
-
-   
   }
 
   input PostInput {
