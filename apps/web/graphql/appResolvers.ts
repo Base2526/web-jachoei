@@ -6,71 +6,112 @@ import { pubsub } from "@/lib/pubsub";
 import * as jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 
-import { saveUploads } from "@/lib/upload-helpers";
 import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
+import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
+import { persistWebFile, buildFileUrlById } from "@/lib/storage";
+import { requireAuth, sha256Hex } from "@/lib/auth"
+
 
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
-
 type Iso = string;
-
-import { createHash } from "crypto";
-import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
-
-import { persistWebFile, buildFileUrlById } from "@/lib/storage";
-
-function sha256Hex(input: string) {
-  return createHash("sha256").update(input).digest("hex");
-}
-
-function requireAuth(ctx: any): string {
-  const uid = ctx?.user?.id;
-  if (!uid) {
-    throw new GraphQLError("Unauthenticated", {
-      extensions: { code: "UNAUTHENTICATED" },
-    });
-  }
-  return uid;
-}
-
-function requireUser(ctx: any) {
-  const user = ctx?.user;
-  if (!user) throw new Error("Unauthorized");
-  return user;
-}
-
-function requireAdmin(ctx: any) {
-  const admin = ctx?.admin;
-  if (!admin) throw new Error("Forbidden (admin only)");
-  return admin;
-}
 
 export const resolvers = {
   Query: {
     _health: () => "ok",
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
-    posts: async (_:any, { search }:{search?:string}, ctx: any) => {
-      console.log("[Query] posts :", ctx);
+    // resolver: posts
+    posts: async (_: any, { search }: { search?: string }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] posts :", ctx, author_id);
+
+      const params: any[] = [];
+      let sql = `
+        SELECT
+          p.*,
+          row_to_json(u) AS author_json,
+          (
+            SELECT COALESCE(json_agg(json_build_object('id', s.id, 'relpath', s.relpath)), '[]'::json)
+            FROM (
+              SELECT f.id, f.relpath
+              FROM post_images pi
+              JOIN files f ON f.id = pi.file_id
+              WHERE pi.post_id = p.id
+              ORDER BY pi.id
+            ) AS s
+          ) AS images
+        FROM posts p
+        LEFT JOIN users u ON p.author_id = u.id
+      `;
 
       if (search) {
-        const { rows } = await query(
-          `SELECT p.*, row_to_json(u.*) as author_json
-           FROM posts p LEFT JOIN users u ON p.author_id = u.id
-           WHERE p.title ILIKE $1 OR p.phone ILIKE $1
-           ORDER BY p.created_at DESC`, ['%' + search + '%']
-        );
-        return rows.map((r: { author_json: any; })=>({ ...r, author: r.author_json }));
+        sql += ` WHERE p.title ILIKE $1 OR p.phone ILIKE $1 `;
+        params.push(`%${search}%`);
       }
-      const { rows } = await query(
-        `SELECT p.*, row_to_json(u.*) as author_json
-         FROM posts p LEFT JOIN users u ON p.author_id = u.id
-         ORDER BY p.created_at DESC`
-      );
-      return rows.map((r: { author_json: any; })=>({ ...r, author: r.author_json }));
+
+      sql += ` ORDER BY p.created_at DESC`;
+
+      const { rows } = await query(sql, params);
+
+      return rows.map((r: any) => ({
+        ...r,
+        author: r.author_json,
+        images: (r.images || []).map((it: any) => ({
+          id: it.id,
+          url: buildFileUrlById(it.id),   // ใช้ helper ฝั่ง Node
+        })),
+      }));
+    },
+    postsPaged: async (_: any, { search, limit, offset }: {search?: string, limit: number, offset: number}, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] postsPaged :", ctx, author_id);
+
+      const params: any[] = [];
+      let whereSql = '';
+      if (search) {
+        params.push(`%${search}%`);
+        whereSql = `WHERE p.title ILIKE $${params.length} OR p.phone ILIKE $${params.length}`;
+      }
+
+      params.push(limit, offset);
+
+      const sql = `
+        SELECT
+          COUNT(*) OVER() AS total,
+          p.*,
+          row_to_json(u.*) AS author_json,
+          (
+            SELECT json_agg(json_build_object('id', f.id, 'relpath', f.relpath) ORDER BY pi.id)
+            FROM post_images pi
+            JOIN files f ON f.id = pi.file_id
+            WHERE pi.post_id = p.id
+          ) AS images_json
+        FROM posts p
+        LEFT JOIN users u ON p.author_id = u.id
+        ${whereSql}
+        ORDER BY p.created_at DESC
+        LIMIT $${params.length-1} OFFSET $${params.length}
+      `;
+
+      const { rows } = await query(sql, params);
+
+      const total = rows[0]?.total ? Number(rows[0].total) : 0;
+
+      const items = rows.map((r: any) => ({
+        ...r,
+        author: r.author_json,
+        images: (r.images_json || []).map((it: any) => ({
+          id: it.id,
+          url: buildFileUrlById(it.id),
+        })),
+      }));
+
+      return { items, total };
     },
     post: async (_:any, { id }:{id:string}, ctx: any) => {
-      console.log("[Query] post :", ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Query] post :", ctx, author_id);
 
       const { rows } = await query(
         `SELECT p.*, row_to_json(u.*) as author_json
@@ -97,10 +138,8 @@ export const resolvers = {
               };
     },
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
-
-      console.log("[myPosts] :", ctx);
-
       const author_id = requireAuth(ctx);
+      console.log("[Query] myPosts :", ctx, author_id);
 
       if (search) {
         const { rows } = await query(
@@ -120,8 +159,8 @@ export const resolvers = {
       return rows.map((r :any)=>({ ...r, author: r.author_json }));
     },
     getOrCreateDm: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
-
       const author_id = requireAuth(ctx);
+      console.log("[Query] getOrCreateDm :", ctx, author_id);
 
       if (!author_id) throw new Error("No demo user found");
       const { rows:exist } = await query(
@@ -141,9 +180,8 @@ export const resolvers = {
       return chat;
     },
     myChats: async (_:any, { }:{}, ctx: any) => {
-      console.log("[myChats] :", ctx);
-
       const author_id = requireAuth(ctx);
+      console.log("[Query] myChats :", ctx, author_id);
 
       const { rows } = await query(
         `SELECT c.*, row_to_json(uc.*) as creator_json
@@ -170,7 +208,8 @@ export const resolvers = {
                       { chat_id, limit = 50, offset = 0, includeDeleted = false }: { chat_id: string; limit?: number; offset?: number; includeDeleted?: boolean },
                       ctx: any
                     ) => {
-      const meId = requireAuth(ctx); // ⬅️ เอา user ปัจจุบัน
+      const author_id = requireAuth(ctx);
+      console.log("[Query] messages :", ctx, author_id);
 
       const filter = includeDeleted ? "" : "AND m.deleted_at IS NULL";
       const { rows } = await query(
@@ -213,10 +252,8 @@ export const resolvers = {
         ORDER BY m.created_at ASC
         LIMIT $3 OFFSET $4
         `,
-        [chat_id, meId, limit, offset]
+        [chat_id, author_id, limit, offset]
       );
-
-      
 
       const results =  rows.map((r: any) => {
         const createdISO = new Date(r.created_at).toISOString();
@@ -248,7 +285,8 @@ export const resolvers = {
       return results;
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {
-      // const author_id = requireAuth(ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Query] users :", ctx, author_id);
 
       if (search) {
         const { rows } = await query(
@@ -265,7 +303,10 @@ export const resolvers = {
       const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
       return rows[0] || null;
     },
-    postsByUserId: async (_:any, { user_id }:{user_id:string}) => {
+    postsByUserId: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] postsByUserId :", ctx, author_id);
+
       const { rows } = await query(
         `SELECT p.*, row_to_json(u.*) as author_json
          FROM posts p LEFT JOIN users u ON p.author_id = u.id
@@ -275,17 +316,19 @@ export const resolvers = {
       return rows.map((r: any)=>({ ...r, author: r.author_json }));
     },
     me: async (_: any, {  }: { }, ctx: any) => {
-      // return await currentUser();
       const author_id = requireAuth(ctx);
+      console.log("[Query] me :", ctx, author_id);
 
       const { rows } = await query(`SELECT * FROM users WHERE id=$1 LIMIT 1`, [author_id]);
       return rows[0];
     },
     unreadCount: async (_:any, { chatId }:{ chatId: string }, ctx:any) => {
-      const meId = requireAuth(ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Query] unreadCount :", ctx, author_id);
+
       const { rows } = await query(
         `SELECT unread_count FROM chat_unread_counts WHERE user_id=$1 AND chat_id=$2`,
-        [meId, chatId]
+        [author_id, chatId]
       ).catch(()=>({ rows:[] as any[] }));
       if (rows[0]) return Number(rows[0].unread_count || 0);
 
@@ -297,12 +340,14 @@ export const resolvers = {
           AND m.sender_id <> $1 
           AND (r.read_at IS NULL)
           AND m.deleted_at IS NULL`,
-        [meId, chatId]
+        [author_id, chatId]
       );
       return Number(rows2[0]?.unread_count || 0);
     },
     whoRead: async (_:any, { messageId }:{messageId:string}, ctx:any) => {
-      requireAuth(ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Query] whoRead :", ctx, author_id);
+
       const { rows } = await query(
         `SELECT u.* FROM message_receipts r
          JOIN users u ON u.id = r.user_id
@@ -312,8 +357,10 @@ export const resolvers = {
       );
       return rows;
     },
-
     stats: async (_:any, __:any, ctx:any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] stats :", ctx, author_id);
+
       const results = await Promise.all([
         query(`SELECT COUNT(*)::int AS c FROM users`),
         query(`SELECT COUNT(*)::int AS c FROM posts`),
@@ -325,15 +372,59 @@ export const resolvers = {
 
       return { users, posts, files, logs };
     },
-    latestUsers: async (_:any,{limit=5}:any, ctx:any)=>{
-      const {rows}=await query(`SELECT id,name,email,role,created_at FROM users ORDER BY created_at DESC LIMIT $1`,[limit]);
-      return rows;
+    latestUsers: async (_: any, { limit = 5 }: any, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] latestUsers :", ctx, author_id);
+
+      const { rows } = await query(
+        `SELECT id, name, email, role, created_at, avatar
+        FROM users
+        ORDER BY created_at DESC
+        LIMIT $1`,
+        [limit]
+      );
+
+      return rows.map((u: any) => ({
+        ...u,
+        avatar: u.avatar || null, // ถ้าไม่มีค่าให้เป็น null
+      }));
     },
-    latestPosts: async (_:any,{limit=5}:any, ctx:any)=>{
-      const {rows}=await query(`SELECT id,title,status,created_at FROM posts ORDER BY created_at DESC LIMIT $1`,[limit]);
-      return rows;
+    latestPosts: async (_: any, { limit = 5 }: any, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] latestPosts :", ctx, author_id);
+
+      const { rows } = await query(
+        `
+        SELECT 
+          p.id, p.title, p.status, p.created_at,
+          (
+            SELECT json_agg(json_build_object('id', f.id, 'relpath', f.relpath) ORDER BY pi.id)
+            FROM post_images pi
+            JOIN files f ON f.id = pi.file_id
+            WHERE pi.post_id = p.id
+          ) AS images_json
+        FROM posts p
+        ORDER BY p.created_at DESC
+        LIMIT $1
+        `,
+        [limit]
+      );
+
+      return rows.map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        created_at: r.created_at,
+        images: (r.images_json || []).map((it: any) => ({
+          id: it.id,
+          url: buildFileUrlById(it.id),
+        })),
+      }));
     },
-    pending: async () => {
+    pending: async (_:any, __:any, ctx:any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] pending :", ctx, author_id);
+
       const [posts, users, files, logs] = await Promise.all([
         query(`SELECT COUNT(*)::int AS c FROM posts WHERE status = 'pending'`),
         query(`SELECT COUNT(*)::int AS c FROM users WHERE status = 'invited' OR email_verified = false`),
@@ -348,7 +439,40 @@ export const resolvers = {
         errors_last24h: logs.rows[0]?.c || 0,
       };
     },
+    filesPaged: async (_: any, { search, limit, offset }: any, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] pending :", ctx, author_id);
 
+      const params: any[] = [];
+      let where = '';
+      if (search && search.trim()) {
+        params.push(`%${search}%`);
+        where = `WHERE f.original_name ILIKE $${params.length} OR f.filename ILIKE $${params.length}`;
+      }
+      params.push(limit, offset);
+
+      const sql = `
+        SELECT
+          COUNT(*) OVER() AS total,
+          f.*
+        FROM files f
+        ${where}
+        ORDER BY f.created_at DESC
+        LIMIT $${params.length-1} OFFSET $${params.length}
+      `;
+      const { rows } = await query(sql, params);
+      const total = rows[0]?.total ? Number(rows[0].total) : 0;
+
+      const items = rows.map((r: any) => ({
+        ...r,
+        url: buildFileUrlById(r.id),
+        thumb: r.mimetype && r.mimetype.startsWith('image/')
+          ? buildFileUrlById(r.id)
+          : null,
+      }));
+
+      return { items, total };
+    },
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -424,8 +548,6 @@ export const resolvers = {
         user,
       };
     },
-
-    // loginUser: async (_: any, { email, password }: any) => {
     loginUser: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
       console.log("[loginUser] @1 ", input)
       const { email, username, password } = input || {};
@@ -454,23 +576,6 @@ export const resolvers = {
         user,
       };
     },
-
-    // loginAdmin: async (_: any, { email, password }: any) => {
-    //   const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
-    //   const admin = rows[0];
-    //   if (!admin || admin.role !== "Administrator") throw new Error("Not admin");
-    //   // if (admin.password_hash !== hash(password)) throw new Error("Invalid credentials");
-
-    //   const token = jwt.sign(
-    //     { id: admin.id, email: admin.email, role: admin.role },
-    //     JWT_SECRET,
-    //     { expiresIn: "1d" }
-    //   );
-
-    //   cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/admin" });
-    //   return true;
-    // },
-
     loginAdmin: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
       console.log("[loginAdmin] @1 ", input)
       const { email, username, password } = input || {};
@@ -499,8 +604,7 @@ export const resolvers = {
         user,
       };
     },
-
-    async registerUser(_: any, { input }: any) {
+    registerUser: async(_: any, { input }: any) => {
       const { name, email, phone, password, agree } = input;
       if (!agree) throw new Error('Please accept terms');
       const { rows: exists } = await query('SELECT 1 FROM users WHERE email=$1', [email]);
@@ -518,8 +622,7 @@ export const resolvers = {
 
       return true;
     },
-
-    async requestPasswordReset(_: any, { email }: { email: string }, ctx: any) {
+    requestPasswordReset: async(_: any, { email }: { email: string }, ctx: any)=>{
       // 1) หา user จากอีเมล (อย่า leak ว่ามี/ไม่มี)
       const { rows } = await query(`SELECT id, email FROM users WHERE email = $1`, [email]);
       if (rows.length === 0) {
@@ -541,8 +644,7 @@ export const resolvers = {
       await sendPasswordResetEmail(user.email, resetUrl);
       return true;
     },
-
-    async resetPassword(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any) {
+    resetPassword: async(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any)=>{
       // 1) หา token
       const { rows } = await query(
         `SELECT prt.id, prt.user_id, prt.expires_at, prt.used
@@ -567,149 +669,112 @@ export const resolvers = {
 
       return true;
     },
-    // upsertPost_bak: async (_:any, { id, data, images }:{id?:string, data:any; images?: Array<Promise<any>> }, ctx:any) => {
-    //   console.log("[Mutation] upsertPost :", data, images, ctx);
-    //   if (!ctx?.user?.id) {
-    //     // throw new Error("Unauthorized");
-    //     throw new GraphQLError('Unauthenticated', {
-    //       extensions: { code: 'UNAUTHENTICATED' }
-    //     });
-    //   }
-    //   const author_id = ctx.user.id;
+    upsertPost: async ( _: any,
+                      { id, data, images, image_ids_delete }: {
+                        id?: string;
+                        data: any;
+                        images?: Array<Promise<File>>;       // Yoga: File (Web) มี .name .type .arrayBuffer()
+                        image_ids_delete?: Array<string|number>;
+                      }, ctx: any) => {
 
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] upsertPost :", ctx, author_id);
 
-    //   // let image_url = data.image_url || null;
-    //   // if (images) {
-    //   //   image_url = await saveUpload(images);
-    //   // }
-
-    //   // 1) upsert post
-    //   let postId: number;
-
-    //   if (id) {
-    //     const { rows } = await query(
-    //       `UPDATE posts SET title=$1, body=$2, image_url=$3, phone=$4, status=$5, updated_at=NOW()
-    //        WHERE id=$6 RETURNING *`,
-    //       [data.title, data.body, data.image_url, data.phone, data.status, id]
-    //     );
-    //     postId = rows[0].id;
-    //   } else {
-    //     const { rows } = await query(
-    //       `INSERT INTO posts (title, body, image_url, phone, status, author_id)
-    //        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    //       [data.title, data.body, data.image_url, data.phone, data.status, author_id]
-    //     );
-    //     postId = rows[0].id;
-    //   }
-
-    //   // 2) บันทึกรูปหลายไฟล์ (ถ้ามีอัปโหลดใหม่)
-    //   const uploadedUrls = await saveUploads(images); // ['/uploads/a.png', '/uploads/b.jpg', ...]
-    //   if (uploadedUrls.length) {
-    //     const valuesSql = uploadedUrls.map((_, i) => `($1, $${i + 2})`).join(", ");
-    //     await query(
-    //       `INSERT INTO post_images (post_id, url) VALUES ${valuesSql}`,
-    //       [postId, ...uploadedUrls]
-    //     );
-    //   }
-
-    //   // 3) โหลดโพสต์ + รูปกลับไป
-    //   const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
-    //   const { rows: imgs } = await query(`SELECT id, url FROM post_images WHERE post_id=$1 ORDER BY id`, [postId]);
-
-    //   return {
-    //     ...posts[0],
-    //     images: imgs,
-    //   };
-    // },
-    upsertPost: async (
-    _: any,
-    { id, data, images, image_ids_delete }: {
-      id?: string;
-      data: any;
-      images?: Array<Promise<File>>;       // Yoga: File (Web) มี .name .type .arrayBuffer()
-      image_ids_delete?: Array<string|number>;
-    }
-  ) => {
-    // 1) upsert post
-    let postId: number;
-    if (id) {
-      const { rows } = await query(
-        `UPDATE posts
-           SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
-         WHERE id=$5
-         RETURNING id`,
-        [data.title, data.body, data.phone || null, data.status, id]
-      );
-      postId = rows[0].id;
-    } else {
-      const { rows } = await query(
-        `INSERT INTO posts (title, body, phone, status, created_at)
-         VALUES ($1,$2,$3,$4,NOW())
-         RETURNING id`,
-        [data.title, data.body, data.phone || null, data.status]
-      );
-      postId = rows[0].id;
-    }
-
-    // 2) ลบรูปเก่า (ตามที่ส่งมา)
-    if (image_ids_delete?.length) {
-      await query(
-        `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::int[])`,
-        [postId, image_ids_delete.map(Number)]
-      );
-    }
-
-    // 3) บันทึกรูปใหม่ (ผ่าน persistWebFile => เข้าตาราง files เหมือน /api/files)
-    if (images?.length) {
-      const fileRows = [];
-      for (const pf of images) {
-        const f = await pf;
-        const row = await persistWebFile(f); // <- ใช้โมดูลเดียวกับ /api/files
-        fileRows.push(row);
+      // 1) upsert post
+      let postId: number;
+      if (id) {
+        const { rows } = await query(
+          `UPDATE posts
+            SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
+          WHERE id=$5
+          RETURNING id`,
+          [data.title, data.body, data.phone || null, data.status, id]
+        );
+        postId = rows[0].id;
+      } else {
+        const { rows } = await query(
+          `INSERT INTO posts (title, body, phone, status, created_at)
+          VALUES ($1,$2,$3,$4,NOW())
+          RETURNING id`,
+          [data.title, data.body, data.phone || null, data.status]
+        );
+        postId = rows[0].id;
       }
-      if (fileRows.length) {
-        const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
+
+      // 2) ลบรูปเก่า (ตามที่ส่งมา)
+      if (image_ids_delete?.length) {
         await query(
-          `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
-          [postId, ...fileRows.map(r => r.id)]
+          `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::int[])`,
+          [postId, image_ids_delete.map(Number)]
         );
       }
-    }
 
-    // 4) โหลดผลลัพธ์กลับ
-    const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
-    const { rows: imgs } = await query(
-      `SELECT f.id, f.relpath
-         FROM post_images pi
-         JOIN files f ON f.id = pi.file_id
-        WHERE pi.post_id=$1
-        ORDER BY pi.id`, [postId]
-    );
-
-    return {
-      ...posts[0],
-      images: imgs.map((r: any) => ({ id: r.id, url: buildFileUrlById(r.id) })), // เสิร์ฟผ่าน /api/files/:id
-    };
-  },
-    deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
+      // 3) บันทึกรูปใหม่ (ผ่าน persistWebFile => เข้าตาราง files เหมือน /api/files)
+      if (images?.length) {
+        const fileRows = [];
+        for (const pf of images) {
+          const f = await pf;
+          const row = await persistWebFile(f); // <- ใช้โมดูลเดียวกับ /api/files
+          fileRows.push(row);
+        }
+        if (fileRows.length) {
+          const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
+          await query(
+            `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
+            [postId, ...fileRows.map(r => r.id)]
+          );
+        }
       }
-      const author_id = ctx.user.id;
+
+      // 4) โหลดผลลัพธ์กลับ
+      const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
+      const { rows: imgs } = await query(
+        `SELECT f.id, f.relpath
+          FROM post_images pi
+          JOIN files f ON f.id = pi.file_id
+          WHERE pi.post_id=$1
+          ORDER BY pi.id`, [postId]
+      );
+
+      return {
+        ...posts[0],
+        images: imgs.map((r: any) => ({ id: r.id, url: buildFileUrlById(r.id) })), // เสิร์ฟผ่าน /api/files/:id
+      };
+    },
+    deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deletePost :", ctx, author_id);
 
       const res = await query(`DELETE FROM posts WHERE id=$1`, [id]);
       return res.rowCount === 1;
     },
-    createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
-      // const me = await currentUserId();
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
+    deletePosts: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deletePosts :", ctx, author_id);
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        throw new GraphQLError('No IDs provided', {
+          extensions: { code: 'BAD_USER_INPUT' }
         });
       }
-      const author_id = ctx.user.id;
+
+      const validIds = ids.filter(id => /^[0-9a-fA-F-]{36}$/.test(id));
+      if (validIds.length === 0) {
+        throw new GraphQLError('Invalid UUIDs');
+      }
+
+      const res = await query(
+        `DELETE FROM posts WHERE id = ANY($1::uuid[])`,
+        [validIds]
+      );
+
+      console.log(`[deletePosts] user=${ctx.admin.id}, deleted=${res.rowCount}`);
+
+      return res.rowCount > 0;
+    },
+    createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] createChat :", ctx, author_id);
 
       const { rows } = await query(
         `INSERT INTO chats (name, is_group, created_by) VALUES ($1,$2,$3) RETURNING *`,
@@ -726,47 +791,23 @@ export const resolvers = {
       const creator = await query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
       return { ...chat, created_by: creator.rows[0], members: mem.rows };
     },
+    addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}, ctx:any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] addMember :", ctx, author_id);
 
-    addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}) => {
       await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chat_id, user_id]);
       return true;
     },
-
-    // sendMessage: async (_:any, { chat_id, text, to_user_ids}:{chat_id:string, text:string, to_user_ids: string[]}, ctx:any) => {
-    //   // const me = await currentUserId();
-
-    //   console.log("[sendMessage] @1 ", chat_id, text);
-    //   if (!ctx?.user?.id) {
-    //     throw new GraphQLError('Unauthenticated', {
-    //       extensions: { code: 'UNAUTHENTICATED' }
-    //     });
-    //   }
-    //   const author_id = ctx.user.id;
-    //   const { rows } = await query(
-    //     `INSERT INTO messages (chat_id, sender_id, text) VALUES ($1,$2,$3) RETURNING *`,
-    //     [chat_id, author_id, text]
-    //   );
-    //   const msg = rows[0];
-    //   const senderQ = await query(`SELECT * FROM users WHERE id=$1`, [msg.sender_id]);
-    //   const message = { id: msg.id, chat_id: msg.chat_id, sender: senderQ.rows[0], text: msg.text, created_at: new Date(msg.created_at).toISOString(), to_user_ids };
-
-    //   await pubsub.publish(topicChat(chat_id), { messageAdded: message });
-    //   await Promise.all(
-    //     to_user_ids.map(uid => pubsub.publish(topicUser(uid), { userMessageAdded: message }))
-    //   );
-    //   console.log("[sendMessage] @2 ", message);
-      
-    //   return message;
-    // },
-     sendMessage: async (
+    sendMessage: async (
       _: any,
       { chat_id, text, to_user_ids }: { chat_id: string; text: string; to_user_ids: string[] },
       ctx: any
     ) => {
-      const  sender_id = requireAuth(ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] sendMessage :", ctx, author_id);
       
       const cleanTo = Array.from(
-        new Set((to_user_ids || []).filter(Boolean).filter((id) => id !== sender_id))
+        new Set((to_user_ids || []).filter(Boolean).filter((id) => id !== author_id))
       );
 
       // ✅ ใช้ runInTransaction แทน
@@ -776,7 +817,7 @@ export const resolvers = {
           `INSERT INTO messages (chat_id, sender_id, text)
            VALUES ($1,$2,$3)
            RETURNING *`,
-          [chat_id, sender_id, text]
+          [chat_id, author_id, text]
         );
         const msg = msgRes.rows[0];
 
@@ -800,11 +841,11 @@ export const resolvers = {
           VALUES ($1,$2,NOW(),NOW())
           ON CONFLICT (message_id, user_id) DO NOTHING
           `,
-          [msg.id, sender_id]
+          [msg.id, author_id]
         );
 
         // 4) ดึงข้อมูลประกอบ
-        const senderQ = await client.query(`SELECT * FROM users WHERE id=$1`, [sender_id]);
+        const senderQ = await client.query(`SELECT * FROM users WHERE id=$1`, [author_id]);
         const readersQ = await client.query(
           `
           SELECT u.*
@@ -831,7 +872,7 @@ export const resolvers = {
           WHERE message_id=$1 AND user_id=$2
           LIMIT 1
           `,
-          [msg.id, sender_id]
+          [msg.id, author_id]
         );
         const mr = myRecQ.rows[0] || {};
         const myReceipt = {
@@ -895,12 +936,8 @@ export const resolvers = {
       return fullMessage;
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
-
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] upsertUser :", ctx, author_id);
 
       // (ทางเลือก) ทำความสะอาดค่าเล็กน้อย
       const name = (data.name ?? '').trim();
@@ -920,10 +957,11 @@ export const resolvers = {
             avatar = $2,
             phone = $3,
             role = $4,
-            password_hash = CASE
-              WHEN $5 IS NULL THEN password_hash
-              ELSE $5
-            END
+            -- password_hash = CASE
+            --   WHEN $5 IS NULL THEN password_hash
+            --   ELSE $5
+            -- END
+            password_hash = COALESCE($5::text, password_hash)
           WHERE id = $6
           RETURNING *;
           `,
@@ -945,17 +983,41 @@ export const resolvers = {
         return rows[0] || null;
       }
     },
-    deleteUser: async (_: any, { id }: { id: string }) => {
+    uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<File> }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] uploadAvatar :", ctx, author_id);
+
+      const f = await file;
+      const row = await persistWebFile(f); // ใช้โมดูลเดียวกับ /api/files
+      const avatarUrl = buildFileUrlById(row.id);
+
+      await query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id]);
+      return avatarUrl;
+    },
+    deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deleteUser :", ctx, author_id);
+
       const res = await query(`DELETE FROM users WHERE id=$1`, [id]);
       return res.rowCount === 1;
     },
+    deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deleteUsers :", ctx, author_id);
+
+      if (!ids || ids.length === 0) return false;
+      const uuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const uuidIds = ids.filter((i) => uuidPattern.test(i));
+
+      if (uuidIds.length === 0) return false;
+      const res = await query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [uuidIds]);
+
+      return res.rowCount > 0;
+    },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] updateMyProfile :", ctx, author_id);
 
       const { rows } = await query(
         `UPDATE users SET 
@@ -968,43 +1030,35 @@ export const resolvers = {
       return rows[0];
     },
     renameChat: async (_:any, { chat_id, name }:{chat_id:string, name?:string}, ctx:any) => {
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] renameChat :", ctx, author_id);
 
       await query(`UPDATE chats SET name=$1 WHERE id=$2`, [name || null, chat_id]);
       return true;
     },
     deleteChat: async (_:any, { chat_id }:{chat_id:string}, ctx:any) => {
-      if (!ctx?.user?.id) {
-        throw new GraphQLError('Unauthenticated', {
-          extensions: { code: 'UNAUTHENTICATED' }
-        });
-      }
-      const author_id = ctx.user.id;
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deleteChat :", ctx, author_id);
 
       await query(`DELETE FROM chats WHERE id=$1`, [chat_id]);
       return true;
     },
     markMessageRead: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
-      console.log("[markMessageRead]");
-      const meId = requireAuth(ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] markMessageRead :", ctx, author_id);
+
       await query(
         `UPDATE message_receipts
          SET read_at = COALESCE(read_at, NOW())
          WHERE message_id=$1 AND user_id=$2`,
-        [message_id, meId]
+        [message_id, author_id]
       );
       return true;
     },
     markChatReadUpTo: async (_:any, { chat_id, cursor }:{ chat_id:string, cursor:string }, ctx:any) => {
-      console.log("[markChatReadUpTo]");
-      const meId = requireAuth(ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] markChatReadUpTo :", ctx, author_id);
 
-      console.log("[markChatReadUpTo]", meId, chat_id, cursor);
       await query(
         `UPDATE message_receipts r
          SET read_at = COALESCE(r.read_at, NOW())
@@ -1013,13 +1067,14 @@ export const resolvers = {
            AND r.user_id = $1
            AND m.chat_id = $2
            AND m.created_at <= ( $3::timestamptz + interval '1 millisecond' )`,
-        [meId, chat_id, cursor]
+        [author_id, chat_id, cursor]
       );
       return true;
     },
-
     deleteMessage: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
-      const  meId = requireAuth(ctx);
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deleteMessage :", ctx, author_id);
+      
       const { rows } = await query(`SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`, [message_id]);
       const msg = rows[0];
       if (!msg) return false;
@@ -1029,41 +1084,32 @@ export const resolvers = {
       await pubsub.publish(topicChat(msg.chat_id), { messageDeleted: message_id });
       return true;
     },
-  },
+    deleteFile: async (_: any, { id }: { id: string }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deleteFile :", ctx, author_id);
 
-  // // Message
-  // Message: {
-  //   myReceipt: async (parent:any, _args:any, ctx:any) => {
-  //     const meId = requireAuth(ctx);
-  //     const { rows } = await query(
-  //       `SELECT delivered_at, read_at, (read_at IS NOT NULL) AS is_read
-  //        FROM message_receipts
-  //        WHERE message_id=$1 AND user_id=$2`,
-  //       [parent.id, meId]
-  //     );
-  //     const r = rows[0] || null;
-  //     return {
-  //       deliveredAt: r?.delivered_at ? new Date(r.delivered_at).toISOString() : new Date(parent.created_at).toISOString(),
-  //       readAt: r?.read_at ? new Date(r.read_at).toISOString() : null,
-  //       isRead: !!r?.is_read
-  //     };
-  //   },
-  //   readers: async (parent:any) => {
-  //     const { rows } = await query(
-  //       `SELECT u.* FROM message_receipts r
-  //        JOIN users u ON u.id = r.user_id
-  //        WHERE r.message_id=$1 AND r.read_at IS NOT NULL
-  //        ORDER BY r.read_at ASC`,
-  //       [parent.id]
-  //     );
-  //     return rows;
-  //   },
-  //   readersCount: async (parent:any) => {
-  //     const { rows } = await query(
-  //       `SELECT COUNT(*)::INT AS c FROM message_receipts WHERE message_id=$1 AND read_at IS NOT NULL`,
-  //       [parent.id]
-  //     );
-  //     return Number(rows[0]?.c || 0);
-  //   }
-  // }
+      const res = await query(`DELETE FROM files WHERE id=$1`, [id]);
+      return res.rowCount === 1;
+    },
+    deleteFiles: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] deleteFiles :", ctx, author_id);
+
+      if (!ids?.length) return false;
+      const intIds = ids.map(n => parseInt(String(n),10)).filter(n=>!isNaN(n));
+      if (!intIds.length) return false;
+      const res = await query(`DELETE FROM files WHERE id = ANY($1::int[])`, [intIds]);
+      return res.rowCount > 0;
+    },
+    renameFile: async (_: any, { id, name }: { id: string, name: string }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] renameFile :", ctx, author_id);
+
+      const res = await query(
+        `UPDATE files SET original_name=$1, updated_at=NOW() WHERE id=$2`,
+        [name, id]
+      );
+      return res.rowCount === 1;
+    },
+  },
 };

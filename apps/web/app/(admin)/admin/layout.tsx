@@ -51,7 +51,7 @@ export default async function AdminLayout({
   return (
     <>
       <main style={{ padding: 24 }}>
-         <AdminLayoutClient>{children}</AdminLayoutClient>;
+         <AdminLayoutClient>{children}</AdminLayoutClient>
       </main>
     </>
   );

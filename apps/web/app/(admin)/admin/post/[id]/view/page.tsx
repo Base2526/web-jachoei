@@ -40,5 +40,6 @@ export default function Page(){
   const post = data?.post;
   if (!post) return <div>Not found</div>;
 
-  return <PostView post={data} loading={loading} title="Post (Admin)" />;
+  console.log("[view]" , post);
+  return <PostView post={post} loading={loading} title="Post (Admin)" />;
 }

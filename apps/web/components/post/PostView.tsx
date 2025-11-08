@@ -6,6 +6,8 @@ import type { PostRecord } from './PostForm';
 type Props = { post: PostRecord | null; loading?: boolean; title?: string; };
 
 export default function PostView({ post, loading, title }: Props){
+
+  console.log("[PostView]", post);
   return (
     <Card title={title ?? 'Post'} loading={loading}>
       {post && <>

@@ -62,3 +62,46 @@
 //     return null;
 //   }
 // }
+import { GraphQLError } from "graphql/error";
+import { createHash } from "crypto";
+
+export function requireAuth(ctx: any): string {
+  const scope = ctx?.scope;
+
+  // ✅ ตรวจว่า scope มีหรือไม่
+  if (!scope || !['web', 'admin'].includes(scope)) {
+    throw new GraphQLError("Unauthorized scope", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
+
+  // ✅ แยกตรวจตาม scope
+  if (scope === 'admin') {
+    const uid = ctx?.admin?.id;
+    if (!uid) {
+      throw new GraphQLError("Admin not authenticated", {
+        extensions: { code: "UNAUTHENTICATED" },
+      });
+    }
+    return uid;
+  }
+
+  if (scope === 'web') {
+    const uid = ctx?.user?.id;
+    if (!uid) {
+      throw new GraphQLError("User not authenticated", {
+        extensions: { code: "UNAUTHENTICATED" },
+      });
+    }
+    return uid;
+  }
+
+  // ✅ fallback safety
+  throw new GraphQLError("Invalid authentication context", {
+    extensions: { code: "UNAUTHENTICATED" },
+  });
+}
+
+export function sha256Hex(input: string) {
+  return createHash("sha256").update(input).digest("hex");
+}

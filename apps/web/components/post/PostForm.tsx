@@ -1,14 +1,18 @@
+// apps/web/app/components/post/PostForm.tsx
+
 'use client';
 import React, { useEffect, useState } from 'react';
 import { Card, Form, Input, Button, Select, message } from 'antd';
 import { gql, useQuery, useMutation } from "@apollo/client";
-
 import AttachFileField from '@/components/AttachFileField';
 
-// upsertPost(id: ID, data: PostInput!, images: [Upload!]): Post!
 const UPSERT = gql`
-  mutation Upsert($id: ID, $data: PostInput!, $images:[Upload!]) {
-    upsertPost(id: $id, data: $data, images: $images) { id title images { id url } }
+  mutation Upsert($id: ID, $data: PostInput!, $images:[Upload!], $image_ids_delete:[ID!]) {
+    upsertPost(id: $id, data: $data, images: $images, image_ids_delete: $image_ids_delete) {
+      id
+      title
+      images { id url }
+    }
   }
 `;
 
@@ -39,34 +43,6 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
 
   const [onPost, { loading }] = useMutation(UPSERT);
 
-  // const [onProduct] = useMutation(mutation_product, {
-  //   context: { headers: getHeaders(location) },
-  //   update: (cache, { data: { product } }, params: any) => {
-  //     // console.log("product:", product);
-  //     // let { status } = product
-  //     // if(status){
-  //     //   let { input } = params?.variables;
-  //     //   switch(input.mode){
-  //     //     case 'added':{
-  //     //       message.success('เพิ่มสินค้าใหม่ เรียบร้อย!');
-  //     //     }
-  //     //     case 'edited':{
-  //     //       message.success('แก้ไขสินค้า เรียบร้อย!');
-  //     //     }
-  //     //   }
-  //     // }
-  //   },
-  //   onCompleted: (data: any) => {
-  //     // setLoading(false);  // Set loading to false when mutation completes
-  //     // navigate(-1);
-  //   },
-  //   onError: (error: any) => {
-  //     // setLoading(false);  // Set loading to false when an error occurs
-  //     // console.log("product onError:", error);
-  //     // handlerError(props, error);
-  //   }
-  // });
-
   useEffect(() => {
     if (!initialData) return;
     form.setFieldsValue({
@@ -80,78 +56,51 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
     setFiles(ex);
   }, [initialData, form]);
 
+  // ⬇️ CHANGE: ภายใน onFinish
   async function onFinish(values: any){
     const existingKeepIds = files
       .filter((f:any)=> 'url' in f && !f.delete)
-      .map((f:any)=> f._id);
+      .map((f:any)=> String(f._id));                  // แปลงเป็น string ให้ตรง [ID!]
+
     const existingDeleteIds = files
       .filter((f:any)=> 'url' in f && f.delete)
-      .map((f:any)=> f._id);
-    // const newFiles = files.filter(f => f instanceof File) as File[];
-    const newFiles = files.filter((f): f is File => f instanceof File);
+      .map((f:any)=> String(f._id));                  // ✅ ส่งให้ image_ids_delete
 
-    const fd = new FormData();
-    fd.append('title', values.title);
-    fd.append('phone', values.phone || '');
-    fd.append('status', values.status || 'public');
-    fd.append('existing_keep', JSON.stringify(existingKeepIds));
-    fd.append('existing_delete', JSON.stringify(existingDeleteIds));
-    // newFiles.forEach((f,i)=> fd.append('uploads', f, f.name || `file_${i}`));
-
-    // const url = isEdit
-    //   ? `${apiBase}/api/posts/${initialData!.id}`
-    //   : `${apiBase}/api/posts`;
-
-    // const res = await fetch(url, {
-    //   method: isEdit ? 'PATCH' : 'POST',
-    //   body: fd,
-    //   credentials: 'include'
-    // });
-    // const j = await res.json().catch(()=> ({}));
-    // if (res.ok) {
-    //   message.success(isEdit ? 'Saved' : 'Created');
-    //   onSaved?.(j.id ?? initialData?.id!);
-    // } else {
-    //   message.error(j.error || (isEdit ? 'Save failed' : 'Create failed'));
-    // }
-
-    // product(input: JSON): JSON
-    // upsertPost(id: ID, data: PostInput!): Post!
-    // onPost({ variables: { input: { ...input, mode, images } } });
-
-    // const { data } = await onPost({
-    //   variables: {
-    //     id: null,
-    //     data: { title: "SSS", body: "xx", status: 'public' },
-    //     images: newFiles, // << ส่ง array ของ File objects
-    //   },
-    // });
+    const newFiles = files.filter((f): f is File => f instanceof File); // ✅ เฉพาะไฟล์ใหม่
 
     const variables: any = {
       id: isEdit ? String(initialData!.id) : null,
       data: {
         title: values.title,
-        body: values.body ?? "",        // เพิ่ม field body ให้ตรง schema
+        body: values.body ?? "",
         phone: values.phone || "",
         status: values.status || "public",
-        // ถ้าคุณมีระบบ keep/delete ฝั่ง GQL ให้ส่งเพิ่มใน data หรือ args อื่น
-        // existing_keep: existingKeepIds,
-        // existing_delete: existingDeleteIds,
       },
+      image_ids_delete: existingDeleteIds,            // ⬅️ ✅ สำคัญ
     };
 
-    // ✅ ส่ง images เฉพาะเมื่อมีไฟล์จริง
     if (newFiles.length > 0) {
-      variables.images = newFiles; // ต้องเป็น File[] เท่านั้น
+      variables.images = newFiles;                    // ⬅️ ✅ เฉพาะไฟล์ใหม่เท่านั้น
     }
+
+    console.log("[variables]", variables);
 
     const { data } = await onPost({ variables });
 
-    console.log("[onFinish]", newFiles);
+    // ⬇️ CHANGE: แจ้งผล + อัปเดทสถานะ/รูปใหม่หลังบันทึก
+    if (data?.upsertPost?.id) {
+      message.success(isEdit ? 'Saved' : 'Created');
 
+      // อัปเดตไฟล์ฝั่งฟอร์มให้ตรงกับของจริงที่เซิร์ฟเวอร์คำนวณแล้ว
+      const savedImgs = (data.upsertPost.images || []).map((img: any) => ({
+        _id: img.id,
+        url: img.url,
+      }));
+      setFiles(savedImgs);
 
-    if(isEdit){
-
+      onSaved?.(data.upsertPost.id);
+    } else {
+      message.error(isEdit ? 'Save failed' : 'Create failed');
     }
   }
 
@@ -179,5 +128,5 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         </Button>
       </Form>
     </Card>
-  );
+  )
 }
