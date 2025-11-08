@@ -1,9 +1,12 @@
 // apps/web/middleware.ts
 import { NextRequest, NextResponse } from "next/server";
-import { ADMIN_COOKIE } from "./lib/auth/token"
+import { ADMIN_COOKIE, USER_COOKIE } from "./lib/auth/token"
+
+// import { useSessionCtx } from './lib/session-context';
+import { useSession } from './lib/useSession';
 
 const PUBLIC = ["/admin/login"];
-
+const PROTECTED_PREFIXES = ['/chat', '/post']; // ต้องล็อกอินก่อนเข้าดู
 
 export const config = {
   // จงใจรวมทั้ง /admin/** และ /api/** ด้วย
@@ -11,12 +14,31 @@ export const config = {
     "/admin/:path*",
     "/api/:path*",           // << สำคัญ: ให้มั่นใจว่า /api/graphql โดน middleware เสมอ
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp)$).*)",
+
+    '/chat/:path*', 
+    '/profile/:path*',
+    '/post/:path*'
   ],
 };
 
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-  if (!pathname.startsWith("/admin")) return NextResponse.next();
+  const { pathname, search } = req.nextUrl;
+  if (!pathname.startsWith("/admin")){
+    const token = req.cookies.get(USER_COOKIE)?.value;
+    const { pathname } = req.nextUrl;
+
+    // ถ้าไม่มี token และ path นี้อยู่ในกลุ่มที่ต้องล็อกอิน → redirect ไป /login
+    if (!token && PROTECTED_PREFIXES.some(p => pathname.startsWith(p))) {
+      const loginUrl = new URL('/login', req.url);
+      // เก็บปลายทางเดิมรวม query string ไว้
+      const next = pathname + (search || '');
+      loginUrl.searchParams.set('next', next);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // console.log("middleware : Not yet /admin :", token, pathname);
+    return NextResponse.next();
+  } 
   if (PUBLIC.includes(pathname)) return NextResponse.next();
 
   const token = req.cookies.get(ADMIN_COOKIE)?.value;

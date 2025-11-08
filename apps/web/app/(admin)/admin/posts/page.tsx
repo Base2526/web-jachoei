@@ -84,7 +84,7 @@ function PostsList(){
             }
           });
         }}>delete</a>
-        <Link href={`/admin/post/${r.id}/view`}>view</Link>
+        <Link href={`/admin/post/${r.id}`}>view</Link>
       </Space>
     }
   ], [doDel, q, page, pageSize, refetch]);

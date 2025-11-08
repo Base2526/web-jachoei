@@ -13,26 +13,25 @@ import {
 } from "@ant-design/icons";
 
 // import { useSession } from '@/lib/useSession'
+// import { verifyUserSession } from "@/lib/auth"
+// import { verifyTokenString } from "@/lib/auth/token";
 
+import ThumbGrid from '@/components/ThumbGrid';
 import { useSessionCtx } from '@/lib/session-context';
 
-// import { verifyUserSession } from "@/lib/auth"
-
-import { verifyTokenString } from "@/lib/auth/token";
-
-const POSTS = gql`query($q:String){ posts(search:$q){ id title phone status created_at author { id name avatar } } }`;
+const POSTS = gql`query($q:String){ posts(search:$q){ id title body phone status created_at author { id name avatar } images { id url } } }`;
 const DELETE_POST = gql`mutation ($id: ID!) { deletePost(id: $id) } `;
 
 // import { GetServerSideProps } from "next";
 // import { verifyUserSessionFromReq } from "@/lib/auth/pages";
-
 // import { verifyUserSession } from "@/lib/auth/server"; 
-
 // export const getServerSideProps: GetServerSideProps = async ({ req }) => {
 //   const user = verifyUserSessionFromReq(req);
 //   if (!user) return { redirect: { destination: "/login?next=/account", permanent: false } };
 //   return { props: { user } };
 // };
+
+
 
 function PostsList(){
   const [q, setQ] = useState('');
@@ -102,35 +101,14 @@ function PostsList(){
   }
 
   const cols = [
-    { title:'Title', dataIndex:'title' },
+    { title:'Images', dataIndex:'images', render:(imgs:any)=><ThumbGrid images={imgs} width={160} height={110} /> },
+    { title:'Title', render:(s:any)=><Link href={`/post/${s.id}`} prefetch={false}>{s.title}</Link> },
+    { title:'Detail', dataIndex:'body' },
     { title:'Phone', dataIndex:'phone' },
-    { title:'Status', dataIndex:'status', render:(s:string)=><Tag color={s==='public'?'green':'red'}>{s}</Tag> },
+    // { title:'Status', dataIndex:'status', render:(s:string)=><Tag color={s==='public'?'green':'red'}>{s}</Tag> },
     { title:'Author', render:(_:any,r:any)=>r.author?.name || '-' },
     { title:'Action', render:(_:any,r:any)=>
-      // <Space>
-      //   <Link href={`/post/${r.id}`}>view</Link>
-      //   <Link href={`/post/${r.id}/edit`}>edit</Link>
-      //   <Popconfirm
-      //       title="Confirm delete?"
-      //       onConfirm={() => handleDelete(r.id)}
-      //       okText="Yes"
-      //       cancelText="No"
-      //     >
-      //       <Button
-      //         type="link"
-      //         danger
-      //         size="small"
-      //         loading={deleting}
-      //       >
-      //         delete
-      //       </Button>
-      //     </Popconfirm>
-
-      //      {r.author?.id ? <Link href={`/chat?to=${r.author.id}`}>chat</Link> : null}
-      // </Space> 
       <Space>
-
-        {/*  */}
         <Tooltip title="View">
           <Link href={`/post/${r.id}`} prefetch={false}>
             <Button
@@ -186,7 +164,7 @@ function PostsList(){
         
         {r.author?.id ? (
           <Tooltip title="Chat">
-            <Link href={`/chat?to=${r.author.id}`} prefetch={false}  onClick={handleClick}>
+            <Link href={`/chat?to=${r.author.id}`} prefetch={false} >
               <Button
                 type="text"
                 size="small"

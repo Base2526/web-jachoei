@@ -13,6 +13,7 @@ export default function PostView({ post, loading, title }: Props){
       {post && <>
         <Descriptions column={1} bordered size="small">
           <Descriptions.Item label="Title">{post.title}</Descriptions.Item>
+          <Descriptions.Item label="Detail">{post.body || '-'}</Descriptions.Item>
           <Descriptions.Item label="Phone">{post.phone || '-'}</Descriptions.Item>
           <Descriptions.Item label="Status">{post.status}</Descriptions.Item>
         </Descriptions>

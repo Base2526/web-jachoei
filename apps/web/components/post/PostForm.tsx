@@ -21,6 +21,7 @@ export type ExistingImage = { id: number|string; url: string };
 export type PostRecord = {
   id?: number|string;
   title: string;
+  body?:string;
   phone?: string;
   status: 'public' | 'unpublic';
   images?: ExistingImage[];

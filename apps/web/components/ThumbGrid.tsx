@@ -265,6 +265,7 @@ export default function ThumbGrid({
             visible,
             current,
             onVisibleChange: (v) => setVisible(v),
+            onChange: (idx) => setCurrent(idx),
           }}
         >
           {images.map((it) => (

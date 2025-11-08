@@ -23,7 +23,7 @@ export const resolvers = {
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
     // resolver: posts
     posts: async (_: any, { search }: { search?: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const author_id = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] posts :", ctx, author_id);
 
       const params: any[] = [];
@@ -110,7 +110,7 @@ export const resolvers = {
       return { items, total };
     },
     post: async (_:any, { id }:{id:string}, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const author_id = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] post :", ctx, author_id);
 
       const { rows } = await query(
