@@ -98,6 +98,7 @@ export const typeDefs = /* GraphQL */ `
     email: String
     role: String
     created_at: String
+    avatar: String
   }
 
   type DashboardPost {
@@ -121,10 +122,34 @@ export const typeDefs = /* GraphQL */ `
     logs: Int!
   }
 
+  type PostConnection {
+    items: [Post!]!
+    total: Int!
+  }
+
+  type File {
+    id: ID!
+    filename: String!
+    original_name: String
+    mimetype: String
+    size: Int!
+    relpath: String!
+    created_at: String!
+    updated_at: String!
+    url: String!        # เสิร์ฟผ่าน /api/files/:id
+    thumb: String       # สำหรับรูปภาพ (อาจใช้ url เดิม)
+  }
+
+  type FileConnection {
+    items: [File!]!
+    total: Int!
+  }
+
   type Query {
     _health: String!
     meRole: String!
     posts(search: String): [Post!]!
+    postsPaged(search: String, limit: Int!, offset: Int!): PostConnection!  
     post(id: ID!): Post
     myPosts(search: String): [Post!]!
 
@@ -149,10 +174,9 @@ export const typeDefs = /* GraphQL */ `
     pending: PendingSummary!
     # stats: Stats!
     latestUsers(limit: Int = 5): [DashboardUser!]!
-    latestPosts(limit: Int = 5): [DashboardPost!]!
+    latestPosts(limit: Int = 5): [Post!]!
 
-
-   
+    filesPaged(search: String, limit: Int!, offset: Int!): FileConnection!
   }
 
   input PostInput {
@@ -194,9 +218,12 @@ export const typeDefs = /* GraphQL */ `
     # upsertPost(id: ID, data: PostInput!, images: [Upload!]): Post!
     upsertPost(id: ID, data: PostInput!, images: [Upload!], image_ids_delete: [ID!]): Post!
     deletePost(id: ID!): Boolean!
+    deletePosts(ids: [ID!]!): Boolean! 
 
     upsertUser(id: ID, data: UserInput!): User!
+    uploadAvatar(user_id: ID!, file: Upload!): String! 
     deleteUser(id: ID!): Boolean!
+    deleteUsers(ids: [ID!]!): Boolean!
 
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
     addMember(chat_id: ID!, user_id: ID!): Boolean!
@@ -214,5 +241,9 @@ export const typeDefs = /* GraphQL */ `
 
     requestPasswordReset(email: String!): Boolean
     resetPassword(token: String!, newPassword: String!): Boolean
+
+    deleteFile(id: ID!): Boolean!
+    deleteFiles(ids: [ID!]!): Boolean!     # <- multi delete
+    renameFile(id: ID!, name: String!): Boolean!
   }
 `;

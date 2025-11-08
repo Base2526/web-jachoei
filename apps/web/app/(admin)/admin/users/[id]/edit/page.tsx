@@ -1,16 +1,27 @@
 'use client';
-import { ApolloClient, InMemoryCache, HttpLink, ApolloProvider, gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Form, Input, Select, Button, Space, message } from "antd";
-import { useMemo } from "react";
+import { gql, useQuery, useMutation } from "@apollo/client";
+import { Card, Form, Input, Select, Button, Space, Upload, messag, Image } from "antd";
+import { UploadOutlined } from "@ant-design/icons";
+import { useState } from "react";
 
-const Q = gql`query($id:ID!){ user(id:$id){ id name email phone avatar role } }`;
+const Q = gql`
+  query($id:ID!){
+    user(id:$id){ id name email phone avatar role }
+  }
+`;
+
 const M_UPSERT = gql`
 mutation($id:ID!, $data:UserInput!){
   upsertUser(id:$id, data:$data){ id }
 }
 `;
 
-// SHA-256 (hex)
+const M_UPLOAD_AVATAR = gql`
+mutation($user_id:ID!, $file:Upload!){
+  uploadAvatar(user_id:$user_id, file:$file)
+}
+`;
+
 async function sha256Hex(input: string) {
   const enc = new TextEncoder();
   const digest = await crypto.subtle.digest('SHA-256', enc.encode(input));
@@ -21,34 +32,50 @@ async function sha256Hex(input: string) {
 
 function FormEdit({ id }: { id: string }) {
   const [form] = Form.useForm();
-  const { data } = useQuery(Q, { variables: { id } });
+  const { data, refetch } = useQuery(Q, { variables: { id } });
   const [save, { loading }] = useMutation(M_UPSERT, {
     onCompleted: () => message.success('Saved'),
   });
+  const [uploadAvatar] = useMutation(M_UPLOAD_AVATAR);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   if (!data?.user) return <div>Loading...</div>;
-
   const u = data.user;
+
+  const currentAvatar = avatarUrl || u.avatar || null;
+
+  async function handleUpload(file: File) {
+    try {
+      const { data } = await uploadAvatar({ variables: { user_id: id, file } });
+      const url = data?.uploadAvatar;
+      if (url) {
+        setAvatarUrl(url);
+        message.success('Avatar updated');
+        refetch(); // refresh user info
+      }
+    } catch (e) {
+      console.error(e);
+      message.error('Upload failed');
+    }
+  }
 
   return (
     <Card title={`Edit User: ${u.name}`} style={{ maxWidth: 640 }}>
       <Form
-        key={u.id}                 // ✅ บังคับ remount เมื่อ id เปลี่ยน
+        key={u.id}
         form={form}
         layout="vertical"
-        initialValues={{           // ✅ ตั้งค่าจาก data โดยตรง
+        initialValues={{
           name:   u.name   ?? '',
           email:  u.email  ?? '',
           phone:  u.phone  ?? '',
-          avatar: u.avatar ?? '',
           role:   u.role   ?? 'Subscriber',
         }}
         onFinish={async (v) => {
           const dataToSend: any = {
             name: v.name,
-            // email immutable ในตัวอย่างนี้
             phone: v.phone || null,
-            avatar: v.avatar || null,
+            avatar: currentAvatar, // ✅ ใช้ค่าปัจจุบันจาก upload
             role: v.role,
           };
 
@@ -64,10 +91,35 @@ function FormEdit({ id }: { id: string }) {
           await save({ variables: { id, data: dataToSend } });
         }}
       >
+        <Form.Item label="Avatar">
+          <Space direction="vertical">
+            <div style={{ width: 100, height: 100, borderRadius: '50%', overflow: 'hidden', background: '#f5f5f5' }}>
+              {currentAvatar ? (
+                <Image src={currentAvatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{
+                  width: '100%', height: '100%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#aaa'
+                }}>No Avatar</div>
+              )}
+            </div>
+            <Upload
+              showUploadList={false}
+              beforeUpload={(file) => {
+                handleUpload(file);
+                return false; // prevent default upload
+              }}
+              accept="image/*"
+            >
+              <Button icon={<UploadOutlined />}>Change Avatar</Button>
+            </Upload>
+          </Space>
+        </Form.Item>
         <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
         <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}><Input disabled /></Form.Item>
         <Form.Item name="phone" label="Phone"><Input /></Form.Item>
-        <Form.Item name="avatar" label="Avatar URL"><Input /></Form.Item>
+
         <Form.Item name="role" label="Role" rules={[{ required: true }]}>
           <Select options={[
             { value: 'Subscriber', label: 'Subscriber' },
@@ -76,7 +128,6 @@ function FormEdit({ id }: { id: string }) {
           ]} />
         </Form.Item>
 
-        {/* NEW: password + confirm-password (optional) */}
         <Form.Item
           name="password"
           label="New Password"
@@ -96,7 +147,7 @@ function FormEdit({ id }: { id: string }) {
             ({ getFieldValue }) => ({
               validator(_, value) {
                 const pwd = getFieldValue('password');
-                if (!pwd && !value) return Promise.resolve(); // both empty = ok
+                if (!pwd && !value) return Promise.resolve();
                 if (pwd === value) return Promise.resolve();
                 return Promise.reject(new Error('Confirm password not match'));
               },
@@ -116,6 +167,5 @@ function FormEdit({ id }: { id: string }) {
 }
 
 export default function Page({ params }: { params: { id: string } }) {
-  // ใช้ client เดิมของคุณก็ได้; ย่อส่วนเพื่อโฟกัสที่ฟอร์ม
   return <FormEdit id={params.id} />;
 }

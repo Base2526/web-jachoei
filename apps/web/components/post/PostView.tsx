@@ -6,11 +6,14 @@ import type { PostRecord } from './PostForm';
 type Props = { post: PostRecord | null; loading?: boolean; title?: string; };
 
 export default function PostView({ post, loading, title }: Props){
+
+  console.log("[PostView]", post);
   return (
     <Card title={title ?? 'Post'} loading={loading}>
       {post && <>
         <Descriptions column={1} bordered size="small">
           <Descriptions.Item label="Title">{post.title}</Descriptions.Item>
+          <Descriptions.Item label="Detail">{post.body || '-'}</Descriptions.Item>
           <Descriptions.Item label="Phone">{post.phone || '-'}</Descriptions.Item>
           <Descriptions.Item label="Status">{post.status}</Descriptions.Item>
         </Descriptions>

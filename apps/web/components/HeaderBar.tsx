@@ -74,7 +74,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
       <Space size={8} align="center">
         {userSession && (
           <>
-            <Tooltip title="ตะกร้าสินค้า"><Button type="text" icon={<ShoppingCartOutlined style={{ fontSize:18, color:"#000" }} />} /></Tooltip>
+            {/* <Tooltip title="ตะกร้าสินค้า"><Button type="text" icon={<ShoppingCartOutlined style={{ fontSize:18, color:"#000" }} />} /></Tooltip> */}
             <Tooltip title="ข้อความ"><Button type="text" onClick={() => router.push("/chat")} icon={<MessageOutlined style={{ fontSize:18, color:"#000" }} />} /></Tooltip>
             <Tooltip title="แจ้งเตือน"><Button type="text" onClick={() => router.push("/notifications")} icon={<BellOutlined style={{ fontSize:18, color:"#000" }} />} /></Tooltip>
           </>

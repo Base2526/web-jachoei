@@ -1,10 +1,11 @@
-// apps/web/app/post/[id]/page.tsx
+// apps/web/app/(admin)/admin/posts/[id]/view/page.tsx
 'use client';
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import PostForm, { PostRecord } from '@/components/post/PostForm';
+import { useParams } from 'next/navigation';
+import PostView from '@/components/post/PostView';
+import type { PostRecord } from '@/components/post/PostForm';
 
-import { gql, useQuery } from "@apollo/client";
+import { gql, useQuery, useMutation } from "@apollo/client";
 
 const Q_POST = gql`
   query($id:ID!){
@@ -18,7 +19,6 @@ const Q_POST = gql`
 
 export default function Page(){
   const { id } = useParams<{id:string}>();
-  const router = useRouter();
 
   const { data, loading, error } = useQuery(Q_POST, { variables: { id } });
 
@@ -26,14 +26,8 @@ export default function Page(){
   if (error)   return <div>Error: {String(error.message)}</div>;
 
   const post = data?.post;
-  if (!post) return <div>Not found</div>
+  if (!post) return <div>Not found</div>;
 
-  return (
-    <PostForm
-      apiBase="/admin"
-      initialData={post!}
-      onSaved={()=> router.refresh()}
-      title="Edit Post"
-    />
-  );
+  console.log("[view]" , post);
+  return <PostView post={post} loading={loading} title="Post (Admin)" />;
 }

@@ -18,8 +18,8 @@ const { Header } = Layout;
 
 export default function AdminHeader() {
   const quick = [
-    { text: 'Users', icon: <UserOutlined />, href: '/admin/users', badge: 3 },
     { text: 'Posts', icon: <FileTextOutlined />, href: '/admin/posts', badge: 2 },
+    { text: 'Users', icon: <UserOutlined />, href: '/admin/users', badge: 3 },
     { text: 'Files', icon: <FileImageOutlined />, href: '/admin/files', badge: 5 },
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
     { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },

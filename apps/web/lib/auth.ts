@@ -62,3 +62,50 @@
 //     return null;
 //   }
 // }
+import { GraphQLError } from "graphql/error";
+import { createHash } from "crypto";
+
+interface RequireAuthOptions {
+  optionalWeb?: boolean;   // ถ้า true → web ไม่มี uid ก็ไม่ throw error
+  optionalAdmin?: boolean; // เผื่อใช้กรณี admin public
+}
+
+export function requireAuth(ctx: any, opts: RequireAuthOptions = {}): string | null {
+  const scope = ctx?.scope;
+
+  // ✅ ตรวจว่า scope ถูกต้องหรือไม่
+  if (!scope || !['web', 'admin'].includes(scope)) {
+    throw new GraphQLError("Unauthorized scope", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
+
+  // ✅ แยกตรวจตาม scope
+  if (scope === 'admin') {
+    const uid = ctx?.admin?.id;
+    if (!uid && !opts.optionalAdmin) {
+      throw new GraphQLError("Admin not authenticated", {
+        extensions: { code: "UNAUTHENTICATED" },
+      });
+    }
+    return uid ?? null;
+  }
+
+  if (scope === 'web') {
+    const uid = ctx?.user?.id;
+    if (!uid && !opts.optionalWeb) {
+      throw new GraphQLError("User not authenticated", {
+        extensions: { code: "UNAUTHENTICATED" },
+      });
+    }
+    return uid ?? null; // คืน null ได้ถ้า optionalWeb
+  }
+
+  throw new GraphQLError("Invalid authentication context", {
+    extensions: { code: "UNAUTHENTICATED" },
+  });
+}
+
+export function sha256Hex(input: string) {
+  return createHash("sha256").update(input).digest("hex");
+}

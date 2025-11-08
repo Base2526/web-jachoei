@@ -52,21 +52,49 @@ export async function POST(req: NextRequest){
 }
 
 // DELETE /admin/api/logs  -> purge by filter (careful; requires either level/category/q to be set)
-export async function DELETE(req: NextRequest){
-  const { searchParams } = new URL(req.url);
-  const q = (searchParams.get("q")||"").trim();
-  const level = (searchParams.get("level")||"").trim();
-  const category = (searchParams.get("category")||"").trim();
+// export async function DELETE(req: NextRequest){
+//   const { searchParams } = new URL(req.url);
+//   const q = (searchParams.get("q")||"").trim();
+//   const level = (searchParams.get("level")||"").trim();
+//   const category = (searchParams.get("category")||"").trim();
 
-  const conds:string[] = [];
-  const args:any[] = [];
-  if(q){ args.push(`%${q}%`); conds.push("(LOWER(message) LIKE LOWER($"+args.length+"))"); }
-  if(level){ args.push(level); conds.push("level = $"+args.length); }
-  if(category){ args.push(category); conds.push("category = $"+args.length); }
+//   const conds:string[] = [];
+//   const args:any[] = [];
+//   if(q){ args.push(`%${q}%`); conds.push("(LOWER(message) LIKE LOWER($"+args.length+"))"); }
+//   if(level){ args.push(level); conds.push("level = $"+args.length); }
+//   if(category){ args.push(category); conds.push("category = $"+args.length); }
 
-  if(!conds.length) return NextResponse.json({ error: "Refuse to purge without any condition" }, { status: 400 });
+//   if(!conds.length) return NextResponse.json({ error: "Refuse to purge without any condition" }, { status: 400 });
 
-  const sql = `DELETE FROM system_logs WHERE `+conds.join(" AND ");
-  const result = await query(sql, args);
-  return NextResponse.json({ deleted: result.rowCount||0 });
+//   const sql = `DELETE FROM system_logs WHERE `+conds.join(" AND ");
+//   const result = await query(sql, args);
+//   return NextResponse.json({ deleted: result.rowCount||0 });
+// }
+
+// DELETE /api/logs?ids=1,2,3  | หรือใช้ body JSON ก็ได้
+export async function DELETE(req: Request) {
+  const url = new URL(req.url);
+  const idsParam = url.searchParams.get('ids');
+
+  if (!idsParam) {
+    return new Response(JSON.stringify({ error: 'Missing ids' }), { status: 400 });
+  }
+
+  const ids = idsParam
+    .split(',')
+    .map(s => parseInt(s.trim(), 10))
+    .filter(n => !isNaN(n));
+
+  if (ids.length === 0) {
+    return new Response(JSON.stringify({ error: 'No valid ids' }), { status: 400 });
+  }
+
+  const { rowCount } = await query(
+    `DELETE FROM system_logs WHERE id = ANY($1::int[])`,
+    [ids]
+  );
+
+  return new Response(JSON.stringify({ deleted: rowCount }), { status: 200 });
 }
+
+
