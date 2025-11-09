@@ -11,7 +11,7 @@ const { Header } = Layout;
 const { Text } = Typography;
 
 type Lang = "th" | "en";
-const labelOf: Record<Lang,string> = { th:"TH", en:"EN" };
+const labelOf: Record<Lang,string> = { th:"ไทย", en:"English" };
 
 export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }) {
   const router = useRouter();
@@ -66,7 +66,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
     <Header style={{ background: "#fff", display:"flex", alignItems:"center", gap:16, height:56, padding:"0 16px", position:"sticky", top:0, zIndex:100 }}>
       <Link href="/" style={{ display:"flex", alignItems:"center", gap:12 }}>
         <Clover />
-        <Text style={{ color:"#000", fontSize:18, letterSpacing:1, fontWeight:600, whiteSpace:"nowrap" }}>BEST MALL U</Text>
+        <Text style={{ color:"#000", fontSize:18, letterSpacing:1, fontWeight:600, whiteSpace:"nowrap" }}>PROTECT SCAMMER</Text>
       </Link>
 
       <div style={{ marginLeft:"auto" }} />

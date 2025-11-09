@@ -12,18 +12,31 @@ import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { createClient } from "graphql-ws";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { onError } from "@apollo/client/link/error";
-
 import { createUploadLink } from 'apollo-upload-client';
 
-function hardLogout() {
-  try { localStorage.removeItem("token"); } catch {}
-  // แจ้งทั่วแอปว่าโดนบังคับออก
-  window.dispatchEvent(new CustomEvent("force-logout"));
-  // เคลียร์ cookie ที่เก็บ token ถ้ามี
+import { addLog } from './log/log';
+
+function backendLogout(reason?: string) {
+  const time = new Date().toISOString();
+  const msg = `[${time}] Backend logout: ${reason || "session invalid / token rejected"}`;
+
+  addLog( "warn", "backend-logout", msg, {} );
+  window.dispatchEvent(new CustomEvent("backend-logout", { detail: { reason } }));
   document.cookie = "token=; Max-Age=0; path=/";
-  // ไปหน้า login
+  window.location.href = "/admin/login";
+}
+
+function frontendLogout(reason?: string) {
+  const time = new Date().toISOString();
+  const msg = `[${time}] Frontend logout: ${reason || "token expired / manual logout"}`;
+
+  addLog( "warn", "frontend-logout", msg, {} );
+  window.dispatchEvent(new CustomEvent("frontend-logout", { detail: { reason } }));
+  document.cookie = "token=; Max-Age=0; path=/";
   window.location.href = "/login";
 }
+
+
 
 // ----------------------------
 // HTTP link
@@ -38,8 +51,6 @@ const httpLink = createUploadLink({
   credentials: "include", // ให้ส่ง cookie ไปด้วยถ้ามี
   fetch,
 });
-
-
 
 // ----------------------------
 // Auth link (เพิ่ม header ทุก request อัตโนมัติ)
@@ -62,8 +73,17 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
   if (graphQLErrors?.length) {
     for (const err of graphQLErrors) {
       // @ts-ignore
-      if (err?.extensions?.code === "UNAUTHENTICATED") {
-        hardLogout();
+      addLog('error', 'graphql', err.message, err.extensions || {});
+
+      const code = err?.extensions?.code;
+      const reason = err?.extensions?.reason;
+
+      if (code === "UNAUTHENTICATED") {
+        if (reason?.startsWith("backend")) {
+          backendLogout(); // บังคับออก เช่น token invalid จาก server
+        } else {
+          frontendLogout(); // เช่น token หมดอายุ local แต่ยังไม่เรียก server
+        }
         return;
       }
     }
@@ -72,7 +92,9 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
   // @ts-ignore
   const status = networkError?.statusCode || networkError?.response?.status;
   if (status === 401 || status === 403) {
-    hardLogout();
+
+    addLog('error', 'graphql', status, {});
+    backendLogout();
   }
 });
 
