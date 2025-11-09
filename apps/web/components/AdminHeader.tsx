@@ -24,16 +24,7 @@ export default function AdminHeader() {
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
     { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },
   ];
-
-  const router = useRouter();
-  // async function logout() {
-  //   await fetch('/api/logout', { method: 'POST' });
-  //   router.replace('/admin/login');
-  // }
-
   const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()
-
-  // /admin/api/auth/me
   async function onLogout() {
     const res = await fetch("/api/auth/logout-admin", { method: "POST" });
 
@@ -42,7 +33,7 @@ export default function AdminHeader() {
     if (res.ok) {
       message.success("Logged out");
       refreshSession(); // รีโหลดสถานะ session
-      window.location.href = "/admin/login"; // หรือ router.push('/login');
+      window.location.href = "/admin/login";
     } else {
       message.error("Logout failed");
     }
@@ -59,15 +50,13 @@ export default function AdminHeader() {
         justifyContent: 'space-between',
         flexWrap: 'wrap',
         gap: 12,
-      }}
-    >
+      }}>
       {/* Left */}
       <Title level={3} style={{ margin: 0 }}>
         <Link href="/admin" style={{  }}>
           Admin Dashboard
         </Link>
       </Title>
-
       {/* Center */}
       <Space size="middle" wrap>
         {quick.map((q) => (
@@ -92,13 +81,10 @@ export default function AdminHeader() {
           onClick={onLogout}
           danger
           type="primary"
-          style={{ minWidth: 100 }}
-        >
+          style={{ minWidth: 100 }}>
           Logout
         </Button>
       </Space>
-
-      
     </Header>
   );
 }

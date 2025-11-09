@@ -10,7 +10,7 @@ import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { persistWebFile, buildFileUrlById } from "@/lib/storage";
 import { requireAuth, sha256Hex } from "@/lib/auth"
-
+import { addLog } from '@/lib/log/log';
 
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -680,123 +680,273 @@ export const resolvers = {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] upsertPost :", ctx, author_id);
 
-      // 1) upsert post
-      let postId: number;
-      if (id) {
-        const { rows } = await query(
-          `UPDATE posts
-            SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
-          WHERE id=$5
-          RETURNING id`,
-          [data.title, data.body, data.phone || null, data.status, id]
-        );
-        postId = rows[0].id;
-      } else {
-        const { rows } = await query(
-          `INSERT INTO posts (title, body, phone, status, created_at)
-          VALUES ($1,$2,$3,$4,NOW())
-          RETURNING id`,
-          [data.title, data.body, data.phone || null, data.status]
-        );
-        postId = rows[0].id;
-      }
+      // // 1) upsert post
+      // let postId: number;
+      // if (id) {
+      //   const { rows } = await query(
+      //     `UPDATE posts
+      //       SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
+      //     WHERE id=$5
+      //     RETURNING id`,
+      //     [data.title, data.body, data.phone || null, data.status, id]
+      //   );
+      //   postId = rows[0].id;
+      // } else {
+      //   const { rows } = await query(
+      //     `INSERT INTO posts (title, body, phone, status, created_at)
+      //     VALUES ($1,$2,$3,$4,NOW())
+      //     RETURNING id`,
+      //     [data.title, data.body, data.phone || null, data.status]
+      //   );
+      //   postId = rows[0].id;
+      // }
 
-      // 2) ลบรูปเก่า (ตามที่ส่งมา)
-      if (image_ids_delete?.length) {
-        await query(
-          `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::int[])`,
-          [postId, image_ids_delete.map(Number)]
-        );
-      }
+      // // 2) ลบรูปเก่า (ตามที่ส่งมา)
+      // if (image_ids_delete?.length) {
+      //   await query(
+      //     `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::int[])`,
+      //     [postId, image_ids_delete.map(Number)]
+      //   );
+      // }
 
-      // 3) บันทึกรูปใหม่ (ผ่าน persistWebFile => เข้าตาราง files เหมือน /api/files)
-      if (images?.length) {
-        const fileRows = [];
-        for (const pf of images) {
-          const f = await pf;
-          const row = await persistWebFile(f); // <- ใช้โมดูลเดียวกับ /api/files
-          fileRows.push(row);
+      // // 3) บันทึกรูปใหม่ (ผ่าน persistWebFile => เข้าตาราง files เหมือน /api/files)
+      // if (images?.length) {
+      //   const fileRows = [];
+      //   for (const pf of images) {
+      //     const f = await pf;
+      //     const row = await persistWebFile(f); // <- ใช้โมดูลเดียวกับ /api/files
+      //     fileRows.push(row);
+      //   }
+      //   if (fileRows.length) {
+      //     const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
+      //     await query(
+      //       `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
+      //       [postId, ...fileRows.map(r => r.id)]
+      //     );
+      //   }
+      // }
+
+      // // 4) โหลดผลลัพธ์กลับ
+      // const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
+      // const { rows: imgs } = await query(
+      //   `SELECT f.id, f.relpath
+      //     FROM post_images pi
+      //     JOIN files f ON f.id = pi.file_id
+      //     WHERE pi.post_id=$1
+      //     ORDER BY pi.id`, [postId]
+      // );
+
+      // return {
+      //   ...posts[0],
+      //   images: imgs.map((r: any) => ({ id: r.id, url: buildFileUrlById(r.id) })), // เสิร์ฟผ่าน /api/files/:id
+      // };
+
+      return runInTransaction(author_id, async (client) => {
+        let postId: string;
+
+        // 1) upsert post
+        if (id) {
+          const { rows } = await client.query(
+            `UPDATE posts
+               SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
+             WHERE id=$5
+             RETURNING id`,
+            [data.title, data.body, data.phone || null, data.status, id]
+          );
+          postId = rows[0].id;
+        } else {
+          const { rows } = await client.query(
+            `INSERT INTO posts (title, body, phone, status, created_at)
+             VALUES ($1,$2,$3,$4,NOW())
+             RETURNING id`,
+            [data.title, data.body, data.phone || null, data.status]
+          );
+          postId = rows[0].id;
         }
-        if (fileRows.length) {
-          const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
-          await query(
-            `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
-            [postId, ...fileRows.map(r => r.id)]
+
+        // 2) ลบรูปเก่า (ถ้ามี)
+        if (image_ids_delete?.length) {
+          await client.query(
+            `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::uuid[])`,
+            [postId, image_ids_delete.map(String)]
           );
         }
-      }
 
-      // 4) โหลดผลลัพธ์กลับ
-      const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
-      const { rows: imgs } = await query(
-        `SELECT f.id, f.relpath
-          FROM post_images pi
-          JOIN files f ON f.id = pi.file_id
-          WHERE pi.post_id=$1
-          ORDER BY pi.id`, [postId]
-      );
+        // 3) เพิ่มรูปใหม่
+        if (images?.length) {
+          const fileRows = [];
+          for (const pf of images) {
+            const f = await pf;
+            const row = await persistWebFile(f);
+            fileRows.push(row);
+          }
+          if (fileRows.length) {
+            const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
+            await client.query(
+              `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
+              [postId, ...fileRows.map(r => r.id)]
+            );
+          }
+        }
 
-      return {
-        ...posts[0],
-        images: imgs.map((r: any) => ({ id: r.id, url: buildFileUrlById(r.id) })), // เสิร์ฟผ่าน /api/files/:id
-      };
+        // 4) ดึงข้อมูลโพสต์พร้อมรูปกลับ
+        const { rows: posts } = await client.query(
+          `SELECT * FROM posts WHERE id=$1`, [postId]
+        );
+        const { rows: imgs } = await client.query(
+          `SELECT f.id, f.relpath
+             FROM post_images pi
+             JOIN files f ON f.id = pi.file_id
+            WHERE pi.post_id=$1
+            ORDER BY pi.id`, [postId]
+        );
+
+        // 5) เขียน log หลังบันทึก
+        await addLog(
+          "info",
+          id ? "post-update" : "post-create",
+          id ? "User updated a post" : "User created a post",
+          { author_id, postId }
+        );
+
+        return {
+          ...posts[0],
+          images: imgs.map((r: any) => ({
+            id: r.id,
+            url: buildFileUrlById(r.id),
+          })),
+        };
+      });
     },
     deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] deletePost :", ctx, author_id);
 
-      const res = await query(`DELETE FROM posts WHERE id=$1`, [id]);
-      return res.rowCount === 1;
+      // ✅ ใช้ helper transaction function
+      return await runInTransaction(author_id, async (client) => {
+        // ลบโพสต์ใน transaction
+        const res = await client.query(`DELETE FROM posts WHERE id = $1`, [id]);
+
+        // ✅ บันทึก log หลังลบสำเร็จ (อยู่ใน transaction เดียวกัน)
+        await addLog('info', 'post-delete', 'User deleted post', {
+          author_id,
+          postId: id,
+          affectedRows: res.rowCount,
+        });
+
+        return res.rowCount === 1;
+      });
     },
     deletePosts: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] deletePosts :", ctx, author_id);
 
+      // ✅ validate input
       if (!Array.isArray(ids) || ids.length === 0) {
-        throw new GraphQLError('No IDs provided', {
-          extensions: { code: 'BAD_USER_INPUT' }
+        throw new GraphQLError("No IDs provided", {
+          extensions: { code: "BAD_USER_INPUT" },
         });
       }
 
-      const validIds = ids.filter(id => /^[0-9a-fA-F-]{36}$/.test(id));
+      const validIds = ids.filter((id) => /^[0-9a-fA-F-]{36}$/.test(id));
       if (validIds.length === 0) {
-        throw new GraphQLError('Invalid UUIDs');
+        throw new GraphQLError("Invalid UUIDs", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
       }
 
-      const res = await query(
-        `DELETE FROM posts WHERE id = ANY($1::uuid[])`,
-        [validIds]
-      );
+      // ✅ ทำงานใน transaction พร้อมตั้งค่า app.editor_id
+      const result = await runInTransaction(author_id, async (client) => {
+        // 1) ลบโพสต์
+        const res = await client.query(
+          `DELETE FROM posts WHERE id = ANY($1::uuid[])`,
+          [validIds]
+        );
 
-      console.log(`[deletePosts] user=${ctx.admin.id}, deleted=${res.rowCount}`);
+        // 2) เพิ่ม log
+        await addLog(
+          "info",                     // log level
+          "post-delete",              // action key
+          `Deleted ${res.rowCount} posts`, // message
+          {
+            userId: author_id,
+            deletedCount: res.rowCount,
+            postIds: validIds,
+          }
+        );
 
-      return res.rowCount > 0;
+        return res.rowCount > 0;
+      });
+
+      return result;
     },
     createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] createChat :", ctx, author_id);
 
-      const { rows } = await query(
-        `INSERT INTO chats (name, is_group, created_by) VALUES ($1,$2,$3) RETURNING *`,
-        [name || null, isGroup, author_id]
-      );
-      const chat = rows[0];
-      const allMembers = Array.from(new Set([author_id, ...memberIds]));
-      for (const uid of allMembers){
-        await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chat.id, uid]);
-      }
-      const mem = await query(
-        `SELECT u.* FROM chat_members m JOIN users u ON m.user_id=u.id WHERE m.chat_id=$1`, [chat.id]
-      );
-      const creator = await query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
-      return { ...chat, created_by: creator.rows[0], members: mem.rows };
+      // ✅ ใช้ transaction ครอบทุกขั้นตอน
+      return await runInTransaction(author_id, async (client) => {
+        // 1) สร้าง chat ใหม่
+        const { rows } = await client.query(
+          `INSERT INTO chats (name, is_group, created_by)
+          VALUES ($1,$2,$3)
+          RETURNING *`,
+          [name || null, isGroup, author_id]
+        );
+        const chat = rows[0];
+
+        // 2) เพิ่มสมาชิกทั้งหมด (รวม creator)
+        const allMembers = Array.from(new Set([author_id, ...memberIds]));
+        for (const uid of allMembers) {
+          await client.query(
+            `INSERT INTO chat_members (chat_id, user_id)
+            VALUES ($1,$2)
+            ON CONFLICT DO NOTHING`,
+            [chat.id, uid]
+          );
+        }
+
+        // 3) ดึงข้อมูลสมาชิกและผู้สร้าง
+        const mem = await client.query(
+          `SELECT u.* 
+            FROM chat_members m
+            JOIN users u ON m.user_id = u.id
+            WHERE m.chat_id = $1`,
+          [chat.id]
+        );
+        const creator = await client.query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
+
+        // ✅ 4) บันทึก log (อยู่นอก query หลักแต่ยังใน transaction)
+        await addLog('info', 'chat-create', 'Chat created', {
+          chatId: chat.id,
+          userId: author_id,
+          members: allMembers.length,
+        });
+
+        // ✅ 5) คืนค่าผลลัพธ์
+        return {
+          ...chat,
+          created_by: creator.rows[0],
+          members: mem.rows,
+        };
+      });
     },
     addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] addMember :", ctx, author_id);
 
-      await query(`INSERT INTO chat_members (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [chat_id, user_id]);
-      return true;
+      return await runInTransaction(author_id, async (client) => {
+        await client.query(
+          `INSERT INTO chat_members (chat_id, user_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [chat_id, user_id]
+        );
+
+        await addLog('info', 'add-member', 'Add members', { chat_id,  user_id});
+
+        return true;
+      });
     },
     sendMessage: async (
       _: any,
@@ -811,7 +961,7 @@ export const resolvers = {
       );
 
       // ✅ ใช้ runInTransaction แทน
-      const fullMessage = await runInTransaction(async (client) => {
+      const fullMessage = await runInTransaction(author_id, async (client) => {
         // 1) insert message
         const msgRes = await client.query(
           `INSERT INTO messages (chat_id, sender_id, text)
@@ -933,13 +1083,25 @@ export const resolvers = {
         })
       );
 
+      try {
+        await addLog('info', 'chat-message', 'User sent message', {
+          userId: author_id,
+          chatId: fullMessage.chat_id,
+          messageId: fullMessage.id,
+          text: text.slice(0, 100), // truncate 100 ตัวแรก
+          toUsers: fullMessage.to_user_ids,
+        });
+      } catch (err) {
+        console.warn('[sendMessage] addLog failed:', err);
+      }
+
       return fullMessage;
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] upsertUser :", ctx, author_id);
 
-      // (ทางเลือก) ทำความสะอาดค่าเล็กน้อย
+      // 2️⃣ ทำความสะอาดข้อมูล
       const name = (data.name ?? '').trim();
       const avatar = data.avatar ?? null;
       const phone = data.phone ?? null;
@@ -947,169 +1109,376 @@ export const resolvers = {
       const role = (data.role ?? 'Subscriber').trim();
       const passwordHash = data.passwordHash ?? null;
 
-      if (id) {
-        // อัปเดต: อัปเดต password_hash เฉพาะเมื่อส่งมาเท่านั้น
-        const { rows } = await query(
-          `
-          UPDATE users
-          SET
-            name = $1,
-            avatar = $2,
-            phone = $3,
-            role = $4,
-            -- password_hash = CASE
-            --   WHEN $5 IS NULL THEN password_hash
-            --   ELSE $5
-            -- END
-            password_hash = COALESCE($5::text, password_hash)
-          WHERE id = $6
-          RETURNING *;
-          `,
-          [name, avatar, phone, role, passwordHash, id]
-        );
-        return rows[0] || null;
-      } else {
-        // สร้างใหม่: ใส่ลำดับพารามิเตอร์ให้ตรงกับคอลัมน์!
-        // (name, avatar, phone, email, role, password_hash)
-        if (!email) throw new Error("email is required");
-        const { rows } = await query(
-          `
-          INSERT INTO users (name, avatar, phone, email, role, password_hash)
-          VALUES ($1,   $2,    $3,   $4,   $5,   $6)
-          RETURNING *;
-          `,
-          [name, avatar, phone, email, role, passwordHash] // ✅ role มาก่อน hash
-        );
-        return rows[0] || null;
-      }
+      // ✅ ใช้ transaction wrapper เพื่อ ensure COMMIT/ROLLBACK และ SET LOCAL app.editor_id
+      return await runInTransaction(author_id, async (client) => {
+        let resultUser = null;
+
+        if (id) {
+          // 🧩 UPDATE: อัปเดต password_hash เฉพาะเมื่อส่งมา
+          const { rows } = await client.query(
+            `
+            UPDATE users
+               SET name = $1,
+                   avatar = $2,
+                   phone = $3,
+                   role = $4,
+                   password_hash = COALESCE($5::text, password_hash)
+             WHERE id = $6
+             RETURNING *;
+            `,
+            [name, avatar, phone, role, passwordHash, id]
+          );
+
+          resultUser = rows[0] || null;
+
+          if (resultUser) {
+            await addLog(
+              "info",
+              "user-update",
+              "User profile updated",
+              { userId: resultUser.id, editorId: author_id }
+            );
+          }
+        } else {
+          // 🧩 INSERT: ต้องมี email
+          if (!email) throw new GraphQLError("email is required");
+
+          const { rows } = await client.query(
+            `
+            INSERT INTO users (name, avatar, phone, email, role, password_hash)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *;
+            `,
+            [name, avatar, phone, email, role, passwordHash]
+          );
+
+          resultUser = rows[0] || null;
+
+          if (resultUser) {
+            // 📘 ตัวอย่าง: log ว่า user ถูกสร้างใหม่ (หรือ login สำเร็จ)
+            await addLog(
+              "info",
+              "upsert-user", 
+              "Upsert User",
+              { userId: resultUser.id }
+            );
+          }
+        }
+
+        return resultUser;
+      });
     },
     uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<File> }, ctx: any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] uploadAvatar :", ctx, author_id);
 
-      const f = await file;
-      const row = await persistWebFile(f); // ใช้โมดูลเดียวกับ /api/files
-      const avatarUrl = buildFileUrlById(row.id);
+      const result = await runInTransaction(author_id, async (client) => {
+        const f = await file;
+        const row = await persistWebFile(f); // → คืน { id, name, relpath, ... }
 
-      await query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id]);
-      return avatarUrl;
+        const avatarUrl = buildFileUrlById(row.id);
+
+        await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [
+          avatarUrl,
+          user_id,
+        ]);
+
+        await addLog("info", "upload-avatar", "Upload avatar", { userId: user_id });
+        return avatarUrl;
+      });
+
+      return result;
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] deleteUser :", ctx, author_id);
+      console.log("[Mutation] deleteUser:", id, author_id);
 
-      const res = await query(`DELETE FROM users WHERE id=$1`, [id]);
-      return res.rowCount === 1;
+      const success = await runInTransaction(author_id, async (client) => {
+        const res = await client.query(`DELETE FROM users WHERE id=$1`, [id]);
+        const ok = res.rowCount === 1;
+
+        if (ok) {
+          await addLog('info', 'user-delete', 'User deleted', {
+            deletedId: id,
+            author_id,
+          });
+        }
+
+        return ok;
+      });
+
+      return success;
     },
     deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] deleteUsers :", ctx, author_id);
 
       if (!ids || ids.length === 0) return false;
+
       const uuidPattern =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       const uuidIds = ids.filter((i) => uuidPattern.test(i));
-
       if (uuidIds.length === 0) return false;
-      const res = await query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [uuidIds]);
+      return await runInTransaction(author_id, async (client) => {
+        const res = await client.query(
+          `DELETE FROM users WHERE id = ANY($1::uuid[])`,
+          [uuidIds]
+        );
+        if (res.rowCount > 0) {
+          await addLog(
+            "info",
+            "user-delete",
+            `Deleted ${res.rowCount} user(s)`,
+            { userId: author_id, deletedIds: uuidIds }
+          );
+        }
 
-      return res.rowCount > 0;
+        return res.rowCount > 0;
+      });
     },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] updateMyProfile :", ctx, author_id);
+      console.log("[Mutation] updateMyProfile :", author_id, data);
 
-      const { rows } = await query(
-        `UPDATE users SET 
-            name = COALESCE($1, name),
-            avatar = COALESCE($2, avatar),
-            phone = COALESCE($3, phone)
-         WHERE id=$4 RETURNING *`,
-        [data.name ?? '', data.avatar ?? '', data.phone ?? '', author_id]
+      const result = await runInTransaction(author_id, async (client) => {
+        const { rows } = await client.query(
+          `UPDATE users SET 
+              name   = COALESCE($1, name),
+              avatar = COALESCE($2, avatar),
+              phone  = COALESCE($3, phone),
+              updated_at = NOW()
+          WHERE id = $4
+          RETURNING *`,
+          [data.name ?? null, data.avatar ?? null, data.phone ?? null, author_id]
+        );
+
+        return rows[0];
+      });
+
+      // ✅ log event หลัง transaction สำเร็จ
+      await addLog(
+        'info',
+        'user-update-profile',
+        'User updated profile',
+        { userId: author_id, changed: Object.keys(data) }
       );
-      return rows[0];
+
+      return result;
     },
     renameChat: async (_:any, { chat_id, name }:{chat_id:string, name?:string}, ctx:any) => {
-      const author_id = requireAuth(ctx);
-      console.log("[Mutation] renameChat :", ctx, author_id);
+      const author_id = requireAuth(ctx); // ✅ ตรวจสิทธิ์
+      console.log('[Mutation] renameChat :', chat_id, name, author_id);
 
-      await query(`UPDATE chats SET name=$1 WHERE id=$2`, [name || null, chat_id]);
-      return true;
+      const result = await runInTransaction(author_id, async (client) => {
+        await client.query(
+          `UPDATE chats SET name=$1 WHERE id=$2`,
+          [name || null, chat_id]
+        );
+
+        await addLog('info', 'chat-rename', 'Chat renamed', {
+          chatId: chat_id,
+          userId: author_id,
+          newName: name || null,
+        });
+
+        return true;
+      });
+
+      return result;
     },
     deleteChat: async (_:any, { chat_id }:{chat_id:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] deleteChat :", ctx, author_id);
+      const result = await runInTransaction(author_id, async (client) => {
+        await client.query(`DELETE FROM chats WHERE id = $1`, [chat_id]);
 
-      await query(`DELETE FROM chats WHERE id=$1`, [chat_id]);
-      return true;
+        await addLog(
+          "info",
+          "chat-delete",
+          `User ${author_id} deleted chat ${chat_id}`,
+          { author_id, chatId: chat_id }
+        );
+
+        return true;
+      });
+
+      return result;
     },
     markMessageRead: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] markMessageRead :", ctx, author_id);
+      console.log("[Mutation] markMessageRead :", message_id, "by", author_id);
 
-      await query(
-        `UPDATE message_receipts
-         SET read_at = COALESCE(read_at, NOW())
-         WHERE message_id=$1 AND user_id=$2`,
-        [message_id, author_id]
-      );
-      return true;
+      const result = await runInTransaction(author_id, async (client) => {
+        await client.query(
+          `UPDATE message_receipts
+            SET read_at = COALESCE(read_at, NOW())
+          WHERE message_id = $1 AND user_id = $2`,
+          [message_id, author_id]
+        );
+
+        await addLog(
+          "info",                  // ระดับ log
+          "message-read",          // หมวดหมู่
+          "User marked message as read", // ข้อความหลัก
+          { userId: author_id, messageId: message_id } // meta เพิ่มเติม
+        );
+
+        return true;
+      });
+
+      return result;
     },
     markChatReadUpTo: async (_:any, { chat_id, cursor }:{ chat_id:string, cursor:string }, ctx:any) => {
+      // 1️⃣ ตรวจสอบสิทธิ์ผู้ใช้
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] markChatReadUpTo :", ctx, author_id);
+      console.log('[Mutation] markChatReadUpTo :', author_id, chat_id, cursor);
 
-      await query(
-        `UPDATE message_receipts r
-         SET read_at = COALESCE(r.read_at, NOW())
-         FROM messages m
-         WHERE r.message_id = m.id
-           AND r.user_id = $1
-           AND m.chat_id = $2
-           AND m.created_at <= ( $3::timestamptz + interval '1 millisecond' )`,
-        [author_id, chat_id, cursor]
-      );
-      return true;
+      // 2️⃣ ทำงานใน transaction
+      const result = await runInTransaction(author_id, async (client) => {
+        await client.query(
+          `
+          UPDATE message_receipts r
+            SET read_at = COALESCE(r.read_at, NOW())
+            FROM messages m
+          WHERE r.message_id = m.id
+            AND r.user_id = $1
+            AND m.chat_id = $2
+            AND m.created_at <= ($3::timestamptz + interval '1 millisecond')
+          `,
+          [author_id, chat_id, cursor]
+        );
+
+        // 3️⃣ log ลงระบบ
+        await addLog(
+          'info',
+          'chat-read',
+          'User marked chat messages as read',
+          { userId: author_id, chatId: chat_id, cursor }
+        );
+
+        return true;
+      });
+
+      return result;
     },
     deleteMessage: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] deleteMessage :", ctx, author_id);
-      
-      const { rows } = await query(`SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`, [message_id]);
-      const msg = rows[0];
-      if (!msg) return false;
-      // const canDelete = (msg.sender_id === meId) || (role === 'Administrator');
-      // if (!canDelete) throw new GraphQLError('FORBIDDEN', { extensions: { code: 'FORBIDDEN' } });
-      await query(`UPDATE messages SET deleted_at = NOW() WHERE id=$1 AND deleted_at IS NULL`, [message_id]);
-      await pubsub.publish(topicChat(msg.chat_id), { messageDeleted: message_id });
-      return true;
+
+      return await runInTransaction(author_id, async (client) => {
+        const { rows } = await client.query(
+          `SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`,
+          [message_id]
+        );
+        const msg = rows[0];
+        if (!msg) return false;
+
+        // 2️⃣ ตรวจสิทธิ์ (optional)
+        // const canDelete = (msg.sender_id === author_id) || ctx?.admin?.role === 'Administrator';
+        // if (!canDelete) throw new GraphQLError('FORBIDDEN', { extensions: { code: 'FORBIDDEN' } });
+
+        // 3️⃣ ลบ (soft delete)
+        const { rowCount } = await client.query(
+          `UPDATE messages SET deleted_at = NOW() WHERE id=$1 AND deleted_at IS NULL`,
+          [message_id]
+        );
+
+        if (!rowCount) {
+          console.warn(`[deleteMessage] message already deleted: ${message_id}`);
+          return false;
+        }
+
+        // 4️⃣ Publish event สำหรับ subscribers
+        await pubsub.publish(topicChat(msg.chat_id), { messageDeleted: message_id });
+
+        // 5️⃣ บันทึก log
+        await addLog(
+          'info',
+          'message-delete',
+          'User deleted message',
+          { userId: author_id, messageId: message_id, chatId: msg.chat_id }
+        );
+
+        return true;
+      });
     },
     deleteFile: async (_: any, { id }: { id: string }, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] deleteFile :", ctx, author_id);
+      console.log("[Mutation] deleteFile :", { id, author_id });
 
-      const res = await query(`DELETE FROM files WHERE id=$1`, [id]);
-      return res.rowCount === 1;
+      const result = await runInTransaction(author_id, async (client) => {
+        const res = await client.query(`DELETE FROM files WHERE id = $1`, [id]);
+
+        if (res.rowCount === 1) {
+          await addLog(
+            "info",
+            "file-delete",
+            "User deleted a file",
+            { author_id, fileId: id }
+          );
+          return true;
+        } else {
+          return false;
+        }
+      });
+
+      return result;
     },
     deleteFiles: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] deleteFiles :", ctx, author_id);
+      console.log("[Mutation] deleteFiles :", ids, "by", author_id);
 
       if (!ids?.length) return false;
-      const intIds = ids.map(n => parseInt(String(n),10)).filter(n=>!isNaN(n));
+
+      const intIds = ids.map(n => parseInt(String(n), 10)).filter(n => !isNaN(n));
       if (!intIds.length) return false;
-      const res = await query(`DELETE FROM files WHERE id = ANY($1::int[])`, [intIds]);
-      return res.rowCount > 0;
+
+      return await runInTransaction(author_id, async (client) => {
+        const res = await client.query(
+          `DELETE FROM files WHERE id = ANY($1::int[])`,
+          [intIds]
+        );
+
+        const deleted = res.rowCount > 0;
+
+        if (deleted) {
+          await addLog(
+            'info',
+            'file-delete',
+            'User deleted files',
+            { author_id, ids: intIds }
+          );
+        }
+
+        return deleted;
+      });
     },
     renameFile: async (_: any, { id, name }: { id: string, name: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
-      console.log("[Mutation] renameFile :", ctx, author_id);
+      const author_id = requireAuth(ctx); // ✅ ตรวจสิทธิ์ก่อน
+      console.log("[Mutation] renameFile by:", author_id);
 
-      const res = await query(
-        `UPDATE files SET original_name=$1, updated_at=NOW() WHERE id=$2`,
-        [name, id]
-      );
-      return res.rowCount === 1;
+      // ✅ ใช้ transaction helper
+      const success = await runInTransaction(author_id, async (client) => {
+        const res = await client.query(
+          `UPDATE files 
+             SET original_name = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [name, id]
+        );
+
+        return res.rowCount === 1;
+      });
+
+      // ✅ บันทึก log หลัง commit
+      if (success) {
+        await addLog(
+          'info',
+          'file-rename',
+          'User renamed a file',
+          { author_id, fileId: id, newName: name }
+        );
+      }
+
+      return success;
     },
   },
 };

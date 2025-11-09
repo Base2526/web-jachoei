@@ -48,11 +48,15 @@ export async function query<T = any>(
  * - ปล่อย client คืน pool เสมอ
  */
 export async function runInTransaction<T>(
+  userId: string,
   work: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    
+    await client.query('SET LOCAL app.editor_id = $1', [userId]);
+
     const result = await work(client);
     await client.query("COMMIT");
     return result;

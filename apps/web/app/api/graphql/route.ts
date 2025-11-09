@@ -92,6 +92,7 @@ const yoga = createYoga({
     const user  = verifyUserSession();
     return { scope, admin, user };
   },
+  maskedErrors: false, // <-- DEV แนะนำปิดไว้เพื่อให้ client ได้ extensions จริง
   // Yoga รองรับ multipart upload ใน App Router โดยไม่ต้องตั้งค่าเพิ่ม
 });
 

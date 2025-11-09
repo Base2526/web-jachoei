@@ -70,13 +70,17 @@ interface RequireAuthOptions {
   optionalAdmin?: boolean; // เผื่อใช้กรณี admin public
 }
 
-export function requireAuth(ctx: any, opts: RequireAuthOptions = {}): string | null {
+export function requireAuth(ctx: any, opts: RequireAuthOptions = {}): string {
   const scope = ctx?.scope;
 
   // ✅ ตรวจว่า scope ถูกต้องหรือไม่
   if (!scope || !['web', 'admin'].includes(scope)) {
     throw new GraphQLError("Unauthorized scope", {
-      extensions: { code: "UNAUTHENTICATED" },
+      extensions: { 
+        code: "UNAUTHENTICATED", 
+        reason: "frontend_user",
+        http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+      },
     });
   }
 
@@ -84,8 +88,13 @@ export function requireAuth(ctx: any, opts: RequireAuthOptions = {}): string | n
   if (scope === 'admin') {
     const uid = ctx?.admin?.id;
     if (!uid && !opts.optionalAdmin) {
+      console.log("[requireAuth - admin] :", ctx);
       throw new GraphQLError("Admin not authenticated", {
-        extensions: { code: "UNAUTHENTICATED" },
+        extensions: { 
+          code: "UNAUTHENTICATED",
+          reason: "backend_admin",
+          http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+        },
       });
     }
     return uid ?? null;
@@ -95,14 +104,21 @@ export function requireAuth(ctx: any, opts: RequireAuthOptions = {}): string | n
     const uid = ctx?.user?.id;
     if (!uid && !opts.optionalWeb) {
       throw new GraphQLError("User not authenticated", {
-        extensions: { code: "UNAUTHENTICATED" },
+        extensions: { 
+          code: "UNAUTHENTICATED",
+          reason: "frontend_user",
+          http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+        },
       });
     }
     return uid ?? null; // คืน null ได้ถ้า optionalWeb
   }
 
   throw new GraphQLError("Invalid authentication context", {
-    extensions: { code: "UNAUTHENTICATED" },
+    extensions: { 
+      code: "UNAUTHENTICATED",
+      http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+    },
   });
 }
 
