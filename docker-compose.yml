@@ -44,6 +44,7 @@ services:
     # command: sh -c "npm ci && npm run dev -w"
     command: sh -c "npm ci && npm run dev"
     environment:
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
       NEXT_PUBLIC_GRAPHQL_HTTP: ${NEXT_PUBLIC_GRAPHQL_HTTP}
       NEXT_PUBLIC_GRAPHQL_WS: ${NEXT_PUBLIC_GRAPHQL_WS}
       POSTGRES_HOST: ${POSTGRES_HOST}

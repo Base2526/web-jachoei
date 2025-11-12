@@ -55,7 +55,7 @@ export async function runInTransaction<T>(
   try {
     await client.query("BEGIN");
     
-    await client.query('SET LOCAL app.editor_id = $1', [userId]);
+    await client.query(`SET LOCAL app.editor_id = '${userId}'`);
 
     const result = await work(client);
     await client.query("COMMIT");

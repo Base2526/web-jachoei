@@ -5,7 +5,7 @@ import { Card, Descriptions, Avatar, List, Tag } from "antd";
 const Q = gql`
   query($id:ID!){
     user(id:$id){ id name avatar phone email role created_at }
-    postsByUserId(userId:$id){ id title phone status created_at }
+    postsByUserId(user_id:$id){ id title status created_at }
   }
 `;
 

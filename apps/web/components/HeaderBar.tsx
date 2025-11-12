@@ -31,8 +31,11 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
     const res = await fetch("/api/auth/logout", { method: "POST" });
     if (res.ok) {
       message.success("Logged out");
-      refreshSession();
-      router.push("/");
+      try { refreshSession(); } catch {}
+
+      // ✅ redirect + reload หน้าเว็บใหม่หมดจด
+      router.replace("/");
+      setTimeout(() => window.location.reload(), 100);
     } else {
       message.error("Logout failed");
     }

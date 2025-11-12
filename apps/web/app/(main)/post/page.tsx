@@ -2,7 +2,7 @@
 import { useQuery, gql } from "@apollo/client";
 import { Descriptions, Card } from "antd";
 
-const Q = gql`query($id:ID!){ post(id:$id){ id title body image_url phone status author{ id name avatar } } }`;
+const Q = gql`query($id:ID!){ post(id:$id){ id title detail status author{ id name avatar } } }`;
 
 function View({ id }:{id:string}){
   const { data } = useQuery(Q,{ variables:{ id } });
@@ -13,7 +13,7 @@ function View({ id }:{id:string}){
               <Descriptions.Item label="Phone">{p.phone}</Descriptions.Item>
               <Descriptions.Item label="Status">{p.status}</Descriptions.Item>
               <Descriptions.Item label="Author"><a href={`/profile/${p.author?.id}`}>{p.author?.name}</a></Descriptions.Item>
-              <Descriptions.Item label="Body">{p.body}</Descriptions.Item>
+              <Descriptions.Item label="Body">{p.detail}</Descriptions.Item>
             </Descriptions>
           </Card>;
 }

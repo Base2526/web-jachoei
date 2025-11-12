@@ -24,25 +24,32 @@ export const resolvers = {
     // resolver: posts
     posts: async (_: any, { search }: { search?: string }, ctx: any) => {
       const author_id = requireAuth(ctx, { optionalWeb: true });
-      console.log("[Query] posts :", ctx, author_id);
+      console.log("[Query] posts :", author_id);
 
       const params: any[] = [];
       let sql = `
         SELECT
           p.*,
           row_to_json(u) AS author_json,
+
+          -- images
           (
-            SELECT COALESCE(json_agg(json_build_object('id', s.id, 'relpath', s.relpath)), '[]'::json)
-            FROM (
-              SELECT f.id, f.relpath
-              FROM post_images pi
-              JOIN files f ON f.id = pi.file_id
-              WHERE pi.post_id = p.id
-              ORDER BY pi.id
-            ) AS s
-          ) AS images
+            SELECT COALESCE(json_agg(json_build_object('id', f.id, 'relpath', f.relpath)), '[]'::json)
+            FROM post_images pi
+            JOIN files f ON f.id = pi.file_id
+            WHERE pi.post_id = p.id
+          ) AS images,
+
+          -- bookmarks
+          COALESCE(
+            JSONB_AGG(DISTINCT JSONB_BUILD_OBJECT('user_id', bm.user_id))
+            FILTER (WHERE bm.user_id IS NOT NULL),
+            '[]'::JSONB
+          ) AS bookmarks
+
         FROM posts p
         LEFT JOIN users u ON p.author_id = u.id
+        LEFT JOIN bookmarks bm ON bm.post_id = p.id
       `;
 
       if (search) {
@@ -50,7 +57,7 @@ export const resolvers = {
         params.push(`%${search}%`);
       }
 
-      sql += ` ORDER BY p.created_at DESC`;
+      sql += ` GROUP BY p.id, u.id ORDER BY p.created_at DESC`;
 
       const { rows } = await query(sql, params);
 
@@ -59,83 +66,189 @@ export const resolvers = {
         author: r.author_json,
         images: (r.images || []).map((it: any) => ({
           id: it.id,
-          url: buildFileUrlById(it.id),   // ใช้ helper ฝั่ง Node
-        })),
-      }));
-    },
-    postsPaged: async (_: any, { search, limit, offset }: {search?: string, limit: number, offset: number}, ctx: any) => {
-      const author_id = requireAuth(ctx);
-      console.log("[Query] postsPaged :", ctx, author_id);
-
-      const params: any[] = [];
-      let whereSql = '';
-      if (search) {
-        params.push(`%${search}%`);
-        whereSql = `WHERE p.title ILIKE $${params.length} OR p.phone ILIKE $${params.length}`;
-      }
-
-      params.push(limit, offset);
-
-      const sql = `
-        SELECT
-          COUNT(*) OVER() AS total,
-          p.*,
-          row_to_json(u.*) AS author_json,
-          (
-            SELECT json_agg(json_build_object('id', f.id, 'relpath', f.relpath) ORDER BY pi.id)
-            FROM post_images pi
-            JOIN files f ON f.id = pi.file_id
-            WHERE pi.post_id = p.id
-          ) AS images_json
-        FROM posts p
-        LEFT JOIN users u ON p.author_id = u.id
-        ${whereSql}
-        ORDER BY p.created_at DESC
-        LIMIT $${params.length-1} OFFSET $${params.length}
-      `;
-
-      const { rows } = await query(sql, params);
-
-      const total = rows[0]?.total ? Number(rows[0].total) : 0;
-
-      const items = rows.map((r: any) => ({
-        ...r,
-        author: r.author_json,
-        images: (r.images_json || []).map((it: any) => ({
-          id: it.id,
           url: buildFileUrlById(it.id),
         })),
+        bookmarks: r.bookmarks || [],
+        isBookmarked:
+          Array.isArray(r.bookmarks) && author_id
+            ? r.bookmarks.some((b: any) => b.user_id === author_id)
+            : false,
       }));
-
-      return { items, total };
     },
-    post: async (_:any, { id }:{id:string}, ctx: any) => {
+    postsPaged: async (_: any, { search, limit, offset }: { search?: string; limit: number; offset: number }, ctx: any) => {
+  const author_id = requireAuth(ctx, { optionalWeb: true });
+  console.log("[Query] postsPaged :", author_id);
+
+  const params: any[] = [];
+  let whereSql = '';
+
+  // ✅ SEARCH: title, เบอร์โทร, บัญชีคนขาย/ธนาคาร
+  if (search) {
+    params.push(`%${search}%`); // $1
+    const idx = params.length;
+    whereSql = `
+      WHERE
+        p.title ILIKE $${idx}
+        OR EXISTS (
+          SELECT 1 FROM post_tel_numbers t
+          WHERE t.post_id = p.id
+          AND t.tel ILIKE $${idx}
+        )
+        OR EXISTS (
+          SELECT 1 FROM post_seller_accounts s
+          WHERE s.post_id = p.id
+          AND (
+            s.seller_account ILIKE $${idx}
+            OR s.bank_name ILIKE $${idx}
+            OR s.bank_id ILIKE $${idx}
+          )
+        )
+    `;
+  }
+
+  // ✅ limit / offset
+  params.push(limit, offset);
+  const limitIdx = params.length - 1;
+  const offsetIdx = params.length;
+
+  // ✅ ดึงโพสต์พร้อมผู้เขียน, รูปภาพ, เบอร์โทร, บัญชีคนขาย
+  const sql = `
+    SELECT
+      COUNT(*) OVER() AS total,
+      p.*,
+      row_to_json(u) AS author_json,
+
+      -- รูปภาพทั้งหมด
+      (
+        SELECT json_agg(json_build_object('id', f.id, 'relpath', f.relpath) ORDER BY pi.id)
+        FROM post_images pi
+        JOIN files f ON f.id = pi.file_id
+        WHERE pi.post_id = p.id
+      ) AS images_json,
+
+      -- เบอร์โทรทั้งหมด
+      (
+        SELECT json_agg(json_build_object('id', t.id, 'tel', t.tel) ORDER BY t.created_at)
+        FROM post_tel_numbers t
+        WHERE t.post_id = p.id
+      ) AS tel_numbers_json,
+
+      -- ✅ บัญชีคนขายทั้งหมด
+      (
+        SELECT json_agg(
+                 json_build_object(
+                   'id', s.id,
+                   'bank_id', s.bank_id,
+                   'bank_name', s.bank_name,
+                   'seller_account', s.seller_account
+                 )
+                 ORDER BY s.created_at
+               )
+        FROM post_seller_accounts s
+        WHERE s.post_id = p.id
+      ) AS seller_accounts_json
+
+    FROM posts p
+    LEFT JOIN users u ON p.author_id = u.id
+    ${whereSql}
+    ORDER BY p.created_at DESC
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
+  `;
+
+  const { rows } = await query(sql, params);
+  const total = rows[0]?.total ? Number(rows[0].total) : 0;
+
+  // ✅ แปลงผลลัพธ์ให้พร้อมใช้หน้าเว็บ
+  const items = rows.map((r: any) => ({
+    ...r,
+    author: r.author_json,
+    images: (r.images_json || []).map((it: any) => ({
+      id: it.id,
+      url: buildFileUrlById(it.id),
+    })),
+    tel_numbers: (r.tel_numbers_json || []).map((t: any) => ({
+      id: t.id,
+      tel: t.tel,
+    })),
+    // ✅ seller_accounts พร้อมใช้
+    seller_accounts: (r.seller_accounts_json || []).map((s: any) => ({
+      id: s.id,
+      bank_id: s.bank_id,
+      bank_name: s.bank_name,
+      seller_account: s.seller_account,
+    })),
+  }));
+
+  return { items, total };
+},
+    post: async (_: any, { id }: { id: string }, ctx: any) => {
       const author_id = requireAuth(ctx, { optionalWeb: true });
-      console.log("[Query] post :", ctx, author_id);
+      console.log("[Query] post :", author_id);
 
+      // ✅ ดึงข้อมูลหลักของโพสต์พร้อมผู้เขียน
       const { rows } = await query(
-        `SELECT p.*, row_to_json(u.*) as author_json
-         FROM posts p LEFT JOIN users u ON p.author_id = u.id
-         WHERE p.id = $1`, [id]
+        `
+        SELECT
+          p.*,
+          row_to_json(u) AS author_json,
+          -- จังหวัด (ชื่อไทย ถ้ามี)
+          pr.name_th AS province_name
+        FROM posts p
+        LEFT JOIN users u ON p.author_id = u.id
+        LEFT JOIN provinces pr ON pr.id = p.province_id
+        WHERE p.id = $1
+        `,
+        [id]
       );
-      const r = rows[0]; if (!r) return null;
+      const r = rows[0];
+      if (!r) return null;
 
+      // ✅ ดึงรูปภาพทั้งหมด
       const { rows: imgs } = await query(
-        `SELECT f.id, f.relpath
-           FROM post_images pi
-           JOIN files f ON f.id = pi.file_id
-          WHERE pi.post_id = $1
-          ORDER BY pi.id`,
+        `
+        SELECT f.id, f.relpath
+        FROM post_images pi
+        JOIN files f ON f.id = pi.file_id
+        WHERE pi.post_id = $1
+        ORDER BY pi.id
+        `,
         [id]
       );
 
-      return {  ...r, 
-                author: r.author_json,
-                images: (imgs || []).map((it: any) => ({
-                  id: it.id,
-                  url: buildFileUrlById(it.id),
-                })), // <<< ถ้าไม่มี = []  
-              };
+      // ✅ ดึงเบอร์โทร / ไอดีไลน์
+      const { rows: telNumbers } = await query(
+        `
+        SELECT id, tel, created_at
+        FROM post_tel_numbers
+        WHERE post_id = $1
+        ORDER BY created_at ASC
+        `,
+        [id]
+      );
+
+      // ✅ ดึงบัญชีคนขาย
+      const { rows: sellerAccounts } = await query(
+        `
+        SELECT id, bank_id, bank_name, seller_account, created_at
+        FROM post_seller_accounts
+        WHERE post_id = $1
+        ORDER BY created_at ASC
+        `,
+        [id]
+      );
+
+      // ✅ รวมข้อมูลทั้งหมดกลับ
+      return {
+        ...r,
+        author: r.author_json,
+        province_name: r.province_name || null,
+        images: (imgs || []).map((it: any) => ({
+          id: it.id,
+          url: buildFileUrlById(it.id),
+        })),
+        tel_numbers: telNumbers || [],
+        seller_accounts: sellerAccounts || [],
+      };
     },
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
@@ -299,13 +412,15 @@ export const resolvers = {
       const { rows } = await query(`SELECT * FROM users ORDER BY created_at DESC`);
       return rows;
     },
-    user: async (_: any, { id }: { id: string }) => {
+    user: async (_: any, { id }: { id: string }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] user", id, author_id);
       const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
       return rows[0] || null;
     },
     postsByUserId: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] postsByUserId :", ctx, author_id);
+      console.log("[Query] postsByUserId :", author_id);
 
       const { rows } = await query(
         `SELECT p.*, row_to_json(u.*) as author_json
@@ -317,14 +432,14 @@ export const resolvers = {
     },
     me: async (_: any, {  }: { }, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] me :", ctx, author_id);
+      console.log("[Query] me :", author_id);
 
       const { rows } = await query(`SELECT * FROM users WHERE id=$1 LIMIT 1`, [author_id]);
       return rows[0];
     },
     unreadCount: async (_:any, { chatId }:{ chatId: string }, ctx:any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] unreadCount :", ctx, author_id);
+      console.log("[Query] unreadCount :", author_id);
 
       const { rows } = await query(
         `SELECT unread_count FROM chat_unread_counts WHERE user_id=$1 AND chat_id=$2`,
@@ -346,7 +461,7 @@ export const resolvers = {
     },
     whoRead: async (_:any, { messageId }:{messageId:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] whoRead :", ctx, author_id);
+      console.log("[Query] whoRead :", author_id);
 
       const { rows } = await query(
         `SELECT u.* FROM message_receipts r
@@ -359,7 +474,7 @@ export const resolvers = {
     },
     stats: async (_:any, __:any, ctx:any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] stats :", ctx, author_id);
+      console.log("[Query] stats :", author_id);
 
       const results = await Promise.all([
         query(`SELECT COUNT(*)::int AS c FROM users`),
@@ -374,7 +489,7 @@ export const resolvers = {
     },
     latestUsers: async (_: any, { limit = 5 }: any, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] latestUsers :", ctx, author_id);
+      console.log("[Query] latestUsers :", author_id);
 
       const { rows } = await query(
         `SELECT id, name, email, role, created_at, avatar
@@ -391,7 +506,7 @@ export const resolvers = {
     },
     latestPosts: async (_: any, { limit = 5 }: any, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] latestPosts :", ctx, author_id);
+      console.log("[Query] latestPosts :", author_id);
 
       const { rows } = await query(
         `
@@ -423,7 +538,7 @@ export const resolvers = {
     },
     pending: async (_:any, __:any, ctx:any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] pending :", ctx, author_id);
+      console.log("[Query] pending :", author_id);
 
       const [posts, users, files, logs] = await Promise.all([
         query(`SELECT COUNT(*)::int AS c FROM posts WHERE status = 'pending'`),
@@ -441,7 +556,7 @@ export const resolvers = {
     },
     filesPaged: async (_: any, { search, limit, offset }: any, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] pending :", ctx, author_id);
+      console.log("[Query] pending :", author_id);
 
       const params: any[] = [];
       let where = '';
@@ -669,102 +784,116 @@ export const resolvers = {
 
       return true;
     },
-    upsertPost: async ( _: any,
-                      { id, data, images, image_ids_delete }: {
-                        id?: string;
-                        data: any;
-                        images?: Array<Promise<File>>;       // Yoga: File (Web) มี .name .type .arrayBuffer()
-                        image_ids_delete?: Array<string|number>;
-                      }, ctx: any) => {
-
+    upsertPost: async (
+      _: any,
+      { id, data, images, image_ids_delete }: {
+        id?: string;
+        data: any;
+        images?: Array<Promise<File>>;
+        image_ids_delete?: Array<string | number>;
+      },
+      ctx: any
+    ) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] upsertPost :", ctx, author_id);
-
-      // // 1) upsert post
-      // let postId: number;
-      // if (id) {
-      //   const { rows } = await query(
-      //     `UPDATE posts
-      //       SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
-      //     WHERE id=$5
-      //     RETURNING id`,
-      //     [data.title, data.body, data.phone || null, data.status, id]
-      //   );
-      //   postId = rows[0].id;
-      // } else {
-      //   const { rows } = await query(
-      //     `INSERT INTO posts (title, body, phone, status, created_at)
-      //     VALUES ($1,$2,$3,$4,NOW())
-      //     RETURNING id`,
-      //     [data.title, data.body, data.phone || null, data.status]
-      //   );
-      //   postId = rows[0].id;
-      // }
-
-      // // 2) ลบรูปเก่า (ตามที่ส่งมา)
-      // if (image_ids_delete?.length) {
-      //   await query(
-      //     `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::int[])`,
-      //     [postId, image_ids_delete.map(Number)]
-      //   );
-      // }
-
-      // // 3) บันทึกรูปใหม่ (ผ่าน persistWebFile => เข้าตาราง files เหมือน /api/files)
-      // if (images?.length) {
-      //   const fileRows = [];
-      //   for (const pf of images) {
-      //     const f = await pf;
-      //     const row = await persistWebFile(f); // <- ใช้โมดูลเดียวกับ /api/files
-      //     fileRows.push(row);
-      //   }
-      //   if (fileRows.length) {
-      //     const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
-      //     await query(
-      //       `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
-      //       [postId, ...fileRows.map(r => r.id)]
-      //     );
-      //   }
-      // }
-
-      // // 4) โหลดผลลัพธ์กลับ
-      // const { rows: posts } = await query(`SELECT * FROM posts WHERE id=$1`, [postId]);
-      // const { rows: imgs } = await query(
-      //   `SELECT f.id, f.relpath
-      //     FROM post_images pi
-      //     JOIN files f ON f.id = pi.file_id
-      //     WHERE pi.post_id=$1
-      //     ORDER BY pi.id`, [postId]
-      // );
-
-      // return {
-      //   ...posts[0],
-      //   images: imgs.map((r: any) => ({ id: r.id, url: buildFileUrlById(r.id) })), // เสิร์ฟผ่าน /api/files/:id
-      // };
+      console.log("[Mutation] upsertPost :", author_id, data);
 
       return runInTransaction(author_id, async (client) => {
         let postId: string;
 
-        // 1) upsert post
+        // ============================================================
+        // 1) UPSERT POSTS
+        // ============================================================
+        const commonFields = [
+          data.first_last_name || null,
+          data.id_card || null,
+          data.title || null,
+          data.transfer_amount || 0,
+          data.transfer_date ? new Date(data.transfer_date) : null,
+          data.website || null,
+          data.province_id || null,
+          data.detail || null,
+          data.status || "public",
+        ];
+
         if (id) {
           const { rows } = await client.query(
             `UPDATE posts
-               SET title=$1, body=$2, phone=$3, status=$4, updated_at=NOW()
-             WHERE id=$5
-             RETURNING id`,
-            [data.title, data.body, data.phone || null, data.status, id]
+              SET first_last_name=$1, id_card=$2, title=$3,
+                  transfer_amount=$4, transfer_date=$5, website=$6,
+                  province_id=$7, detail=$8, status=$9,
+                  updated_at=NOW()
+            WHERE id=$10
+            RETURNING id`,
+            [...commonFields, id]
           );
           postId = rows[0].id;
         } else {
           const { rows } = await client.query(
-            `INSERT INTO posts (title, body, phone, status, created_at)
-             VALUES ($1,$2,$3,$4,NOW())
-             RETURNING id`,
-            [data.title, data.body, data.phone || null, data.status]
+            `INSERT INTO posts (
+              first_last_name, id_card, title,
+              transfer_amount, transfer_date, website,
+              province_id, detail,
+              author_id, status, created_at, updated_at
+            ) VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+              $13,NOW(),NOW()
+            )
+            RETURNING id`,
+            [...commonFields, author_id]
           );
           postId = rows[0].id;
         }
 
-        // 2) ลบรูปเก่า (ถ้ามี)
+        // ============================================================
+        // 2) TEL NUMBERS (insert/update/delete)
+        // ============================================================
+        if (Array.isArray(data.tel_numbers)) {
+          for (const tel of data.tel_numbers) {
+            if (tel.mode === "deleted") {
+              await client.query(`DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`, [tel.id, postId]);
+            } else if (tel.mode === "edited") {
+              await client.query(
+                `UPDATE post_tel_numbers SET tel=$1 WHERE id=$2 AND post_id=$3`,
+                [tel.tel, tel.id, postId]
+              );
+            } else if (tel.mode === "new") {
+              await client.query(
+                `INSERT INTO post_tel_numbers (post_id, tel)
+                VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+                [postId, tel.tel]
+              );
+            }
+          }
+        }
+
+        // ============================================================
+        // 3) SELLER ACCOUNTS (insert/update/delete)
+        // ============================================================
+        if (Array.isArray(data.seller_accounts)) {
+          for (const acc of data.seller_accounts) {
+            if (acc.mode === "deleted") {
+              await client.query(`DELETE FROM post_seller_accounts WHERE id=$1 AND post_id=$2`, [acc.id, postId]);
+            } else if (acc.mode === "edited") {
+              await client.query(
+                `UPDATE post_seller_accounts
+                  SET bank_id=$1, bank_name=$2, seller_account=$3
+                WHERE id=$4 AND post_id=$5`,
+                [acc.bank_id, acc.bank_name, acc.seller_account || "", acc.id, postId]
+              );
+            } else if (acc.mode === "new") {
+              await client.query(
+                `INSERT INTO post_seller_accounts (post_id, bank_id, bank_name, seller_account)
+                VALUES ($1,$2,$3,$4)
+                ON CONFLICT DO NOTHING`,
+                [postId, acc.bank_id, acc.bank_name, acc.seller_account || ""]
+              );
+            }
+          }
+        }
+
+        // ============================================================
+        // 4) ลบรูปเก่า (ถ้ามี)
+        // ============================================================
         if (image_ids_delete?.length) {
           await client.query(
             `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::uuid[])`,
@@ -772,7 +901,9 @@ export const resolvers = {
           );
         }
 
-        // 3) เพิ่มรูปใหม่
+        // ============================================================
+        // 5) เพิ่มรูปใหม่
+        // ============================================================
         if (images?.length) {
           const fileRows = [];
           for (const pf of images) {
@@ -784,24 +915,27 @@ export const resolvers = {
             const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
             await client.query(
               `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
-              [postId, ...fileRows.map(r => r.id)]
+              [postId, ...fileRows.map((r) => r.id)]
             );
           }
         }
 
-        // 4) ดึงข้อมูลโพสต์พร้อมรูปกลับ
-        const { rows: posts } = await client.query(
-          `SELECT * FROM posts WHERE id=$1`, [postId]
-        );
+        // ============================================================
+        // 6) ดึงข้อมูลโพสต์กลับพร้อมรูป
+        // ============================================================
+        const { rows: posts } = await client.query(`SELECT * FROM posts WHERE id=$1`, [postId]);
         const { rows: imgs } = await client.query(
           `SELECT f.id, f.relpath
-             FROM post_images pi
-             JOIN files f ON f.id = pi.file_id
+            FROM post_images pi
+            JOIN files f ON f.id = pi.file_id
             WHERE pi.post_id=$1
-            ORDER BY pi.id`, [postId]
+            ORDER BY pi.id`,
+          [postId]
         );
 
-        // 5) เขียน log หลังบันทึก
+        // ============================================================
+        // 7) LOG
+        // ============================================================
         await addLog(
           "info",
           id ? "post-update" : "post-create",
@@ -809,6 +943,9 @@ export const resolvers = {
           { author_id, postId }
         );
 
+        // ============================================================
+        // RETURN
+        // ============================================================
         return {
           ...posts[0],
           images: imgs.map((r: any) => ({
@@ -818,6 +955,7 @@ export const resolvers = {
         };
       });
     },
+
     deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] deletePost :", ctx, author_id);
@@ -1479,6 +1617,57 @@ export const resolvers = {
       }
 
       return success;
+    },
+    toggleBookmark: async (_: any, { postId }: { postId: string }, ctx: any) => {
+      const userId = requireAuth(ctx);
+      const start = Date.now();
+
+      console.log("[toggleBookmark]", userId, postId);
+
+      // ✅ ทำงานใน transaction
+      const result = await runInTransaction(userId, async (client) => {
+        // ตรวจว่ามี bookmark อยู่แล้วไหม
+        const { rowCount: exists } = await client.query(
+          `SELECT 1 FROM bookmarks WHERE post_id = $1 AND user_id = $2`,
+          [postId, userId]
+        );
+
+        let isBookmarked: boolean;
+
+        if (exists) {
+          // ถ้ามี → ลบออก
+          await client.query(
+            `DELETE FROM bookmarks WHERE post_id = $1 AND user_id = $2`,
+            [postId, userId]
+          );
+          isBookmarked = false;
+        } else {
+          // ถ้ายังไม่มี → เพิ่มใหม่
+          await client.query(
+            `INSERT INTO bookmarks (post_id, user_id)
+             VALUES ($1, $2)
+             ON CONFLICT (post_id, user_id) DO NOTHING`,
+            [postId, userId]
+          );
+          isBookmarked = true;
+        }
+
+        return { isBookmarked };
+      });
+
+      // ✅ หลัง transaction commit → addLog สำหรับ external service (optional)
+      await addLog(
+        'info',
+        'bookmark',
+        'User toggled bookmark',
+        { userId, postId, isBookmarked: result.isBookmarked }
+      );
+
+      return {
+        status: true,
+        isBookmarked: result.isBookmarked,
+        executionTime: `${((Date.now() - start) / 1000).toFixed(3)}s`,
+      };
     },
   },
 };

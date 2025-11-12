@@ -9,7 +9,7 @@ import { gql, useQuery } from "@apollo/client";
 const Q_POST = gql`
   query($id:ID!){
     post(id:$id){
-      id title body phone status created_at updated_at
+      id title detail status created_at updated_at
       images { id url }           # << ใช้ url ตรงจาก resolver
       author { id name email }    # ถ้าต้องใช้
     }

@@ -10,8 +10,13 @@ const Q_POSTS_PAGED = gql`
     postsPaged(search:$q, limit:$limit, offset:$offset){
       total
       items{
-        id title phone status created_at
+        id 
+        title 
+        detail 
+        status 
+        created_at
         images { id url }
+        author { id name avatar }
       }
     }
   }
@@ -64,8 +69,11 @@ function PostsList(){
 
   const cols = useMemo(()=>[
     { title:'Images', dataIndex:'images', render:(imgs:any)=><ThumbGrid images={imgs} width={160} height={110} /> },
-    { title:'Title', dataIndex:'title' },
-    { title:'Phone', dataIndex:'phone' },
+    { title:'Title',  render: (_:any, r:any)=>{
+      return <Link href={`/admin/post/${r.id}`}>{r.title}</Link>
+    } },
+    { title:'Detail', dataIndex:'detail' },
+    { title:'Author', render:(_:any,r:any)=><Link href={`/admin/users/${r.author.id}/edit`} prefetch={false}>{r.author?.name}</Link> },
     { title:'Status', dataIndex:'status', render:statusTag },
     { title:'Action', render:(_:any,r:any)=>
       <Space>

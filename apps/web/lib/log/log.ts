@@ -20,8 +20,10 @@ export async function addLog(
   try {
     const body = JSON.stringify({ level, category, message, meta });
 
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+
     // ใช้ fetch แบบ relative จะทำงานทั้งบน client และ server (Next.js)
-    const res = await fetch('/api/logs', {
+    const res = await fetch(`${baseUrl}/api/logs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
