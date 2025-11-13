@@ -13,8 +13,6 @@ const Q_MSGS  = gql`query($chat_id:ID!){ messages(chat_id:$chat_id){ id chat_id 
 const Q_USERS = gql`query($q:String){ users(search:$q){ id name } }`;
 
 
-
-
 const MUT_DELETE_MSG = gql`mutation($message_id: ID!) { deleteMessage(message_id: $message_id) }`;
 const MUT_MARK_READ = gql`mutation($message_id:ID!){ markMessageRead(message_id:$message_id) }`;
 const MUT_MARK_UPTO = gql`mutation($chat_id:ID!,$cursor:String!){ markChatReadUpTo(chat_id:$chat_id,cursor:$cursor) }`;
@@ -64,10 +62,6 @@ function ChatUI(){
   const { data: me } = useQuery(Q_ME);
 
   const [deleteMessageMut] = useMutation(MUT_DELETE_MSG, { onError: ()=>{} });
-
-  // useEffect(()=>{
-  //   console.log("[msgs]" , msgs);
-  // }, [msgs])
 
   useEffect(()=>{
     // console.log("[sel, msgs, markUpTo]" , sel, msgs, markUpTo);

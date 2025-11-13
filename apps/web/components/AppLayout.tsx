@@ -21,7 +21,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         style={{
           margin: "16px auto",
           width: "100%",
-          maxWidth: 1280,
+          maxWidth: 1400,
           padding: "0 16px",
         }}
       >

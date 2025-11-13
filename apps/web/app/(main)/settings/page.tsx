@@ -2,19 +2,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Layout, Menu, Card, Form, Input, Button, Switch, Upload, Avatar,
-  Select, message, Space, Typography, Divider, List, Popconfirm, Tag, Table
+  Select, message, Space, Typography, Divider, List, Popconfirm, Tag, Table, Tooltip, Image
 } from 'antd';
 import {
-  MenuUnfoldOutlined, MenuFoldOutlined, UserOutlined, LockOutlined,
-  BellOutlined, SettingOutlined, CloudUploadOutlined, LogoutOutlined,
+  UserOutlined, LockOutlined, BellOutlined, SettingOutlined, CloudUploadOutlined,
   FileImageOutlined, FileOutlined, DeleteOutlined, EditOutlined, DownloadOutlined,
-  DatabaseOutlined, FileTextOutlined, TeamOutlined, ArrowLeftOutlined
+  DatabaseOutlined, FileTextOutlined, TeamOutlined, ArrowLeftOutlined, BookOutlined, EyeOutlined
 } from '@ant-design/icons';
 import { gql, useQuery, useMutation } from "@apollo/client";
+import Link from "next/link";
+import BookmarkButton from "@/components/BookmarkButton";
+import { useSessionCtx } from '@/lib/session-context';
 
 const { Header, Sider, Content } = Layout;
 
-type MenuKey = 'profile' | 'security' | 'notifications' | 'account' | 'files' | 'logs' | 'posts' | 'users';
+type MenuKey = 'profile' | 'security' | 'posts' | 'bookmarks' | 'users' | 'files' | 'logs';
 
 type FileRow = {
   id: number;
@@ -38,21 +40,76 @@ type LogRow = {
   created_at: string;
 };
 
-// ===== Users (GraphQL) =====
+/* ================= GraphQL ================= */
+
+// ผู้ใช้ทั้งหมด (สำหรับหน้า Users)
 const Q_USERS = gql`query($search:String){ users(search:$search){ id name email phone role created_at avatar } }`;
 const Q_USER  = gql`query($id:ID!){ user(id:$id){ id name email phone avatar role } }`;
 const M_DELETE_USER = gql`mutation($id:ID!){ deleteUser(id:$id) }`;
-const M_UPSERT_USER = gql`
-mutation($id:ID, $data:UserInput!){
-  upsertUser(id:$id, data:$data){ id }
-}`;
+const M_UPSERT_USER = gql`mutation($id:ID, $data:UserInput!){ upsertUser(id:$id, data:$data){ id } }`;
 
-// sha256 for optional password handling
+// อัปโหลด Avatar
+const M_UPLOAD_AVATAR = gql`
+mutation($user_id:ID!, $file:Upload!){
+  uploadAvatar(user_id:$user_id, file:$file)
+}
+`;
+
+// บุ๊คมาร์กของฉัน
+const Q_MY_BOOKMARKS = gql`
+  query {
+    myBookmarks {
+      id
+      title
+      status
+      created_at
+      author { id name }
+      images { id url }
+      is_bookmarked
+    }
+  }
+`;
+
+// ดึงข้อมูลตัวเอง
+const Q_ME = gql`
+  query {
+    me {
+      id
+      name
+      email
+      phone
+      username
+      language
+      role
+      avatar
+      created_at
+    }
+  }
+`;
+
+// อัปเดตข้อมูลตัวเอง (โปรไฟล์ + บัญชี)
+const M_UPDATE_ME = gql`
+  mutation($data: MeInput!) {
+    updateMe(data: $data) {
+      id
+      name
+      email
+      phone
+      username
+      language
+      avatar
+    }
+  }
+`;
+
+// sha256 สำหรับ password_hash (ถ้าคุณจะใช้ในหน้า Users)
 async function sha256Hex(input: string) {
   const enc = new TextEncoder();
   const digest = await crypto.subtle.digest('SHA-256', enc.encode(input));
   return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
+
+/* ================= Users (หลังบ้าน) ================= */
 
 function UsersPanel(){
   const [mode, setMode] = useState<'list'|'new'|'edit'>('list');
@@ -227,32 +284,52 @@ function UserFormEdit({ id, onBack }:{ id:string; onBack:()=>void }){
   );
 }
 
-// ===== My Posts (optional, keep if present) =====
-const Q_MY_POSTS = gql`query($q:String){ myPosts(search:$q){ id title phone status created_at } }`;
+/* ================= My Posts (ถ้ามี) ================= */
+
+const Q_MY_POSTS = gql`query($q:String){ myPosts(search:$q){ id title detail status created_at } }`;
 const MUT_DEL_POST = gql`mutation($id:ID!){ deletePost(id:$id) }`;
 
 function PostsPanel(){
   const [q, setQ] = useState('');
   const { data, refetch } = useQuery(Q_MY_POSTS,{ variables:{ q:'' } });
-  const [doDel] = useMutation(MUT_DEL_POST);
+  const [deletePost, { loading: deleting }] = useMutation(MUT_DEL_POST);
+
+  const handleDelete = async (id: string) => {
+    try {
+      const { data: res } = await deletePost({ variables: { id } });
+      if (res?.deletePost) {
+        message.success("Deleted successfully");
+        refetch();
+      } else {
+        message.warning("Delete failed");
+      }
+    } catch (err: any) {
+      message.error(err?.message || "Delete error");
+    }
+  };
 
   const cols = [
-    { title:'Title', dataIndex:'title' },
-    { title:'Phone', dataIndex:'phone' },
+    { title:'Title', dataIndex:'title',
+      render: (_:any, r:any)=>{ return <Link href={`/post/${r.id}`}>{r.title}</Link> } },
+    { title: 'Detail', dataIndex: 'detail' },
     { title:'Status', dataIndex:'status', render:(s:string)=><Tag color={s==='public'?'green':'red'}>{s}</Tag> },
     { title:'Action', render:(_:any,r:any)=>(
         <Space>
-          <a href={`/post/${r.id}/edit`}>edit</a>
-          <a onClick={()=>{
-            if(confirm('Delete this post?')){
-              (async ()=>{
-                const res = await doDel({ variables:{ id: r.id } });
-                if (res.data?.deletePost) { message.success('Deleted'); refetch(); }
-                else message.error('Delete failed');
-              })();
-            }
-          }}>delete</a>
-          <a href={`/post/${r.id}/view`}>view</a>
+          <Tooltip title="Edit">
+            <Link href={`/post/${r.id}/edit`} prefetch={false}>
+              <Button type="text" size="small" icon={<EditOutlined />} />
+            </Link>
+          </Tooltip>
+          <Popconfirm
+            title="Confirm delete?"
+            okText="Yes"
+            cancelText="No"
+            onConfirm={() => handleDelete(r.id)}
+          >
+            <Tooltip title="Delete">
+              <Button type="text" size="small" danger loading={deleting} icon={<DeleteOutlined />} />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       )
     }
@@ -271,7 +348,8 @@ function PostsPanel(){
   );
 }
 
-// ===== Files & Logs helpers =====
+/* ================= ไฟล์/ล็อก (REST helpers เดิม) ================= */
+
 async function fetchList(q:string, page:number, pageSize:number){
   const url = `/api/files?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`;
   const res = await fetch(url, { cache:'no-store' });
@@ -291,25 +369,86 @@ async function fetchLogs(params: { q?: string; level?: string; category?: string
   return res.json();
 }
 
+/* ================= หน้า Settings หลัก (รวม Profile + Account) ================= */
+
 export default function SettingsPage() {
   const [collapsed, setCollapsed] = useState(false);
   const [active, setActive] = useState<MenuKey>('profile');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
 
+  const [uploadAvatar] = useMutation(M_UPLOAD_AVATAR);
+  const [updateMe, { loading: updatingMe }] = useMutation(M_UPDATE_ME);
+
+  const { user } = useSessionCtx();
+
+  const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME);
+  const me = meData?.me;
+
+  useEffect(()=>{
+    // console.log("[me]", me);
+  }, [me])
+
   const items = [
-    { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
-    { key: 'account', icon: <SettingOutlined />, label: 'Account' },
+    { key: 'profile', icon: <UserOutlined />, label: 'Profile & Account' }, // <- รวมแล้ว
     { key: 'posts', icon: <FileTextOutlined />, label: 'My Posts' },
-    // { key: 'users', icon: <TeamOutlined />, label: 'Users' },
+    { key: 'bookmarks', icon: <BookOutlined />, label: 'My Bookmarks' },
     { key: 'security', icon: <LockOutlined />, label: 'Security' },
-    { key: 'notifications', icon: <BellOutlined />, label: 'Notifications' },
+    // { key: 'users', icon: <TeamOutlined />, label: 'Users' },
     // { key: 'files', icon: <FileImageOutlined />, label: 'Files' },
     // { key: 'logs', icon: <DatabaseOutlined />, label: 'Logs' },
   ];
 
+  async function handleUpload(file: File) {
+    try {
+      const { data } = await uploadAvatar({ variables: { user_id: user?.id, file } });
+      const url = data?.uploadAvatar;
+      if (url) {
+        setAvatarUrl(url);
+        message.success('Avatar updated');
+        refetchMe();
+      }
+    } catch (e) {
+      console.error(e);
+      message.error('Upload failed');
+    }
+  }
+
+  // ฟอร์มรวม (โปรไฟล์ + บัญชี)
+  const [formProfile] = Form.useForm();
+  useEffect(()=>{
+    if (!me) return;
+    formProfile.setFieldsValue({
+      name: me.name ?? '',
+      phone: me.phone ?? '',
+      language: me.language ?? 'en',
+      email: me.email ?? '',
+      username: me.username ?? '',
+    });
+  }, [me, formProfile]);
+
+  async function onSaveProfile(values:any){
+    try{
+      const payload = {
+        name: values.name?.trim() || '',
+        phone: values.phone?.trim() || '',
+        language: values.language || 'en',
+        email: values.email?.trim() || '',
+        username: values.username?.trim() || '',
+      };
+      const res = await updateMe({ variables: { data: payload } });
+      if (res?.data?.updateMe?.id) {
+        message.success('Profile & Account saved');
+        refetchMe();
+      } else {
+        message.error('Save failed');
+      }
+    } catch (err:any) {
+      message.error(err?.message || 'Save error');
+    }
+  }
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {/* Sider Menu */}
       <Sider
         width={240}
         collapsedWidth={0}
@@ -330,24 +469,14 @@ export default function SettingsPage() {
       </Sider>
 
       <Layout>
-
         <Content style={{ paddingLeft: 10, background: '#fff' }}>
+          {/* ========== PROFILE & ACCOUNT (รวม) ========== */}
           {active === 'profile' && (
-            <Card title="Profile Settings" style={{ maxWidth: 720 }}>
+            <Card title="Profile & Account" style={{ maxWidth: 720 }} loading={meLoading}>
               <Space align="start" size="large">
-                <Avatar size={96} src={avatarUrl} icon={<UserOutlined />} />
+                <Avatar size={96} src={avatarUrl || me?.avatar} icon={<UserOutlined />} />
                 <div>
-                  <Upload
-                    accept="image/*"
-                    showUploadList={false}
-                    beforeUpload={(file) => {
-                      const reader = new FileReader();
-                      reader.onload = () => setAvatarUrl(String(reader.result));
-                      reader.readAsDataURL(file);
-                      message.success('Preview updated');
-                      return false;
-                    }}
-                  >
+                  <Upload accept="image/*" showUploadList={false} beforeUpload={handleUpload}>
                     <Button icon={<CloudUploadOutlined />}>Upload Avatar</Button>
                   </Upload>
                 </div>
@@ -356,15 +485,16 @@ export default function SettingsPage() {
               <Divider />
 
               <Form
+                form={formProfile}
                 layout="vertical"
-                initialValues={{ name: 'Alice Example', phone: '080-000-0001', language: 'en' }}
-                onFinish={() => message.success('Profile saved')}
+                onFinish={onSaveProfile}
               >
+                {/* โปรไฟล์ */}
                 <Form.Item name="name" label="Display name" rules={[{ required: true }]}>
-                  <Input />
+                  <Input placeholder="Your name" />
                 </Form.Item>
                 <Form.Item name="phone" label="Phone">
-                  <Input />
+                  <Input placeholder="Your phone" />
                 </Form.Item>
                 <Form.Item name="language" label="Language">
                   <Select
@@ -374,33 +504,29 @@ export default function SettingsPage() {
                     ]}
                   />
                 </Form.Item>
-                <Button type="primary" htmlType="submit">
+
+                {/* บัญชี */}
+                <Divider />
+                <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
+                  <Input placeholder="name@example.com" />
+                </Form.Item>
+                <Form.Item
+                  name="username"
+                  label="Username"
+                  tooltip="Unique login/handle (if your system supports)"
+                  rules={[{ required: true }]}
+                >
+                  <Input placeholder="username" />
+                </Form.Item>
+
+                <Button type="primary" htmlType="submit" loading={updatingMe}>
                   Save changes
                 </Button>
               </Form>
             </Card>
           )}
 
-          {active === 'account' && (
-            <Card title="Account" style={{ maxWidth: 720 }}>
-              <Form
-                layout="vertical"
-                initialValues={{ email: 'alice@example.com', username: 'alice' }}
-                onFinish={() => message.success('Account updated')}
-              >
-                <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="username" label="Username" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-                <Button type="primary" htmlType="submit">
-                  Update
-                </Button>
-              </Form>
-            </Card>
-          )}
-
+          {/* ========== SECURITY ========== */}
           {active === 'security' && (
             <Card title="Security" style={{ maxWidth: 720 }}>
               <Form layout="vertical" onFinish={() => message.success('Password changed')}>
@@ -433,40 +559,23 @@ export default function SettingsPage() {
             </Card>
           )}
 
-          {active === 'notifications' && (
-            <Card title="Notifications" style={{ maxWidth: 720 }}>
-              <Form
-                layout="vertical"
-                initialValues={{ email: true, push: true }}
-                onFinish={() => message.success('Notifications updated')}
-              >
-                <Form.Item label="Email Notifications" name="email" valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-                <Form.Item label="Push Notifications" name="push" valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-                <Button type="primary" htmlType="submit">
-                  Save
-                </Button>
-              </Form>
-            </Card>
-          )}
-
+          {/* ========== OTHERS ========== */}
           {active === 'users' && <UsersPanel />}
           {active === 'posts' && <PostsPanel />}
           {active === 'files' && <FilesPanel />}
           {active === 'logs' && <LogsPanel />}
+          {active === 'bookmarks' && <MyBookmarksPanel />}
         </Content>
       </Layout>
     </Layout>
   );
 }
 
+/* ================= Utilities & Panels: Files / Logs / MyBookmarks ================= */
+
 function isImage(m?: string | null){
   return !!m && m.toLowerCase().startsWith('image/');
 }
-
 function fmtSize(n: number){
   if(n < 1024) return n + ' B';
   if(n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
@@ -668,6 +777,36 @@ function LogsPanel(){
           );
         }}
       />
+    </Card>
+  );
+}
+
+function MyBookmarksPanel() {
+  const { data, loading, refetch } = useQuery(Q_MY_BOOKMARKS);
+
+  const cols = [
+    {
+      title: "Title",
+      dataIndex: "title",
+      render: (_: any, r: any) => ( <Space><Link href={`/post/${r.id}`}>{r.title}</Link></Space> )
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      render: (s: string) => (<Tag color={s === "public" ? "green" : "red"}>{s}</Tag>),
+    },
+    { title: "Author", dataIndex: ["author", "name"] },
+    {
+      title: "Action",
+      render: (_: any, r: any) => (
+        <BookmarkButton postId={r.id} defaultBookmarked={r?.is_bookmarked ?? false} />
+      ),
+    },
+  ];
+
+  return (
+    <Card title="My Bookmarks" extra={<Button onClick={() => refetch()}>Refresh</Button>}>
+      <Table rowKey="id" dataSource={data?.myBookmarks || []} columns={cols as any} loading={loading} />
     </Card>
   );
 }

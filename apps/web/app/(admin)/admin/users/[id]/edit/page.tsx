@@ -1,6 +1,6 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Form, Input, Select, Button, Space, Upload, messag, Image } from "antd";
+import { Card, Form, Input, Select, Button, Space, Upload, message, Image } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { useState } from "react";
 

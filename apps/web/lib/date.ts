@@ -1,0 +1,14 @@
+// utils/date.ts
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+export function formatDate(timestamp: number, format = 'DD/MM/YYYY') {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const formatted = dayjs.unix(timestamp / 1000).tz(tz).format(format);
+
+    console.log("[formatDate]", tz, formatted);
+    return formatted
+}

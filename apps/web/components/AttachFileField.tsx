@@ -86,11 +86,11 @@ const AttachFileField: FC<AttachFileFieldProps> = ({
 
   return (
     <Space align="start" size="large" style={{ width: '100%' }}>
-      <div style={{ minWidth: 120 }}>
+      <div>
         <Text>{label}{required ? ' *' : ''}</Text>
         <div><input ref={inputRef} type="file" accept={accept} multiple={multiple}
           style={{ display:'none' }} onChange={onFileChange} /></div>
-        <Button icon={<PlusOutlined />} onClick={openPicker} size="middle">Add</Button>
+        <Button icon={<PlusOutlined />} onClick={openPicker} size="middle" />
       </div>
       <Space size={8} wrap>
         {values.filter(v => !(isExisting(v) && (v as any).delete)).map((v, idx) => {
@@ -104,7 +104,7 @@ const AttachFileField: FC<AttachFileFieldProps> = ({
               <Avatar shape="square" src={src}
                 style={{ width: thumbSize, height: thumbSize, border: '1px solid #ddd', objectFit: 'cover' }} />
               <Button type="text" icon={<DeleteOutlined />} onClick={() => handleRemove(v, idx)}
-                style={{ position:'absolute', top: -10, right: -10 }} />
+                style={{ position:'absolute', top: 0, right: 0, color: 'red' }} />
             </div>
           );
         })}

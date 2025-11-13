@@ -81,6 +81,9 @@ $$ LANGUAGE plpgsql;
 SELECT create_revision_trigger('posts');
 SELECT create_revision_trigger('users');
 
+SELECT create_revision_trigger('post_seller_accounts');
+SELECT create_revision_trigger('post_tel_numbers');
+
 -- ✅ เพิ่มตารางอื่นได้ในอนาคต
 -- SELECT create_revision_trigger('products');
 -- SELECT create_revision_trigger('drivers');

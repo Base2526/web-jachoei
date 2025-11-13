@@ -10,6 +10,8 @@ export const typeDefs = /* GraphQL */ `
     email: String
     role: String!
     created_at: String!
+    username: String!
+    language: String!
   }
 
   type Chat {
@@ -65,18 +67,42 @@ export const typeDefs = /* GraphQL */ `
     password: String!
   }
 
+  type Bookmark {
+    user_id: ID!
+  }
+
+  type TelNumber {
+    id: ID!
+    tel: String!
+  }
+
+  type SellerAccount {
+    id: ID!
+    bank_id: String
+    bank_name: String
+    seller_account: String
+  }
+
   type Post {
     id: ID!
-    title: String!
-    body: String!
-    image_url: String
-    phone: String
     author: User
     status: PostStatus!
     created_at: String!
     updated_at: String!
-
     images: [Image!]! 
+    bookmarks: [Bookmark!]!
+    is_bookmarked: Boolean!
+    first_last_name: String
+    id_card: String
+    title: String
+    transfer_amount: Float
+    transfer_date: String
+    website: String
+    province_id: ID
+    province_name: String
+    detail: String
+    tel_numbers: [TelNumber!]!
+    seller_accounts: [SellerAccount!]!
   }
 
   type Chat { id: ID!, name: String, is_group: Boolean!, created_at: String! }
@@ -177,13 +203,38 @@ export const typeDefs = /* GraphQL */ `
     latestPosts(limit: Int = 5): [Post!]!
 
     filesPaged(search: String, limit: Int!, offset: Int!): FileConnection!
+
+    myBookmarks(limit: Int, offset: Int): [Post!]!
+  }
+
+
+  input TelNumberInput {
+    id: ID
+    tel: String!
+    mode: String # "new" | "edited" | "deleted"
+  }
+  input SellerAccountInput {
+    id: ID
+    bank_id: String!
+    bank_name: String!
+    seller_account: String
+    mode: String
   }
 
   input PostInput {
-    title: String!
-    body: String!
-    image_url: String
-    phone: String
+    # new fields
+    first_last_name: String
+    id_card: String
+    title: String
+    transfer_amount: Float
+    transfer_date: String   # ISO string
+    website: String
+    province_id: ID
+    detail: String
+
+    # arrays
+    tel_numbers: [TelNumberInput!]
+    seller_accounts: [SellerAccountInput!]
     status: PostStatus!
   }
 
@@ -206,6 +257,20 @@ export const typeDefs = /* GraphQL */ `
     url: String!
   }
 
+  type ToggleBookmarkResult {
+    status: Boolean!
+    isBookmarked: Boolean!
+    executionTime: String
+  }
+
+  input MeInput {
+    name: String
+    email: String
+    phone: String
+    username: String
+    language: String
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -215,7 +280,6 @@ export const typeDefs = /* GraphQL */ `
 
     registerUser(input: RegisterInput!): Boolean!
 
-    # upsertPost(id: ID, data: PostInput!, images: [Upload!]): Post!
     upsertPost(id: ID, data: PostInput!, images: [Upload!], image_ids_delete: [ID!]): Post!
     deletePost(id: ID!): Boolean!
     deletePosts(ids: [ID!]!): Boolean! 
@@ -243,7 +307,11 @@ export const typeDefs = /* GraphQL */ `
     resetPassword(token: String!, newPassword: String!): Boolean
 
     deleteFile(id: ID!): Boolean!
-    deleteFiles(ids: [ID!]!): Boolean!     # <- multi delete
+    deleteFiles(ids: [ID!]!): Boolean!    
     renameFile(id: ID!, name: String!): Boolean!
+
+    toggleBookmark(postId: ID!): ToggleBookmarkResult!
+
+    updateMe(data: MeInput!): User!
   }
 `;
