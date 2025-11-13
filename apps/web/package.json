@@ -17,6 +17,7 @@
     "bcryptjs": "^3.0.2",
     "cookie": "^1.0.2",
     "crypto": "^1.0.1",
+    "dayjs": "^1.11.19",
     "fs": "^0.0.1-security",
     "graphql": "^16.9.0",
     "graphql-redis-subscriptions": "^2.7.0",

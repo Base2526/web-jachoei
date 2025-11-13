@@ -7,6 +7,8 @@ import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import _ from "lodash";
 import dayjs from 'dayjs';
 
+import { formatDate } from "@/lib/date"
+
 const UPSERT = gql`
   mutation Upsert($id: ID, $data: PostInput!, $images:[Upload!], $image_ids_delete:[ID!]) {
     upsertPost(id: $id, data: $data, images: $images, image_ids_delete: $image_ids_delete) {
@@ -94,6 +96,8 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
   const [files, setFiles] = useState<FileValue[]>([]);
   const isEdit = !!initialData?.id;
 
+  console.log("[PostForm]", initialData);
+
   const [onPost, { loading }] = useMutation(UPSERT);
 
   // data ตัวอย่าง dropdown
@@ -171,12 +175,29 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
   useEffect(() => {
     if (!initialData) return;
 
+    // console.log("transfer_date :", formatDate(Number(initialData.transfer_date)));
+
+    // ✅ handle transfer_date
+    let parsedTransferDate: dayjs.Dayjs | undefined;
+    if (initialData.transfer_date) {
+      if (!isNaN(Number(initialData.transfer_date))) {
+        // timestamp → แปลงจาก number ด้วย formatDate()
+        const formatted = formatDate(Number(initialData.transfer_date));
+        console.log("Parsed transfer_date (timestamp):", formatted);
+        parsedTransferDate = dayjs(Number(initialData.transfer_date));
+      } else {
+        // ISO string → dayjs ปกติ
+        parsedTransferDate = dayjs(initialData.transfer_date);
+      }
+    }
+
+
     form.setFieldsValue({
       first_last_name: initialData.first_last_name ?? "",
       id_card: initialData.id_card ?? "",
       title: initialData.title ?? "",
       transfer_amount: initialData.transfer_amount ?? undefined,
-      transfer_date: initialData.transfer_date ? dayjs(initialData.transfer_date) : undefined,
+      transfer_date: parsedTransferDate, // initialData.transfer_date ? dayjs(initialData.transfer_date) : undefined,
       website: initialData.website ?? "",
       province_id: initialData.province_id ?? undefined,
       detail: (initialData as any).detail ?? "",
@@ -280,10 +301,12 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         first_last_name: values.first_last_name?.trim() ?? "",
         id_card: values.id_card?.trim() ?? "",
         title: values.title?.trim() ?? "",
-        transfer_amount: typeof values.transfer_amount === 'number' ? values.transfer_amount : Number(values.transfer_amount || 0),
+        transfer_amount: typeof values.transfer_amount === 'number'
+          ? values.transfer_amount
+          : Number(values.transfer_amount || 0),
         transfer_date: values.transfer_date
-          ? (values.transfer_date.toISOString?.() ?? dayjs(values.transfer_date).toISOString())
-          : null,
+        ? (values.transfer_date.toISOString?.() ?? dayjs(values.transfer_date).toISOString())
+        : null,
         website: values.website?.trim() ?? "",
         province_id: values.province_id ?? null,
         detail: values.detail ?? "",
@@ -494,7 +517,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           name="transfer_date"
           rules={[{ required: true, message: 'กรุณาเลือกวันโอนเงิน' }]}
         >
-          <DatePicker placeholder="กรุณาเลือกวันโอนเงิน" style={{ width: '100%' }} />
+          <DatePicker placeholder="กรุณาเลือกวันโอนเงิน" style={{ width: '100%' }} format="DD/MM/YYYY" />
         </Form.Item>
 
         {/* เว็บประกาศขายของ */}

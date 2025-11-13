@@ -25,6 +25,7 @@ const Q_POSTS_PAGED = gql`
         title 
         detail 
         status 
+        is_bookmarked
         created_at
         images { id url }
         author { id name avatar }
@@ -74,7 +75,6 @@ const TelList = ({ items }: { items: Array<{id:string; tel:string}> | undefined 
     </>
   );
 };
-
 
 function PostsList() {
   const [q, setQ] = useState('');
@@ -132,18 +132,18 @@ function PostsList() {
         );
       },
     },
-    { title: 'Status', dataIndex: 'status', render: (s: string) => <Tag color={s === 'public' ? 'green' : 'red'}>{s}</Tag> },
+    // { title: 'Status', dataIndex: 'status', render: (s: string) => <Tag color={s === 'public' ? 'green' : 'red'}>{s}</Tag> },
     { title: 'Author', render: (_: any, r: any) => <Link href={`/profile/${r.author.id}`} prefetch={false}>{r.author?.name}</Link> },
     {
       title: 'Action', render: (_: any, r: any) =>
         <Space>
-          <BookmarkButton postId={r.id} defaultBookmarked={r?.isBookmarked ?? false} />
+          { user?.id !== r.author?.id && <BookmarkButton postId={r.id} defaultBookmarked={r?.is_bookmarked ?? false} /> }
 
-          <Tooltip title="View">
+          {/* <Tooltip title="View">
             <Link href={`/post/${r.id}`} prefetch={false}>
               <Button type="text" size="small" icon={<EyeOutlined />} />
             </Link>
-          </Tooltip>
+          </Tooltip> */}
 
           {user?.id === r.author.id && (
             <>
@@ -172,7 +172,7 @@ function PostsList() {
             </>
           )}
 
-          {r.author?.id && (
+          {user?.id !== r.author?.id && (
             <Tooltip title="Chat">
               <Link href={`/chat?to=${r.author.id}`} prefetch={false}>
                 <Button type="text" size="small" icon={<MessageOutlined />} />

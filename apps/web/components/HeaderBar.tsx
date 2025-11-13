@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
 import { useSession } from "@/lib/useSession";
+import { gql, useQuery, useMutation } from "@apollo/client";
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -13,9 +14,29 @@ const { Text } = Typography;
 type Lang = "th" | "en";
 const labelOf: Record<Lang,string> = { th:"ไทย", en:"English" };
 
+// ดึงข้อมูลตัวเอง
+const Q_ME = gql`
+  query {
+    me {
+      id
+      name
+      email
+      phone
+      username
+      language
+      role
+      avatar
+      created_at
+    }
+  }
+`;
+
 export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }) {
   const router = useRouter();
   const { user: userSession, refreshSession } = useSession();
+
+  const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME, { skip: !userSession, fetchPolicy: "cache-first" });
+  const me = meData?.me;
 
   // ✅ ให้ SSR == Client: เริ่มจาก initialLang เสมอ
   const [currentLang, setCurrentLang] = useState<Lang>(initialLang);
@@ -93,9 +114,11 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
           <Button type="text" onClick={() => router.push("/help")} icon={<QuestionCircleOutlined style={{ fontSize: 18, color: "#000" }} />} />
         </Tooltip>
 
+        {/* <Avatar size={96} src={avatarUrl || me?.avatar} icon={<UserOutlined />} /> */}
+
         {userSession ? (
           <Dropdown menu={{ items: profileMenu }} trigger={["click"]} placement="bottomRight" arrow>
-            <Avatar size={36} style={{ background:"#666", cursor:"pointer" }} icon={<UserOutlined />} />
+            <Avatar size={36} src={ me?.avatar } style={{ background:"#666", cursor:"pointer" }} icon={<UserOutlined />} />
           </Dropdown>
         ) : (
           <Space>

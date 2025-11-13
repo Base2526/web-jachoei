@@ -10,6 +10,8 @@ export const typeDefs = /* GraphQL */ `
     email: String
     role: String!
     created_at: String!
+    username: String!
+    language: String!
   }
 
   type Chat {
@@ -89,7 +91,7 @@ export const typeDefs = /* GraphQL */ `
     updated_at: String!
     images: [Image!]! 
     bookmarks: [Bookmark!]!
-    isBookmarked: Boolean!
+    is_bookmarked: Boolean!
     first_last_name: String
     id_card: String
     title: String
@@ -201,6 +203,8 @@ export const typeDefs = /* GraphQL */ `
     latestPosts(limit: Int = 5): [Post!]!
 
     filesPaged(search: String, limit: Int!, offset: Int!): FileConnection!
+
+    myBookmarks(limit: Int, offset: Int): [Post!]!
   }
 
 
@@ -259,6 +263,14 @@ export const typeDefs = /* GraphQL */ `
     executionTime: String
   }
 
+  input MeInput {
+    name: String
+    email: String
+    phone: String
+    username: String
+    language: String
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -299,5 +311,7 @@ export const typeDefs = /* GraphQL */ `
     renameFile(id: ID!, name: String!): Boolean!
 
     toggleBookmark(postId: ID!): ToggleBookmarkResult!
+
+    updateMe(data: MeInput!): User!
   }
 `;

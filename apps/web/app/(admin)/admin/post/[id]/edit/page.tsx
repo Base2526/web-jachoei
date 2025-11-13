@@ -9,42 +9,42 @@ import { gql, useQuery } from "@apollo/client";
 const Q_POST = gql`
   query($id:ID!){
     post(id:$id){
-        detail
-        transfer_amount
-        #  transfer_date
-        updated_at
-        website
-        tel_numbers {
-          id
-          tel
-        }
-        status
-        seller_accounts {
-          bank_id
-          bank_name
-          id
-          seller_account
-        }
-        province_name
-        province_id
-        title
-        images {
-          id
-          url
-        }
-        id_card
+      detail
+      transfer_amount
+      transfer_date
+      updated_at
+      website
+      tel_numbers {
         id
-        first_last_name
+        tel
+      }
+      status
+      seller_accounts {
+        bank_id
+        bank_name
+        id
+        seller_account
+      }
+      province_name
+      province_id
+      title
+      images {
+        id
+        url
+      }
+      id_card
+      id
+      first_last_name
+      created_at
+      author {
+        avatar
         created_at
-        author {
-          avatar
-          created_at
-          email
-          id
-          name
-          phone
-          role
-        }
+        email
+        id
+        name
+        phone
+        role
+      }
     }
   }
 `;

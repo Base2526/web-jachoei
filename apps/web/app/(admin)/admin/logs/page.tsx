@@ -183,79 +183,62 @@ export default function AdminLogsPage() {
           total,
           onChange:(p,ps)=>{ setPage(p); setPageSize(ps||50); },
         }}
-        // renderItem={(item)=>{
-        //   const checked = selectedIds.includes(item.id);
-        //   return (
-        //     <List.Item
-        //       key={item.id}
-        //       actions={[
-        //         <span key="time">{new Date(item.created_at).toLocaleString()}</span>,
-        //         <span key="cat"><Tag>{item.category}</Tag></span>,
-        //       ]}
-        //       extra={
-        //         // NEW: checkbox per row
-        //         <Checkbox checked={checked} onChange={e => toggleOne(item.id, e.target.checked)} />
-        //       }
-        //     >
-        //       <List.Item.Meta
-        //         avatar={levelTag(item.level)}
-        //         title={
-        //           <Space split={<Divider type="vertical" />} wrap>
-        //             <span>#{item.id}</span>
-        //             {/* NEW: link to detail page */}
-        //             <Link href={`/admin/logs/${item.id}`}><strong>{item.message}</strong></Link>
-        //           </Space>
-        //         }
-        //         description={
-        //           <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }} className="text-xs">
-        //             {JSON.stringify(item.meta || {}, null, 2)}
-        //           </pre>
-        //         }
-        //       />
-        //     </List.Item>
-        //   );
-        // }}
-
-        renderItem={(item)=>{
+        renderItem={(item) => {
           const checked = selectedIds.includes(item.id);
           return (
             <List.Item
               key={item.id}
-              actions={[
-                <span key="time">{new Date(item.created_at).toLocaleString()}</span>,
-                <span key="cat"><Tag>{item.category}</Tag></span>,
-              ]}
+              style={{
+                borderBottom: '1px solid #f0f0f0',
+                padding: '12px 0',
+              }}
             >
-              <Space align="start" style={{ width: '100%' }}>
-                {/* ✅ Checkbox ด้านหน้า */}
+              {/* checkbox + level */}
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
                 <Checkbox
                   checked={checked}
-                  onChange={e => toggleOne(item.id, e.target.checked)}
-                  style={{ marginTop: 4 }}
+                  onChange={(e) => toggleOne(item.id, e.target.checked)}
+                  style={{ marginRight: 8 }}
                 />
+                {levelTag(item.level)}
+                <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>
+                  {new Date(item.created_at).toLocaleString()}
+                </span>
+              </div>
 
-                {/* เนื้อหาหลัก */}
-                <List.Item.Meta
-                  avatar={levelTag(item.level)}
-                  title={
-                    <Space split={<Divider type="vertical" />} wrap>
-                      <span>#{item.id}</span>
-                      <Link href={`/admin/logs/${item.id}/view`}>
-                        <strong>{item.message}</strong>
-                      </Link>
-                    </Space>
-                  }
-                  description={
-                    <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }} className="text-xs">
-                      {JSON.stringify(item.meta || {}, null, 2)}
-                    </pre>
-                  }
-                />
-              </Space>
+              {/* title / message */}
+              <div style={{ fontWeight: 600, color: '#000' }}>
+                <Link href={`/admin/logs/${item.id}/view`}>
+                  {item.message || '(no message)'}
+                </Link>
+              </div>
+
+              {/* category */}
+              <div style={{ marginTop: 4, fontSize: 13, color: '#555' }}>
+                <Tag color="geekblue">{item.category}</Tag>
+              </div>
+
+              {/* meta JSON */}
+              {item.meta && Object.keys(item.meta).length > 0 && (
+                <div
+                  style={{
+                    background: '#fafafa',
+                    border: '1px solid #eee',
+                    borderRadius: 6,
+                    padding: '8px 12px',
+                    marginTop: 8,
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    whiteSpace: 'pre-wrap',
+                    color: '#444',
+                  }}
+                >
+                  {JSON.stringify(item.meta, null, 2)}
+                </div>
+              )}
             </List.Item>
           );
         }}
-
       />
     </Card>
   );

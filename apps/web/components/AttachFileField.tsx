@@ -104,7 +104,7 @@ const AttachFileField: FC<AttachFileFieldProps> = ({
               <Avatar shape="square" src={src}
                 style={{ width: thumbSize, height: thumbSize, border: '1px solid #ddd', objectFit: 'cover' }} />
               <Button type="text" icon={<DeleteOutlined />} onClick={() => handleRemove(v, idx)}
-                style={{ position:'absolute', top: -10, right: -10 }} />
+                style={{ position:'absolute', top: 0, right: 0, color: 'red' }} />
             </div>
           );
         })}

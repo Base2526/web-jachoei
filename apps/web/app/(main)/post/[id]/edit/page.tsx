@@ -9,9 +9,23 @@ import { gql, useQuery } from "@apollo/client";
 const Q_POST = gql`
   query($id:ID!){
     post(id:$id){
-      id title detail status created_at updated_at
-      images { id url }           # << ใช้ url ตรงจาก resolver
-      author { id name email }    # ถ้าต้องใช้
+      detail
+      transfer_amount
+      transfer_date
+      updated_at
+      website
+      tel_numbers { id tel }
+      status
+      seller_accounts { bank_id bank_name id seller_account }
+      province_name
+      province_id
+      title
+      images { id url }
+      id_card
+      id
+      first_last_name
+      created_at
+      author { avatar created_at email id name phone role }
     }
   }
 `;
@@ -34,6 +48,7 @@ export default function Page(){
       initialData={post!}
       onSaved={()=> router.refresh()}
       title="Edit Post"
+    
     />
   );
 }

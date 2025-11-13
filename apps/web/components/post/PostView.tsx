@@ -1,22 +1,34 @@
 'use client';
 import React from 'react';
-import { Card, Descriptions, Image, Divider, Table, Typography } from 'antd';
+import { gql, useQuery, useMutation } from "@apollo/client";
+import { Card, Descriptions, Image, Divider, Table, Typography, Button, Space, Tooltip, Popconfirm, message } from 'antd';
 import type { PostRecord } from './PostForm';
-import dayjs from 'dayjs';
+import Link from 'next/link';
+import { MessageOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+
+import { useSessionCtx } from '@/lib/session-context';
+import BookmarkButton from '@/components/BookmarkButton';
+import { formatDate } from "@/lib/date"
 
 const { Text } = Typography;
 
 type Props = {
   post: PostRecord | null;
   loading?: boolean;
+  onDelete?: (id?: any) => void;    
+  deleting?: boolean;     
   title?: string;
 };
 
-export default function PostView({ post, loading, title }: Props) {
+// const DELETE_POST = gql`mutation ($id: ID!) { deletePost(id: $id) } `;
+
+export default function PostView({ post, loading, onDelete, deleting, title }: Props) {
   console.log("[PostView]", post);
 
+  const { user } = useSessionCtx();
+  
   if (!post) {
-    return <Card loading={loading} title={title ?? 'Post'}>No data.</Card>;
+    return <Card loading={loading} title={title ?? 'Post [x]'}>No data.</Card>;
   }
 
   // เตรียมข้อมูล array ย่อย (เผื่อ backend ส่งมาเป็น null)
@@ -24,32 +36,69 @@ export default function PostView({ post, loading, title }: Props) {
   const sellerAccounts = (post as any).seller_accounts || [];
 
   return (
-    <Card title={title ?? 'รายละเอียดโพสต์'} loading={loading}>
-      <Descriptions column={1} bordered size="small">
-        {/* ฟิลด์หลัก */}
-        {/* 
-        <Descriptions.Item label="ชื่อโพสต์ (Title)">
-          {post.title || '-'}
-        </Descriptions.Item>
-        <Descriptions.Item label="รายละเอียด (Detail)">
-          {post.body || '-'}
-        </Descriptions.Item> 
-        */}
-        {/* <Descriptions.Item label="เบอร์โทร / ไอดีไลน์ (Phone)">
-          {post.phone || '-'}
-        </Descriptions.Item> */}
+    <Card 
+      title={title ?? 'รายละเอียดโพสต์'} 
+      loading={loading}
+      extra={
+        <Space>
+          {
+            user?.id !== (post as any)?.author?.id &&  <BookmarkButton postId={String((post as any).id)} defaultBookmarked={(post as any)?.is_bookmarked ?? false}  />
+          }
+         
+         {
+            user?.id !== (post as any)?.author?.id && <Link href={`/chat?to=${(post as any)?.author.id}`} prefetch={false}>
+                                                        <Button
+                                                          type="text"
+                                                          size="small"
+                                                          icon={<MessageOutlined />}
+                                                          title={`Chat with `}
+                                                        />
+                                                      </Link>
+         } 
+         {user?.id === (post as any)?.author.id && (
+            <>
+              <Tooltip title="Edit">
+                <Link href={`/post/${(post as any)?.id}/edit`} prefetch={false}>
+                  <Button type="text" size="small" icon={<EditOutlined />} />
+                </Link>
+              </Tooltip>
 
-        {/* ฟิลด์ใหม่ */}
+              <Popconfirm
+                title="Confirm delete?"
+                okText="Yes"
+                cancelText="No"
+                onConfirm={() => onDelete?.((post as any)?.id) }
+              >
+                <Tooltip title="Delete">
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    loading={deleting}
+                    icon={<DeleteOutlined />}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            </>
+          )}
+        </Space>
+      }>
+      <Descriptions column={1} bordered size="small">
+    
+        <Descriptions.Item label="สินค้า/บริการ ที่สั่งซื้อ">
+          {(post as any).title || '-'}
+        </Descriptions.Item>
+
+        <Descriptions.Item label="รายละเอียดเพิ่มเติม">
+          {(post as any).detail || '-'}
+        </Descriptions.Item>
+
         <Descriptions.Item label="ชื่อ-นามสกุล คนขาย">
           {(post as any).first_last_name || '-'}
         </Descriptions.Item>
 
         <Descriptions.Item label="เลขบัตรประชาชน / พาสปอร์ต">
-          {(post as any).id_card || '-'}
-        </Descriptions.Item>
-
-        <Descriptions.Item label="สินค้า/บริการ ที่สั่งซื้อ">
-          {(post as any).title || '-'}
+          <Typography.Text copyable>{(post as any).id_card }</Typography.Text>
         </Descriptions.Item>
 
         <Descriptions.Item label="ยอดโอน">
@@ -60,7 +109,7 @@ export default function PostView({ post, loading, title }: Props) {
 
         <Descriptions.Item label="วันโอนเงิน">
           {(post as any).transfer_date
-            ? dayjs((post as any).transfer_date).format('DD/MM/YYYY HH:mm')
+            ? formatDate((post as any).transfer_date)
             : '-'}
         </Descriptions.Item>
 
@@ -72,9 +121,6 @@ export default function PostView({ post, loading, title }: Props) {
           {(post as any).province_name || (post as any).province_id || '-'}
         </Descriptions.Item>
 
-        <Descriptions.Item label="รายละเอียดเพิ่มเติม">
-          {(post as any).detail || '-'}
-        </Descriptions.Item>
       </Descriptions>
 
       {/* ======================= */}
@@ -90,7 +136,10 @@ export default function PostView({ post, loading, title }: Props) {
             size="small"
             columns={[
               { title: 'ลำดับ', render: (_: any, __: any, i: number) => i + 1 },
-              { title: 'เบอร์โทร / ไอดีไลน์', dataIndex: 'tel' },
+              { title: 'เบอร์โทร / ไอดีไลน์', 
+                dataIndex: 'tel',
+                render: (s: string) => <Typography.Text copyable>{s}</Typography.Text>
+              },
             ]}
           />
         </>
@@ -110,8 +159,11 @@ export default function PostView({ post, loading, title }: Props) {
             columns={[
               { title: 'ลำดับ', render: (_: any, __: any, i: number) => i + 1 },
               { title: 'ชื่อบัญชีคนขาย', dataIndex: 'bank_name' },
-              { title: 'เลขที่บัญชี', dataIndex: 'seller_account' },
-              { title: 'ธนาคาร', dataIndex: 'bank_id' },
+              { title: 'เลขที่บัญชี', 
+                dataIndex: 'seller_account',
+                render: (s: string) => <Typography.Text copyable>{s}</Typography.Text>
+              },
+              // { title: 'ธนาคาร', dataIndex: 'bank_id' },
             ]}
           />
         </>
@@ -144,9 +196,9 @@ export default function PostView({ post, loading, title }: Props) {
         </>
       )}
 
-      <Descriptions.Item label="สถานะ (Status)">
+      {/* <Descriptions.Item label="สถานะ (Status)">
         {post.status || '-'}
-      </Descriptions.Item>
+      </Descriptions.Item> */}
     </Card>
   );
 }
