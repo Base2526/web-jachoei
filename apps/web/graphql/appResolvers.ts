@@ -12,10 +12,23 @@ import { persistWebFile, buildFileUrlById } from "@/lib/storage";
 import { requireAuth, sha256Hex } from "@/lib/auth"
 import { addLog } from '@/lib/log/log';
 
+import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
+// import { signUserToken } from "@/lib/auth/jwt";
+
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 type Iso = string;
+
+function normalizeStr(input: string): string {
+  return input
+    .toLowerCase()              // เป็นตัวเล็ก
+    .normalize("NFD")           // แยก accent (รองรับไทย/ภาษายุโรป)
+    .replace(/[\u0300-\u036f]/g, "") // ลบ accent
+    .replace(/[^a-z0-9]+/g, "_") // อะไรที่ไม่ใช่ a-z 0-9 → _
+    .replace(/_+/g, "_")         // แทน _ ซ้อนหลายตัวด้วย _
+    .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
+}
 
 export const resolvers = {
   Query: {
@@ -737,6 +750,128 @@ export const resolvers = {
       );
 
       cookies().set(USER_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      return {
+        ok: true,
+        message: "Login success",
+        token,
+        user,
+      };
+    },
+
+    loginWithSocial: async (_: any, { input }: any, ctx: any) => {
+      const { provider, accessToken } = input;
+
+      let socialData = null;
+
+      if (provider === "google") {
+        socialData = await verifyGoogle(accessToken);
+      } else if (provider === "facebook") {
+        socialData = await verifyFacebook(accessToken);
+      } else {
+        throw new GraphQLError("Invalid provider");
+      }
+
+      if (!socialData) {
+        throw new GraphQLError("Social token invalid");
+      }
+
+      const { email, name, picture, provider_id } = socialData;
+
+      /* ======================================================
+            1) หา user ถ้ามี email อยู่แล้ว → login เลย
+         ====================================================== */
+      const { rows: existing } = await query(
+        `SELECT * FROM users WHERE email = $1 LIMIT 1`,
+        [email]
+      );
+
+      let user = existing[0];
+
+      /* ======================================================
+            2) ถ้ายังไม่มี user → สร้างใหม่
+         ====================================================== */
+      if (!user) {
+        const randomPassword = crypto.randomBytes(16).toString("hex");
+
+        const { rows: newUser } = await query(
+          `
+          INSERT INTO users (name, username, email, avatar, role, password_hash, provider, provider_id, meta)
+          VALUES ($1,$2,$3,$4,'Subscriber', crypt($5, gen_salt('bf')),$6,$7,$8)
+          RETURNING *
+        `,
+          [name, normalizeStr(email), email, picture, randomPassword, provider, provider_id, JSON.stringify(socialData || {})]
+        );
+
+        user = newUser[0];
+      }
+
+      /*
+      web-1       | [loginWithSocial] @1 =  {
+      web-1       |   email: 'android.somkid@gmail.com',
+      web-1       |   name: 'Somkid Simajarn',
+      web-1       |   picture: 'https://lh3.googleusercontent.com/a/ACg8ocJ1XvMZgNQRmpi7ceC4dIhQMd6f2AumSMhVvTXilWF8y7hVkJ8b=s96-c',
+      web-1       |   provider: 'google',
+      web-1       |   provider_id: '112378752153101585347'
+      web-1       | }
+      */
+
+      /*
+      web-1       | [loginWithSocial] =  {
+      web-1       |   id: 'c2570057-d8bd-4506-9f00-0c7fc6996d52',
+      web-1       |   name: 'Somkid Simajarn',
+      web-1       |   avatar: 'https://lh3.googleusercontent.com/a/ACg8ocJ1XvMZgNQRmpi7ceC4dIhQMd6f2AumSMhVvTXilWF8y7hVkJ8b=s96-c',
+      web-1       |   phone: null,
+      web-1       |   email: 'android.somkid@gmail.com',
+      web-1       |   role: 'Subscriber',
+      web-1       |   created_at: 2025-11-13T16:57:50.060Z,
+      web-1       |   password_hash: '$2a$06$owU1d10euSYJdLhqxZGyFekkLyJzgz9eIox9c7mv1pwGHRmvyTk0a',
+      web-1       |   meta: null,
+      web-1       |   fake_test: null,
+      web-1       |   username: null,
+      web-1       |   language: 'en',
+      web-1       |   updated_at: 2025-11-13T16:57:50.060Z
+      web-1       | }
+      */
+
+      /* ======================================================
+            3) ออก JWT token
+         ====================================================== */
+         /*
+      const token = signUserToken(user);
+
+      return jwt.sign(
+        {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+        JWT_SECRET,
+        { expiresIn: "30d" }
+      );
+      */
+
+      //  id: user.id, email: user.email, role: user.role
+
+      console.log("[loginWithSocial] @1 = ", socialData);
+      console.log("[loginWithSocial] @2 = ", user);
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+
+      // แนะนำ: set cookie httpOnly ใน production
+      // ctx.res.cookie("token", token, {
+      //   httpOnly: true,
+      //   sameSite: 'lax',
+      //   path: '/'
+      // });
+
+
       return {
         ok: true,
         message: "Login success",

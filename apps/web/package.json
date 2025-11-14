@@ -11,6 +11,8 @@
     "@apollo/client": "^3.10.0",
     "@as-integrations/next": "^3.0.0",
     "@graphql-tools/schema": "^10.0.0",
+    "@greatsumini/react-facebook-login": "^3.4.0",
+    "@react-oauth/google": "^0.12.2",
     "@types/lodash": "^4.17.20",
     "antd": "^5.19.2",
     "apollo-upload-client": "^17.0.0",

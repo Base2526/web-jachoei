@@ -55,6 +55,7 @@ services:
       REDIS_URL: ${REDIS_URL}
       NODE_ENV: development
       STORAGE_DIR: /app/storage
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
     ports: ["3000:3000"]
     volumes:
       - ./apps/web:/app/apps/web

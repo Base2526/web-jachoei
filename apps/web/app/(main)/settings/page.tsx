@@ -493,6 +493,19 @@ export default function SettingsPage() {
                 <Form.Item name="name" label="Display name" rules={[{ required: true }]}>
                   <Input placeholder="Your name" />
                 </Form.Item>
+                 {/* บัญชี */}
+                <Divider />
+                <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
+                  <Input placeholder="name@example.com"  disabled={true}/>
+                </Form.Item>
+                <Form.Item
+                  name="username"
+                  label="Username"
+                  tooltip="Unique login/handle (if your system supports)"
+                  rules={[{ required: true }]}
+                >
+                  <Input placeholder="username" />
+                </Form.Item>
                 <Form.Item name="phone" label="Phone">
                   <Input placeholder="Your phone" />
                 </Form.Item>
@@ -503,20 +516,6 @@ export default function SettingsPage() {
                       { value: 'th', label: 'ไทย' },
                     ]}
                   />
-                </Form.Item>
-
-                {/* บัญชี */}
-                <Divider />
-                <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
-                  <Input placeholder="name@example.com" />
-                </Form.Item>
-                <Form.Item
-                  name="username"
-                  label="Username"
-                  tooltip="Unique login/handle (if your system supports)"
-                  rules={[{ required: true }]}
-                >
-                  <Input placeholder="username" />
                 </Form.Item>
 
                 <Button type="primary" htmlType="submit" loading={updatingMe}>
