@@ -417,6 +417,61 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           <Input placeholder="กรุณากรอกเลขบัตรประชาชน หรือ พาสปอร์ต (passport)" maxLength={13} />
         </Form.Item>
 
+         {/* สินค้า/บริการ ที่สั่งซื้อ */}
+        <Form.Item
+          label="สินค้า/บริการ ที่สั่งซื้อ"
+          name="title"
+          rules={[{ required: true, message: 'กรุณากรอกสินค้า/บริการ ที่สั่งซื้อ' }]}
+        >
+          <Input placeholder="กรุณากรอกสินค้า/บริการ ที่สั่งซื้อ" />
+        </Form.Item>
+
+        {/* ยอดโอน */}
+        <Form.Item
+          label="ยอดโอน"
+          name="transfer_amount"
+          rules={[{ required: true, message: 'กรุณากรอกยอดโอน' }]}
+        >
+          <InputNumber placeholder="กรุณากรอกยอดโอน" style={{ width: '100%' }} />
+        </Form.Item>
+
+        {/* วันโอนเงิน */}
+        <Form.Item
+          label="วันโอนเงิน"
+          name="transfer_date"
+          rules={[{ required: true, message: 'กรุณาเลือกวันโอนเงิน' }]}
+        >
+          <DatePicker placeholder="กรุณาเลือกวันโอนเงิน" style={{ width: '100%' }} format="DD/MM/YYYY" />
+        </Form.Item>
+
+        {/* เว็บประกาศขายของ */}
+        <Form.Item
+          label="เว็บประกาศขายของ"
+          name="website"
+          rules={[{ required: true, message: 'กรุณากรอกเว็บประกาศขายของ' }]}
+        >
+          <Input placeholder="กรุณากรอกเว็บประกาศขายของ" />
+        </Form.Item>
+
+         {/* รายละเอียดเพิ่มเติม */}
+        <Form.Item label="รายละเอียดเพิ่มเติม" name="detail">
+          <Input.TextArea rows={4} placeholder="กรุณากรอกรายละเอียดเพิ่มเติม" />
+        </Form.Item>
+
+        {/* จังหวัดของคนสร้างรายงาน */}
+        <Form.Item
+          label="จังหวัดของคนสร้างรายงาน"
+          name="province_id"
+          rules={[{ required: true, message: 'กรุณาเลือกจังหวัด' }]}
+        >
+          <Select
+            placeholder="กรุณาเลือกจังหวัด"
+            showSearch
+            optionFilterProp="label"
+            options={provinces.map((p) => ({ label: p.name_th, value: p.id }))}
+          />
+        </Form.Item>
+
         {/* Tel Numbers */}
         <div style={{ borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
           {telNumbers.map((number, index) => (
@@ -492,61 +547,6 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
             </Button>
           </Form.Item>
         </div>
-
-        {/* สินค้า/บริการ ที่สั่งซื้อ */}
-        <Form.Item
-          label="สินค้า/บริการ ที่สั่งซื้อ"
-          name="title"
-          rules={[{ required: true, message: 'กรุณากรอกสินค้า/บริการ ที่สั่งซื้อ' }]}
-        >
-          <Input placeholder="กรุณากรอกสินค้า/บริการ ที่สั่งซื้อ" />
-        </Form.Item>
-
-        {/* ยอดโอน */}
-        <Form.Item
-          label="ยอดโอน"
-          name="transfer_amount"
-          rules={[{ required: true, message: 'กรุณากรอกยอดโอน' }]}
-        >
-          <InputNumber placeholder="กรุณากรอกยอดโอน" style={{ width: '100%' }} />
-        </Form.Item>
-
-        {/* วันโอนเงิน */}
-        <Form.Item
-          label="วันโอนเงิน"
-          name="transfer_date"
-          rules={[{ required: true, message: 'กรุณาเลือกวันโอนเงิน' }]}
-        >
-          <DatePicker placeholder="กรุณาเลือกวันโอนเงิน" style={{ width: '100%' }} format="DD/MM/YYYY" />
-        </Form.Item>
-
-        {/* เว็บประกาศขายของ */}
-        <Form.Item
-          label="เว็บประกาศขายของ"
-          name="website"
-          rules={[{ required: true, message: 'กรุณากรอกเว็บประกาศขายของ' }]}
-        >
-          <Input placeholder="กรุณากรอกเว็บประกาศขายของ" />
-        </Form.Item>
-
-        {/* จังหวัดของคนสร้างรายงาน */}
-        <Form.Item
-          label="จังหวัดของคนสร้างรายงาน"
-          name="province_id"
-          rules={[{ required: true, message: 'กรุณาเลือกจังหวัด' }]}
-        >
-          <Select
-            placeholder="กรุณาเลือกจังหวัด"
-            showSearch
-            optionFilterProp="label"
-            options={provinces.map((p) => ({ label: p.name_th, value: p.id }))}
-          />
-        </Form.Item>
-
-        {/* รายละเอียดเพิ่มเติม */}
-        <Form.Item label="รายละเอียดเพิ่มเติม" name="detail">
-          <Input.TextArea rows={4} placeholder="กรุณากรอกรายละเอียดเพิ่มเติม" />
-        </Form.Item>
 
         <AttachFileField
           label="ไฟล์แนบ"

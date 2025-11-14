@@ -61,6 +61,11 @@ export const typeDefs = /* GraphQL */ `
     user: User
   }
 
+  input SocialLoginInput {
+    provider: String!      # "google" | "facebook"
+    accessToken: String!   # จาก Google/Facebook
+  }
+
   input LoginInput {
     email: String
     username: String
@@ -275,6 +280,7 @@ export const typeDefs = /* GraphQL */ `
     # login
     login(input: LoginInput!): LoginResult!
     loginUser(input: LoginInput!): LoginResult!
+    loginWithSocial(input: SocialLoginInput!): LoginResult!
     loginAdmin(input: LoginInput!): LoginResult!
     loginMobile(email:String!, password:String!): LoginResult!
 

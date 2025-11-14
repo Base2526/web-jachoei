@@ -38,6 +38,8 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
   const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME, { skip: !userSession, fetchPolicy: "cache-first" });
   const me = meData?.me;
 
+  console.log("[HeaderBar]", me);
+
   // ✅ ให้ SSR == Client: เริ่มจาก initialLang เสมอ
   const [currentLang, setCurrentLang] = useState<Lang>(initialLang);
 
@@ -123,7 +125,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
         ) : (
           <Space>
             <Button icon={<LoginOutlined />} onClick={() => router.push("/login")}>Login</Button>
-            <Button type="primary" icon={<UserAddOutlined />} onClick={() => router.push("/register")}>Register</Button>
+            {/* <Button type="primary" icon={<UserAddOutlined />} onClick={() => router.push("/register")}>Register</Button> */}
           </Space>
         )}
       </Space>

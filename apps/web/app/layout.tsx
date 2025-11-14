@@ -9,9 +9,14 @@ import GlobalChatSub from "@/components/GlobalChatSub";
 import { SessionProvider, useSessionCtx } from '@/lib/session-context';
 // import { useSession } from '@/lib/useSession'
 
+import { GoogleOAuthProvider } from '@react-oauth/google';
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!;
+
 function GlobalWires() {
   const { user, admin } = useSessionCtx();
   const meId = user?.id?.toString() || admin?.id?.toString() || '';
+
+  console.log("[GOOGLE_CLIENT_ID]", GOOGLE_CLIENT_ID);
 
   useEffect(() => {
     const frontendLogout = () => {
@@ -40,7 +45,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }){
       <ApolloProvider client={client}>
         <SessionProvider>
           <GlobalWires />
-          {children}
+            <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+              {children}
+            </GoogleOAuthProvider>
         </SessionProvider>
       </ApolloProvider>
     </body></html>
