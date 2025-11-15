@@ -80,6 +80,7 @@ const schema = makeExecutableSchema({ typeDefs, resolvers });
 const yoga = createYoga({
   schema,
   graphqlEndpoint: '/api/graphql',
+  
   // สร้าง context เดิมของคุณได้เหมือนเดิม
   context: async ({ request }) => {
     let scope = request.headers.get('x-scope') || '';
@@ -94,6 +95,8 @@ const yoga = createYoga({
   },
   maskedErrors: false, // <-- DEV แนะนำปิดไว้เพื่อให้ client ได้ extensions จริง
   // Yoga รองรับ multipart upload ใน App Router โดยไม่ต้องตั้งค่าเพิ่ม
+
+ 
 });
 
 export { yoga as GET, yoga as POST };

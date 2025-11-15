@@ -35,6 +35,6 @@ if (DBG) {
 
 // เผื่ออยากเรียกตรง ๆ
 export const dbgPublish = async (trigger: string, payload: any) => {
-  if (DBG) console.log('[pubsub.publish]', trigger, JSON.stringify(payload));
+  if (DBG) console.log('[pubsub.publish][dbgPublish]', trigger, JSON.stringify(payload));
   return pubsub.publish(trigger, payload);
 };

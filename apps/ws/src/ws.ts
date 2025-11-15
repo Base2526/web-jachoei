@@ -7,12 +7,24 @@ import { parse, type ExecutionArgs } from "graphql";
 import { typeDefs, resolvers } from "./shared.js";
 import { query } from "./db/src/index.js";
 
+// import { pubsub } from "../../packages/realtime/";
+
+import { pubsub } from "../../../packages/realtime/src/pubsub.js";
+
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 const PORT = 8080;// Number(process.env.WS_PORT || 8080);
 const PATH = "/graphql";// process.env.WS_PATH || "/graphql";
 
 const wss = new WebSocketServer({ port: PORT, path: PATH });
+
+// ✅ ตัวอย่าง ticker ง่าย ๆ - ยิงทุก 1 วินาที
+const TOPIC_TIME = "TIME_TICK";
+setInterval(() => {
+  const now = new Date().toISOString();
+  pubsub.publish(TOPIC_TIME, { time: now });
+}, 1000);
+
 useServer(
     { 
         schema,
@@ -22,6 +34,7 @@ useServer(
         // keepAlive: 12000,
 
         onSubscribe: async (ctx, msg) => {
+            console.log("[ws][onSubscribe]");
             // 1) ดึง token
             const raw =
                 (ctx.connectionParams?.Authorization ??

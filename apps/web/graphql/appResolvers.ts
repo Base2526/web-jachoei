@@ -334,7 +334,7 @@ export const resolvers = {
     },
     myChats: async (_:any, { }:{}, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] myChats :", ctx, author_id);
+      console.log("[Query] myChats :", author_id);
 
       const { rows } = await query(
         `SELECT c.*, row_to_json(uc.*) as creator_json
@@ -358,7 +358,7 @@ export const resolvers = {
     },
     myBookmarks: async (_: any, { limit = 20, offset = 0 }: any, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] myChats :", ctx, author_id);
+      console.log("[Query] myBookmarks :", author_id);
 
       const { rows } = await query(
         `
@@ -395,7 +395,7 @@ export const resolvers = {
                       ctx: any
                     ) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] messages :", ctx, author_id);
+      console.log("[Query] messages :", author_id);
 
       const filter = includeDeleted ? "" : "AND m.deleted_at IS NULL";
       const { rows } = await query(
@@ -466,13 +466,13 @@ export const resolvers = {
         };
       });
 
-      console.log("[messages - results] :", results);
+      // console.log("[messages - results] :", results);
 
       return results;
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] users :", ctx, author_id);
+      console.log("[Query] users :", author_id);
 
       if (search) {
         const { rows } = await query(
@@ -1304,7 +1304,7 @@ export const resolvers = {
       ctx: any
     ) => {
       const author_id = requireAuth(ctx);
-      console.log("[Mutation] sendMessage :", ctx, author_id);
+      console.log("[Mutation] sendMessage :", author_id);
       
       const cleanTo = Array.from(
         new Set((to_user_ids || []).filter(Boolean).filter((id) => id !== author_id))
@@ -1405,7 +1405,10 @@ export const resolvers = {
       });
 
       // 5) publish หลัง transaction commit
-      await pubsub.publish(topicChat(fullMessage.chat_id), { messageAdded: fullMessage });
+      const trigger = topicChat(fullMessage.chat_id);
+      const payload = { messageAdded: fullMessage };
+      console.log("[sendMessage][5) publish หลัง transaction commit]", trigger, payload);
+      await pubsub.publish(trigger, payload);
 
       await Promise.all(
         fullMessage.to_user_ids.map(async (uid) => {

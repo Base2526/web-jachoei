@@ -36,6 +36,7 @@ export const coreTypeDefs = /* GraphQL */ `
     send(text: String!): Boolean! 
   }
   type Subscription { 
+    time: String!
     messageAdded(chat_id: ID!): Message! 
     userMessageAdded(user_id: ID!): Message! 
 
