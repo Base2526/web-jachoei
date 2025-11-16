@@ -5,6 +5,8 @@ import { withFilter } from "graphql-subscriptions";
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 
+const topicTime = "TIME_TICK"; 
+
 export const coreResolvers = {
   Query: { _ok: () => "ok" },
   Mutation: {
@@ -17,6 +19,29 @@ export const coreResolvers = {
     },
   },
   Subscription: {
+    // time: {
+    //   // ไม่ต้องใช้ withFilter (ให้มัน broadcast ทุกคนก่อน)
+    //   subscribe: () => {
+    //     console.log("[Subscription.time] subscribe");
+    //     return pubsub.asyncIterator(topicTime);
+    //   },
+    //   resolve: (payload: any) => {
+    //     console.log("[Subscription.time.resolve]", payload);
+    //     return payload.time;   // คืนค่าตรง field time
+    //   }
+    // },
+    time: {
+      subscribe: withFilter(
+        (_:any, { }:{ }) =>{
+          console.log("[packages][graphql-core][resolvers][time]");
+          return  pubsub.asyncIterator(topicTime);
+        },
+        (payload, variables) => {
+          console.log("[graphql-core withFilter : time] ", payload , variables );
+          return payload.time;
+        }
+      )
+    },
     messageAdded: {
       subscribe: withFilter(
         (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),

@@ -5,15 +5,33 @@ import { query, runInTransaction } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 import * as jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
+import path from "path";
 
 import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
-import { persistWebFile, buildFileUrlById } from "@/lib/storage";
+import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex } from "@/lib/auth"
 import { addLog } from '@/lib/log/log';
 
 import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 // import { signUserToken } from "@/lib/auth/jwt";
+
+import { GraphQLUpload } from "graphql-upload-nextjs";
+
+type GraphQLUploadFile = {
+  filename: string;
+  mimetype?: string | null;
+  encoding?: string | null;
+  createReadStream: () => NodeJS.ReadableStream;
+};
+
+setInterval(() => {
+  const now = new Date().toISOString();
+
+  console.log("[appResolvers.ts][TIME_TICK]");
+  pubsub.publish("TIME_TICK", { time: now });
+
+}, 20000);
 
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -31,6 +49,7 @@ function normalizeStr(input: string): string {
 }
 
 export const resolvers = {
+  Upload: GraphQLUpload,
   Query: {
     _health: () => "ok",
     me: async (_: any, {  }: { }, ctx: any) => {
@@ -466,7 +485,7 @@ export const resolvers = {
         };
       });
 
-      console.log("[messages - results] :", results);
+      // console.log("[messages - results] :", results);
 
       return results;
     },
@@ -998,7 +1017,7 @@ export const resolvers = {
       { id, data, images, image_ids_delete }: {
         id?: string;
         data: any;
-        images?: Array<Promise<File>>;
+        images?: Array<Promise<GraphQLUploadFile>>;
         image_ids_delete?: Array<string | number>;
       },
       ctx: any
@@ -1103,10 +1122,6 @@ export const resolvers = {
         // 4) ลบรูปเก่า (ถ้ามี)
         // ============================================================
         if (image_ids_delete?.length) {
-          // await client.query(
-          //   `DELETE FROM post_images WHERE post_id=$1 AND file_id = ANY($2::uuid[])`,
-          //   [postId, image_ids_delete.map(String)]
-          // );
           await client.query(
             `DELETE FROM post_images WHERE post_id = $1 AND file_id = ANY($2::int[])`,
             [postId, image_ids_delete.map((id: any) => parseInt(id, 10))]
@@ -1114,15 +1129,21 @@ export const resolvers = {
         }
 
         // ============================================================
-        // 5) เพิ่มรูปใหม่
+        // 5) เพิ่มรูปใหม่ (stream)
         // ============================================================
         if (images?.length) {
-          const fileRows = [];
+          const fileRows: any[] = [];
+
           for (const pf of images) {
-            const f = await pf;
-            const row = await persistWebFile(f);
+            const upload = await pf; // GraphQLUploadFile
+
+            const ext = path.extname(upload.filename || "");
+            const renameTo = `post-${postId}-${Date.now()}${ext || ""}`;
+
+            const row = await persistUploadStream(upload, renameTo);
             fileRows.push(row);
           }
+
           if (fileRows.length) {
             const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
             await client.query(
@@ -1165,6 +1186,8 @@ export const resolvers = {
             url: buildFileUrlById(r.id),
           })),
         };
+
+
       });
     },
 
@@ -1518,13 +1541,18 @@ export const resolvers = {
         return resultUser;
       });
     },
-    uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<File> }, ctx: any) => {
+    uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<GraphQLUploadFile> }, ctx: any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] uploadAvatar :", author_id);
 
       const result = await runInTransaction(author_id, async (client) => {
-        const f = await file;
-        const row = await persistWebFile(f); // → คืน { id, name, relpath, ... }
+        const f = await file; // { filename, mimetype, encoding, createReadStream }
+
+        // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
+        const ext = path.extname(f.filename || "");
+        const renameTo = `avatar-${user_id}${ext || ""}`;
+
+        const row = await persistUploadStream(f, renameTo); // 👈 ใช้ stream
 
         const avatarUrl = buildFileUrlById(row.id);
 
@@ -1533,7 +1561,11 @@ export const resolvers = {
           user_id,
         ]);
 
-        await addLog("info", "upload-avatar", "Upload avatar", { userId: user_id });
+        await addLog("info", "upload-avatar", "Upload avatar", {
+          userId: user_id,
+          fileId: row.id,
+        });
+
         return avatarUrl;
       });
 
