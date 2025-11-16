@@ -198,23 +198,29 @@ type Chat = {
 function ChatUI() {
   const [sel, setSel] = useState<string | null>(null);
   const [text, setText] = useState("");
-
   const [openCreate, setOpenCreate] = useState(false);
   const [mode, setMode] = useState<"single" | "group">("single");
   const [groupName, setGroupName] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-
   const [openEdit, setOpenEdit] = useState(false);
   const [editName, setEditName] = useState("");
   const [editTarget, setEditTarget] = useState<{ id: string; name?: string } | null>(null);
-
   // กันไม่ให้ handle ?to ซ้ำ
   const [handledTo, setHandledTo] = useState(false);
-
   const searchParams = useSearchParams();
   const toParam = searchParams.get("to");
-
   const { data: me } = useQuery(Q_ME);
+  const [send] = useMutation(MUT_SEND);
+  const [createChat] = useMutation(MUT_CREATE);
+  const [addMember] = useMutation(MUT_ADD);
+  const [renameChat] = useMutation(MUT_RENAME, { onError: () => {} });
+  const [deleteChat] = useMutation(MUT_DELETE, { onError: () => {} });
+  const [markRead] = useMutation(MUT_MARK_READ);
+  const [markUpTo] = useMutation(MUT_MARK_UPTO);
+  const [deleteMessageMut] = useMutation(MUT_DELETE_MSG, { onError: () => {} });
+  const handledToRef = useRef(false);
+
+  const meId = me?.me?.id;
 
   const {
     data: chats,
@@ -236,53 +242,7 @@ function ChatUI() {
     variables: { q: "" },
   });
 
-  const [send] = useMutation(MUT_SEND);
-  const [createChat] = useMutation(MUT_CREATE);
-  const [addMember] = useMutation(MUT_ADD);
-  const [renameChat] = useMutation(MUT_RENAME, { onError: () => {} });
-  const [deleteChat] = useMutation(MUT_DELETE, { onError: () => {} });
-
-  const [markRead] = useMutation(MUT_MARK_READ);
-  const [markUpTo] = useMutation(MUT_MARK_UPTO);
-
-  const [deleteMessageMut] = useMutation(MUT_DELETE_MSG, { onError: () => {} });
-
-  const handledToRef = useRef(false);
-
-  // const { data, loading, error, subscribeToMore } = useQuery(Q_TIME_INIT);
-
-  //  useEffect(() => {
-  //   console.log("[SUB_TIME] : สมัคร subscription เมื่อ component mount");
-  //   // สมัคร subscription เมื่อ component mount
-  //   const unsubscribe = subscribeToMoreX({
-  //     document: SUB_TIME,
-  //     // ถ้ามี variables ก็ใส่ตรงนี้ได้
-  //     // variables: { ... },
-
-  //     updateQuery(prev, { subscriptionData }) {
-
-  //       console.log("[SUB_TIME][subscribeToMoreX]", subscriptionData);
-  //       if (!subscriptionData.data) return prev;
-
-  //       const newTime = subscriptionData.data.time; // จาก subscription { time }
-
-  //       // ต้อง return state ใหม่ให้ useQuery
-  //       return {
-  //         ...prev,
-  //         serverTime: newTime,
-  //       };
-  //     },
-  //   });
-
-  //   // cleanup ตอน unmount
-  //   return () => {
-  //     if (typeof unsubscribe === 'function') {
-  //       unsubscribe();
-  //     }
-  //   };
-  // }, []);
-
-  
+ 
   useEffect(() => {
     console.log("[chats]", chats);
   }, [chats]);
@@ -460,29 +420,96 @@ function ChatUI() {
   //   })();
   // }, [toParam, me, chats, loadingChats, handledTo, createChat, refetchChats, refetchMsgs]);
 
+  // ====== Auto select first chat when no ?to ======
   useEffect(() => {
-  const to = toParam;
-  const meId = me?.me?.id;
-  const list = chats?.myChats || [];
+    // ถ้ามี /chat?to=... อยู่ ให้ปล่อยให้ logic ด้านบนจัดการ
+    if (toParam) return;
 
-  if (!to || !meId) return;
-  if (loadingChats) return;
+    if (loadingChats) return;
 
-  // ✅ ถ้าเคย handle ไปแล้ว ไม่ทำซ้ำ
-  if (handledToRef.current) return;
+    const list = chats?.myChats || [];
+    // ยังไม่ได้เลือกห้อง (sel ยังเป็น null) และมีห้องอย่างน้อย 1 ห้อง
+    if (!sel && list.length > 0) {
+      const firstId = list[0].id;
+      setSel(firstId);
+      refetchMsgs({ chat_id: firstId });
+    }
+  }, [toParam, chats, loadingChats, sel, refetchMsgs]);
 
-  console.log("[chat?to] effect run", {
-    to,
-    meId,
-    listLength: list.length,
-    handledTo: handledToRef.current,
-  });
+  useEffect(() => {
+    const to = toParam;
+    const meId = me?.me?.id;
+    const list = chats?.myChats || [];
 
-  // ----------- CASE 1: ยังไม่มี chat เลย -----------
-  if (list.length === 0) {
-    console.log("[chat?to] no chats at all → create 1:1 first time:", to);
+    if (!to || !meId) return;
+    if (loadingChats) return;
 
-    handledToRef.current = true; // ✅ กันซ้ำทันที ก่อนยิง createChat
+    // ✅ ถ้าเคย handle ไปแล้ว ไม่ทำซ้ำ
+    if (handledToRef.current) return;
+
+    console.log("[chat?to] effect run", {
+      to,
+      meId,
+      listLength: list.length,
+      handledTo: handledToRef.current,
+    });
+
+    // ----------- CASE 1: ยังไม่มี chat เลย -----------
+    if (list.length === 0) {
+      console.log("[chat?to] no chats at all → create 1:1 first time:", to);
+
+      handledToRef.current = true; // ✅ กันซ้ำทันที ก่อนยิง createChat
+
+      (async () => {
+        try {
+          const { data } = await createChat({
+            variables: {
+              name: null,
+              isGroup: false,
+              memberIds: [to],
+            },
+          });
+
+          const newId = data?.createChat?.id;
+
+          if (newId) {
+            await refetchChats();
+            setSel(newId);
+            refetchMsgs({ chat_id: newId });
+          } else {
+            message.error("Cannot create chat");
+          }
+        } catch (e: any) {
+          message.error(e?.message || "Cannot create chat");
+          console.error(e);
+        }
+      })();
+
+      return;
+    }
+
+    // ----------- CASE 2: มี chat อยู่แล้ว → หา 1:1 ที่มี user นี้ไหม -----------
+    const existing = list.find((c: any) => {
+      if (c.is_group) return false;
+      const memberIds = (c.members || []).map((m: any) => m.id);
+      const hasMe = memberIds.includes(meId);
+      const hasTo = memberIds.includes(to);
+      const creatorMatch = c.created_by?.id === meId || c.created_by?.id === to;
+
+      return (hasMe && hasTo) || (creatorMatch && hasTo);
+    });
+
+    if (existing) {
+      console.log("[chat?to] found existing chat:", existing.id);
+      handledToRef.current = true; // ✅ mark handled
+      setSel(existing.id);
+      refetchMsgs({ chat_id: existing.id });
+      return;
+    }
+
+    // ----------- CASE 3: หาไม่เจอ → create 1:1 ใหม่ -----------
+    console.log("[chat?to] create new 1:1 chat with:", to);
+    handledToRef.current = true; // ✅ กันซ้ำ
 
     (async () => {
       try {
@@ -508,62 +535,8 @@ function ChatUI() {
         console.error(e);
       }
     })();
+  }, [toParam, me, chats, loadingChats, createChat, refetchChats, refetchMsgs]);
 
-    return;
-  }
-
-  // ----------- CASE 2: มี chat อยู่แล้ว → หา 1:1 ที่มี user นี้ไหม -----------
-  const existing = list.find((c: any) => {
-    if (c.is_group) return false;
-    const memberIds = (c.members || []).map((m: any) => m.id);
-    const hasMe = memberIds.includes(meId);
-    const hasTo = memberIds.includes(to);
-    const creatorMatch = c.created_by?.id === meId || c.created_by?.id === to;
-
-    return (hasMe && hasTo) || (creatorMatch && hasTo);
-  });
-
-  if (existing) {
-    console.log("[chat?to] found existing chat:", existing.id);
-    handledToRef.current = true; // ✅ mark handled
-    setSel(existing.id);
-    refetchMsgs({ chat_id: existing.id });
-    return;
-  }
-
-  // ----------- CASE 3: หาไม่เจอ → create 1:1 ใหม่ -----------
-  console.log("[chat?to] create new 1:1 chat with:", to);
-  handledToRef.current = true; // ✅ กันซ้ำ
-
-  (async () => {
-    try {
-      const { data } = await createChat({
-        variables: {
-          name: null,
-          isGroup: false,
-          memberIds: [to],
-        },
-      });
-
-      const newId = data?.createChat?.id;
-
-      if (newId) {
-        await refetchChats();
-        setSel(newId);
-        refetchMsgs({ chat_id: newId });
-      } else {
-        message.error("Cannot create chat");
-      }
-    } catch (e: any) {
-      message.error(e?.message || "Cannot create chat");
-      console.error(e);
-    }
-  })();
-}, [toParam, me, chats, loadingChats, createChat, refetchChats, refetchMsgs]);
-
-
-    
-  const meId = me?.me?.id;
   // 🔹 หา user ที่เรามี 1:1 chat อยู่แล้ว
   const existingOneToOnePartnerIds = useMemo(() => {
     const set = new Set<string>();
