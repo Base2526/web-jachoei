@@ -1,7 +1,7 @@
 'use client';
 
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   List,
   Card,
@@ -247,6 +247,7 @@ function ChatUI() {
 
   const [deleteMessageMut] = useMutation(MUT_DELETE_MSG, { onError: () => {} });
 
+  const handledToRef = useRef(false);
 
   // const { data, loading, error, subscribeToMore } = useQuery(Q_TIME_INIT);
 
@@ -354,85 +355,137 @@ function ChatUI() {
   }, [sel, subscribeToMore]);
 
   // ====== Auto open / create 1:1 chat when ?to=<user_id> ======
+  // useEffect(() => {
+  //   const to = toParam;
+  //   const meId = me?.me?.id;
+  //   const list = chats?.myChats || [];
+
+  //   // ยังไม่มี param to หรือยังไม่รู้ me → ยังไม่ทำอะไร
+  //   if (!to || !meId) return;
+
+  //   // ขณะ myChats กำลังโหลด → ยังไม่ควรสรุปว่า "ไม่มี chat"
+  //   if (loadingChats) return;
+
+  //   // ถ้าเคย handle ไปแล้ว (ไม่ว่าจะเจอห้องหรือสร้างใหม่แล้ว) → ไม่ทำซ้ำ
+  //   if (handledTo) return;
+
+  //   console.log("[chat?to] effect run", {
+  //     to,
+  //     meId,
+  //     listLength: list.length,
+  //     handledTo,
+  //   });
+
+  //   // ----------- CASE 1: ยังไม่มี chat เลย -----------
+  //   if (list.length === 0) {
+  //     console.log("[chat?to] no chats at all → create 1:1 first time:", to);
+
+  //     (async () => {
+  //       try {
+  //         const { data } = await createChat({
+  //           variables: {
+  //             name: null,
+  //             isGroup: false,
+  //             memberIds: [to], // 1:1 chat
+  //           },
+  //         });
+
+  //         const newId = data?.createChat?.id;
+  //         setHandledTo(true);
+
+  //         if (newId) {
+  //           await refetchChats();
+  //           setSel(newId);
+  //           refetchMsgs({ chat_id: newId });
+  //         } else {
+  //           message.error("Cannot create chat");
+  //         }
+  //       } catch (e: any) {
+  //         setHandledTo(true);
+  //         message.error(e?.message || "Cannot create chat");
+  //         console.error(e);
+  //       }
+  //     })();
+
+  //     return;
+  //   }
+
+  //   // ----------- CASE 2: มี chat อยู่แล้ว → หา 1:1 ที่มี user นี้ไหม -----------
+  //   // ไม่ต้อง return ถ้า sel มี → เพราะเราอยากให้ auto-open ได้ตอน initial load เท่านั้น
+  //   const existing = list.find((c: any) => {
+  //     if (c.is_group) return false;
+  //     const memberIds = (c.members || []).map((m: any) => m.id);
+  //     const hasMe = memberIds.includes(meId);
+  //     const hasTo = memberIds.includes(to);
+  //     const creatorMatch = c.created_by?.id === meId || c.created_by?.id === to;
+
+  //     return (hasMe && hasTo) || (creatorMatch && hasTo);
+  //   });
+
+  //   if (existing) {
+  //     console.log("[chat?to] found existing chat:", existing.id);
+  //     setHandledTo(true);
+  //     setSel(existing.id);
+  //     refetchMsgs({ chat_id: existing.id });
+  //     return;
+  //   }
+
+  //   // ----------- CASE 3: หาไม่เจอ → create 1:1 ใหม่ -----------
+  //   (async () => {
+  //     try {
+  //       console.log("[chat?to] create new 1:1 chat with:", to);
+  //       const { data } = await createChat({
+  //         variables: {
+  //           name: null,
+  //           isGroup: false,
+  //           memberIds: [to],
+  //         },
+  //       });
+
+  //       const newId = data?.createChat?.id;
+  //       setHandledTo(true);
+
+  //       if (newId) {
+  //         await refetchChats();
+  //         setSel(newId);
+  //         refetchMsgs({ chat_id: newId });
+  //       } else {
+  //         message.error("Cannot create chat");
+  //       }
+  //     } catch (e: any) {
+  //       setHandledTo(true);
+  //       message.error(e?.message || "Cannot create chat");
+  //       console.error(e);
+  //     }
+  //   })();
+  // }, [toParam, me, chats, loadingChats, handledTo, createChat, refetchChats, refetchMsgs]);
+
   useEffect(() => {
-    const to = toParam;
-    const meId = me?.me?.id;
-    const list = chats?.myChats || [];
+  const to = toParam;
+  const meId = me?.me?.id;
+  const list = chats?.myChats || [];
 
-    // ยังไม่มี param to หรือยังไม่รู้ me → ยังไม่ทำอะไร
-    if (!to || !meId) return;
+  if (!to || !meId) return;
+  if (loadingChats) return;
 
-    // ขณะ myChats กำลังโหลด → ยังไม่ควรสรุปว่า "ไม่มี chat"
-    if (loadingChats) return;
+  // ✅ ถ้าเคย handle ไปแล้ว ไม่ทำซ้ำ
+  if (handledToRef.current) return;
 
-    // ถ้าเคย handle ไปแล้ว (ไม่ว่าจะเจอห้องหรือสร้างใหม่แล้ว) → ไม่ทำซ้ำ
-    if (handledTo) return;
+  console.log("[chat?to] effect run", {
+    to,
+    meId,
+    listLength: list.length,
+    handledTo: handledToRef.current,
+  });
 
-    console.log("[chat?to] effect run", {
-      to,
-      meId,
-      listLength: list.length,
-      handledTo,
-    });
+  // ----------- CASE 1: ยังไม่มี chat เลย -----------
+  if (list.length === 0) {
+    console.log("[chat?to] no chats at all → create 1:1 first time:", to);
 
-    // ----------- CASE 1: ยังไม่มี chat เลย -----------
-    if (list.length === 0) {
-      console.log("[chat?to] no chats at all → create 1:1 first time:", to);
+    handledToRef.current = true; // ✅ กันซ้ำทันที ก่อนยิง createChat
 
-      (async () => {
-        try {
-          const { data } = await createChat({
-            variables: {
-              name: null,
-              isGroup: false,
-              memberIds: [to], // 1:1 chat
-            },
-          });
-
-          const newId = data?.createChat?.id;
-          setHandledTo(true);
-
-          if (newId) {
-            await refetchChats();
-            setSel(newId);
-            refetchMsgs({ chat_id: newId });
-          } else {
-            message.error("Cannot create chat");
-          }
-        } catch (e: any) {
-          setHandledTo(true);
-          message.error(e?.message || "Cannot create chat");
-          console.error(e);
-        }
-      })();
-
-      return;
-    }
-
-    // ----------- CASE 2: มี chat อยู่แล้ว → หา 1:1 ที่มี user นี้ไหม -----------
-    // ไม่ต้อง return ถ้า sel มี → เพราะเราอยากให้ auto-open ได้ตอน initial load เท่านั้น
-    const existing = list.find((c: any) => {
-      if (c.is_group) return false;
-      const memberIds = (c.members || []).map((m: any) => m.id);
-      const hasMe = memberIds.includes(meId);
-      const hasTo = memberIds.includes(to);
-      const creatorMatch = c.created_by?.id === meId || c.created_by?.id === to;
-
-      return (hasMe && hasTo) || (creatorMatch && hasTo);
-    });
-
-    if (existing) {
-      console.log("[chat?to] found existing chat:", existing.id);
-      setHandledTo(true);
-      setSel(existing.id);
-      refetchMsgs({ chat_id: existing.id });
-      return;
-    }
-
-    // ----------- CASE 3: หาไม่เจอ → create 1:1 ใหม่ -----------
     (async () => {
       try {
-        console.log("[chat?to] create new 1:1 chat with:", to);
         const { data } = await createChat({
           variables: {
             name: null,
@@ -442,7 +495,6 @@ function ChatUI() {
         });
 
         const newId = data?.createChat?.id;
-        setHandledTo(true);
 
         if (newId) {
           await refetchChats();
@@ -452,12 +504,63 @@ function ChatUI() {
           message.error("Cannot create chat");
         }
       } catch (e: any) {
-        setHandledTo(true);
         message.error(e?.message || "Cannot create chat");
         console.error(e);
       }
     })();
-  }, [toParam, me, chats, loadingChats, handledTo, createChat, refetchChats, refetchMsgs]);
+
+    return;
+  }
+
+  // ----------- CASE 2: มี chat อยู่แล้ว → หา 1:1 ที่มี user นี้ไหม -----------
+  const existing = list.find((c: any) => {
+    if (c.is_group) return false;
+    const memberIds = (c.members || []).map((m: any) => m.id);
+    const hasMe = memberIds.includes(meId);
+    const hasTo = memberIds.includes(to);
+    const creatorMatch = c.created_by?.id === meId || c.created_by?.id === to;
+
+    return (hasMe && hasTo) || (creatorMatch && hasTo);
+  });
+
+  if (existing) {
+    console.log("[chat?to] found existing chat:", existing.id);
+    handledToRef.current = true; // ✅ mark handled
+    setSel(existing.id);
+    refetchMsgs({ chat_id: existing.id });
+    return;
+  }
+
+  // ----------- CASE 3: หาไม่เจอ → create 1:1 ใหม่ -----------
+  console.log("[chat?to] create new 1:1 chat with:", to);
+  handledToRef.current = true; // ✅ กันซ้ำ
+
+  (async () => {
+    try {
+      const { data } = await createChat({
+        variables: {
+          name: null,
+          isGroup: false,
+          memberIds: [to],
+        },
+      });
+
+      const newId = data?.createChat?.id;
+
+      if (newId) {
+        await refetchChats();
+        setSel(newId);
+        refetchMsgs({ chat_id: newId });
+      } else {
+        message.error("Cannot create chat");
+      }
+    } catch (e: any) {
+      message.error(e?.message || "Cannot create chat");
+      console.error(e);
+    }
+  })();
+}, [toParam, me, chats, loadingChats, createChat, refetchChats, refetchMsgs]);
+
 
     
   const meId = me?.me?.id;
@@ -701,7 +804,7 @@ function ChatUI() {
                   }
                 >
                   <Typography.Text strong>
-                    {m.sender?.name || "—"}:
+                    { me?.me?.id && m.sender?.id === me.me.id ? "Me" :m.sender?.name || "—"}:
                   </Typography.Text>{" "}
                   {m.text}
                   <div style={{ fontSize: 12, color: "#888" }}>

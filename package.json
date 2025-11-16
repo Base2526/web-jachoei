@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@types/graphql-upload": "^17.0.0"
+  }
+}
