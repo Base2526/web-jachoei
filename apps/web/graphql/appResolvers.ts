@@ -15,6 +15,14 @@ import { addLog } from '@/lib/log/log';
 import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 // import { signUserToken } from "@/lib/auth/jwt";
 
+setInterval(() => {
+  const now = new Date().toISOString();
+
+  console.log("[appResolvers.ts][TIME_TICK]");
+  pubsub.publish("TIME_TICK", { time: now });
+
+}, 20000);
+
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
@@ -466,7 +474,7 @@ export const resolvers = {
         };
       });
 
-      console.log("[messages - results] :", results);
+      // console.log("[messages - results] :", results);
 
       return results;
     },

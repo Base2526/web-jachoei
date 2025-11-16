@@ -19,7 +19,7 @@ if (DBG) {
   // พ่น log ทุกครั้งที่มี publish (ไม่ต้องแก้ callsite อื่น ๆ)
   pubsub.publish = async (triggerName: string, payload: unknown) => {
     try {
-      console.log('[pubsub.publish]', triggerName, JSON.stringify(payload));
+      console.log('[pubsub.publish][@1]', triggerName, JSON.stringify(payload));
     } catch {}
     return _origPublish(triggerName, payload as any);
   };
@@ -28,13 +28,13 @@ if (DBG) {
   // พ่น log ตอน subscribe ด้วย
   pubsub.asyncIterator = ((triggers: string | string[]) => {
     const t = Array.isArray(triggers) ? triggers.join(',') : triggers;
-    console.log('[pubsub.subscribe]', t);
+    console.log('[pubsub.subscribe][@2]', t);
     return _origIterator(triggers);
   }) as typeof pubsub.asyncIterator;
 }
 
 // เผื่ออยากเรียกตรง ๆ
 export const dbgPublish = async (trigger: string, payload: any) => {
-  if (DBG) console.log('[pubsub.publish]', trigger, JSON.stringify(payload));
+  if (DBG) console.log('[pubsub.publish][@3]', trigger, JSON.stringify(payload));
   return pubsub.publish(trigger, payload);
 };

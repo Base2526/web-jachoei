@@ -12,7 +12,11 @@ const SUB = gql`
   }
 `;
 
-// const SUB     = gql`subscription($chatId:ID!){ messageAdded(chatId:$chatId){ id chatId senderId text ts } }`;
+const SUB_TIME = gql`
+  subscription {
+    time
+  }
+`;
 
 type Props = {
   meId: string;               // ไอดีผู้ใช้ปัจจุบัน (ใส่จาก context/cookie)
@@ -40,6 +44,17 @@ export default function GlobalChatSub({ meId, client }: Props) {
         }));
       }
     }
+  });
+
+  
+  useSubscription(SUB_TIME, {
+    onData: ({ data }) => {
+      console.log("[TIME SUB] raw =", data);
+      console.log("[TIME SUB] time =", data.data?.time);
+    },
+    onError: (err) => {
+      console.error("[TIME SUB ERROR]", err);
+    },
   });
 
   // เปิดคลิกที่ Notification แล้วเข้าไปห้องแชทได้
