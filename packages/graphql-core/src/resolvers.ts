@@ -7,6 +7,8 @@ const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 
 const topicTime = "TIME_TICK"; 
 
+const NOTI_TOPIC = 'NOTIFICATION_CREATED';
+
 export const coreResolvers = {
   Query: { _ok: () => "ok" },
   Mutation: {
@@ -70,6 +72,17 @@ export const coreResolvers = {
           return payload.asyncIterator(topicChat(variables?.chat_id));
         }
       )
+    },
+    notificationCreated: {
+      subscribe: withFilter(
+        () => pubsub.asyncIterator(NOTI_TOPIC),
+        (payload: any, _variables: any, ctx: any) => {
+          const user = ctx.user;
+          if (!user) return false;
+          // รับเฉพาะ noti ที่ส่งให้ user นี้
+          return payload.notificationCreated.user_id === user.id;
+        }
+      ),
     },
   },
 };

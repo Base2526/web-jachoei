@@ -205,7 +205,6 @@ function ChatUI() {
   const [openEdit, setOpenEdit] = useState(false);
   const [editName, setEditName] = useState("");
   const [editTarget, setEditTarget] = useState<{ id: string; name?: string } | null>(null);
-  // กันไม่ให้ handle ?to ซ้ำ
   const [handledTo, setHandledTo] = useState(false);
   const searchParams = useSearchParams();
   const toParam = searchParams.get("to");
@@ -226,7 +225,7 @@ function ChatUI() {
     data: chats,
     refetch: refetchChats,
     loading: loadingChats,
-     subscribeToMore:  subscribeToMoreX,
+    subscribeToMore: subscribeToMoreX,
   } = useQuery(Q_CHATS);
 
   const {
@@ -242,12 +241,10 @@ function ChatUI() {
     variables: { q: "" },
   });
 
- 
   useEffect(() => {
     console.log("[chats]", chats);
   }, [chats]);
 
-  // ถ้า query param to เปลี่ยน ให้ reset handledTo
   useEffect(() => {
     setHandledTo(false);
   }, [toParam]);
@@ -266,7 +263,7 @@ function ChatUI() {
   useEffect(() => {
     if (!sel) return;
 
-    console.log("SUB @0 :", sel, chats, chat);
+    console.log("SUB @0 :", sel, chats);
     const unsubAdded = subscribeToMore({
       document: SUB,
       variables: { chat_id: sel },
@@ -316,13 +313,10 @@ function ChatUI() {
 
   // ====== Auto select first chat when no ?to ======
   useEffect(() => {
-    // ถ้ามี /chat?to=... อยู่ ให้ปล่อยให้ logic ด้านบนจัดการ
     if (toParam) return;
-
     if (loadingChats) return;
 
     const list = chats?.myChats || [];
-    // ยังไม่ได้เลือกห้อง (sel ยังเป็น null) และมีห้องอย่างน้อย 1 ห้อง
     if (!sel && list.length > 0) {
       const firstId = list[0].id;
       setSel(firstId);
@@ -332,27 +326,24 @@ function ChatUI() {
 
   useEffect(() => {
     const to = toParam;
-    const meId = me?.me?.id;
+    const meIdLocal = me?.me?.id;
     const list = chats?.myChats || [];
 
-    if (!to || !meId) return;
+    if (!to || !meIdLocal) return;
     if (loadingChats) return;
-
-    // ✅ ถ้าเคย handle ไปแล้ว ไม่ทำซ้ำ
     if (handledToRef.current) return;
 
     console.log("[chat?to] effect run", {
       to,
-      meId,
+      meId: meIdLocal,
       listLength: list.length,
       handledTo: handledToRef.current,
     });
 
-    // ----------- CASE 1: ยังไม่มี chat เลย -----------
     if (list.length === 0) {
       console.log("[chat?to] no chats at all → create 1:1 first time:", to);
 
-      handledToRef.current = true; // ✅ กันซ้ำทันที ก่อนยิง createChat
+      handledToRef.current = true;
 
       (async () => {
         try {
@@ -382,28 +373,26 @@ function ChatUI() {
       return;
     }
 
-    // ----------- CASE 2: มี chat อยู่แล้ว → หา 1:1 ที่มี user นี้ไหม -----------
     const existing = list.find((c: any) => {
       if (c.is_group) return false;
       const memberIds = (c.members || []).map((m: any) => m.id);
-      const hasMe = memberIds.includes(meId);
+      const hasMe = memberIds.includes(meIdLocal);
       const hasTo = memberIds.includes(to);
-      const creatorMatch = c.created_by?.id === meId || c.created_by?.id === to;
+      const creatorMatch = c.created_by?.id === meIdLocal || c.created_by?.id === to;
 
       return (hasMe && hasTo) || (creatorMatch && hasTo);
     });
 
     if (existing) {
       console.log("[chat?to] found existing chat:", existing.id);
-      handledToRef.current = true; // ✅ mark handled
+      handledToRef.current = true;
       setSel(existing.id);
       refetchMsgs({ chat_id: existing.id });
       return;
     }
 
-    // ----------- CASE 3: หาไม่เจอ → create 1:1 ใหม่ -----------
     console.log("[chat?to] create new 1:1 chat with:", to);
-    handledToRef.current = true; // ✅ กันซ้ำ
+    handledToRef.current = true;
 
     (async () => {
       try {
@@ -431,32 +420,28 @@ function ChatUI() {
     })();
   }, [toParam, me, chats, loadingChats, createChat, refetchChats, refetchMsgs]);
 
-  // 🔹 หา user ที่เรามี 1:1 chat อยู่แล้ว
   const existingOneToOnePartnerIds = useMemo(() => {
     const set = new Set<string>();
     const list = chats?.myChats || [];
     if (!meId) return set;
 
     for (const c of list) {
-      if (c.is_group) continue; // เอาเฉพาะห้อง 1:1
+      if (c.is_group) continue;
       const memberIds = (c.members || []).map((m: any) => m.id);
       if (!memberIds.includes(meId)) continue;
       for (const mid of memberIds) {
-        if (mid !== meId) set.add(mid); // partner ของเราในห้องนี้
+        if (mid !== meId) set.add(mid);
       }
     }
     return set;
   }, [chats, meId]);
 
-  // 🔹 ฟิลเตอร์รายชื่อ user ที่ให้เลือกใน Modal Create chat
   const availableUsers = useMemo(() => {
-    let arr = (users?.users || []).filter((u: any) => u.id !== meId); // ตัดตัวเองออกก่อน
+    let arr = (users?.users || []).filter((u: any) => u.id !== meId);
 
-    if (mode === 'single') {
-      // 1:1 → ซ่อนคนที่มีห้องคุยอยู่แล้ว
+    if (mode === "single") {
       arr = arr.filter((u: any) => !existingOneToOnePartnerIds.has(u.id));
     }
-    // ถ้าเป็น group → แสดงทุกคน (ยกเว้นตัวเอง)
     return arr;
   }, [users, meId, mode, existingOneToOnePartnerIds]);
 
@@ -564,28 +549,26 @@ function ChatUI() {
     () => chats?.myChats?.find((i: any) => i.id === sel),
     [chats, sel]
   );
-  
+
   const nameGroup = () => {
     if (!sel || !chat) return "Select a chat";
 
-    // 🔹 1) กรณี Group chat
     if (chat.is_group) {
-      // ถ้า group ไม่มี name → ตั้ง default
-      return chat.name?.trim()
-        ? `Group: ${chat.name}`
-        : "Group Chat";
+      return chat.name?.trim() ? `Group: ${chat.name}` : "Group Chat";
     }
 
-    // 🔹 2) กรณี 1:1 chat
     const partner = (chat.members || []).find((m: any) => m.id !== meId);
 
     if (partner?.name) {
       return `Chat with ${partner.name}`;
     }
 
-    // กันกรณีข้อมูลยังโหลดไม่ทัน
     return "Chat";
   };
+
+  // 🆕 จัด messages + empty state
+  const messagesList = msgs?.messages || [];
+  const isEmpty = messagesList.length === 0;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16 }}>
@@ -610,9 +593,9 @@ function ChatUI() {
                 setSel(c.id);
                 refetchMsgs({ chat_id: c.id });
               }}
-              style={{ 
+              style={{
                 cursor: "pointer",
-                background: sel === c.id ? "#e6f7ff" : "transparent"   // <-- highlight
+                background: sel === c.id ? "#e6f7ff" : "transparent",
               }}
               actions={[
                 c.is_group ? (
@@ -631,11 +614,12 @@ function ChatUI() {
                 </Dropdown>,
               ]}
             >
-            <List.Item.Meta
+              <List.Item.Meta
                 title={
                   c.is_group
-                    ? (c.name || "Group")
-                    : (c.members || []).find((m: any) => m.id !== meId)?.name || "1:1"
+                    ? c.name || "Group"
+                    : (c.members || []).find((m: any) => m.id !== meId)?.name ||
+                      "1:1"
                 }
                 description={
                   c.is_group
@@ -651,7 +635,7 @@ function ChatUI() {
         />
       </Card>
 
-      <Card title={nameGroup()}  /*{sel ? `Chat ${chat?.name}` : "Select a chat"}*/ >
+      <Card title={nameGroup()}>
         {sel && (
           <>
             <div
@@ -662,55 +646,80 @@ function ChatUI() {
                 padding: 12,
               }}
             >
-              {(msgs?.messages || []).map((m: any) => (
+              {isEmpty ? (
                 <div
-                  key={m.id}
-                  style={{ marginBottom: 8 }}
-                  onDoubleClick={() =>
-                    markRead({ variables: { message_id: m.id } }).catch(() => {})
-                  }
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
                 >
-                  <Typography.Text strong>
-                    { me?.me?.id && m.sender?.id === me.me.id ? "Me" :m.sender?.name || "—"}:
-                  </Typography.Text>{" "}
-                  {m.text}
-                  <div style={{ fontSize: 12, color: "#888" }}>
-                    {new Date(m.created_at).toLocaleString()}
-                  </div>
-                  <div style={{ marginTop: 4 }}>
-                    <Tag color={m?.myReceipt?.isRead ? "green" : "default"}>
-                      {m?.myReceipt?.isRead ? "Read" : "Unread"}
-                    </Tag>
-                    <Tag>{m?.readersCount ?? 0} read</Tag>
-
-                    {me?.me?.id && m.sender?.id === me.me.id && (
-                      <Button
-                        danger
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          Modal.confirm({
-                            title: "Delete this message?",
-                            okType: "danger",
-                            onOk: async () => {
-                              try {
-                                await deleteMessageMut({
-                                  variables: { message_id: m.id },
-                                });
-                                await refetchMsgs({ chat_id: sel });
-                              } catch (err: any) {
-                                message.error(err.message || "Delete failed");
-                              }
-                            },
-                          });
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    )}
-                  </div>
+                  <Typography.Text type="secondary">
+                    {chat?.is_group
+                      ? "No messages in this group yet."
+                      : "No messages yet. Say hi!"}
+                  </Typography.Text>
                 </div>
-              ))}
+              ) : (
+                messagesList.map((m: any) => (
+                  <div
+                    key={m.id}
+                    style={{ marginBottom: 8 }}
+                    onDoubleClick={() =>
+                      markRead({ variables: { message_id: m.id } }).catch(
+                        () => {}
+                      )
+                    }
+                  >
+                    <Typography.Text strong>
+                      {me?.me?.id && m.sender?.id === me.me.id
+                        ? "Me"
+                        : m.sender?.name || "—"}
+                      :
+                    </Typography.Text>{" "}
+                    {m.text}
+                    
+                    <div style={{ marginTop: 4 }}>
+                      <Tag color={m?.myReceipt?.isRead ? "green" : "default"}>
+                        {m?.myReceipt?.isRead ? "Read" : "Unread"}
+                      </Tag>
+                      <Tag>{m?.readersCount ?? 0} read</Tag>
+
+                      {me?.me?.id && m.sender?.id === me.me.id && (
+                        <Button
+                          danger
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            Modal.confirm({
+                              title: "Delete this message?",
+                              okType: "danger",
+                              onOk: async () => {
+                                try {
+                                  await deleteMessageMut({
+                                    variables: { message_id: m.id },
+                                  });
+                                  await refetchMsgs({ chat_id: sel });
+                                } catch (err: any) {
+                                  message.error(
+                                    err.message || "Delete failed"
+                                  );
+                                }
+                              },
+                            });
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#888" }}>
+                      {new Date(m.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
             <Divider />
             <Space.Compact style={{ width: "100%" }}>
@@ -768,7 +777,9 @@ function ChatUI() {
               label: u.name,
             }))}
             value={selectedUsers}
-            onChange={(val) => setSelectedUsers(Array.isArray(val) ? val : [val])}
+            onChange={(val) =>
+              setSelectedUsers(Array.isArray(val) ? val : [val])
+            }
             showSearch
             onSearch={(val) => refetchUsers({ q: val })}
             filterOption={false}

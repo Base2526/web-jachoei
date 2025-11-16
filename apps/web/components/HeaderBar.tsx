@@ -133,7 +133,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
             <Tooltip title="แจ้งเตือน">
               <Button
                 type="text"
-                onClick={() => router.push("/notifications")}
+                onClick={() => router.push("/notification")}
                 icon={<BellOutlined style={{ fontSize: 18, color: "#000" }} />}
               />
             </Tooltip>

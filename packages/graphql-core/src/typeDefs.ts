@@ -1,4 +1,5 @@
 export const coreTypeDefs = /* GraphQL */ `
+  scalar JSON
   type User {
     id: ID!
     name: String!
@@ -31,6 +32,19 @@ export const coreTypeDefs = /* GraphQL */ `
     readersCount: Int!
   }
 
+  type Notification {
+    id: ID!
+    user_id: ID!
+    type: String!
+    title: String!
+    message: String!
+    entity_type: String!
+    entity_id: ID!
+    data: JSON
+    is_read: Boolean!
+    created_at: String!
+  }
+
   type Query { _ok: String! }
   type Mutation { 
     send(text: String!): Boolean! 
@@ -41,5 +55,8 @@ export const coreTypeDefs = /* GraphQL */ `
     userMessageAdded(user_id: ID!): Message! 
 
     messageDeleted(chat_id: ID!): ID!
+
+
+    notificationCreated: Notification!  # push real-time
   }
 `;

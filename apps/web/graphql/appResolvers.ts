@@ -18,6 +18,8 @@ import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 
 import { GraphQLUpload } from "graphql-upload-nextjs";
 
+import { createNotification } from '@/lib/notifications/service'; 
+
 type GraphQLUploadFile = {
   filename: string;
   mimetype?: string | null;
@@ -47,6 +49,7 @@ function normalizeStr(input: string): string {
     .replace(/_+/g, "_")         // แทน _ ซ้อนหลายตัวด้วย _
     .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
 }
+
 
 export const resolvers = {
   Upload: GraphQLUpload,
@@ -761,6 +764,60 @@ export const resolvers = {
 
       return { items, total };
     },
+
+    // 
+    myNotifications: async (
+      _: any,
+      args: { limit?: number; offset?: number },
+      ctx: any
+    ) => {
+      const user = ctx.user; // สมมติ auth middleware ใส่มาแล้ว
+      if (!user) throw new Error('Unauthorized');
+
+      const limit = args.limit ?? 20;
+      const offset = args.offset ?? 0;
+
+      const { rows } = await query(
+        `
+        SELECT
+          id,
+          user_id,
+          type,
+          title,
+          message,
+          entity_type,
+          entity_id,
+          data,
+          is_read,
+          created_at
+        FROM notifications
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        OFFSET $3
+        `,
+        [user.id, limit, offset]
+      );
+
+      return rows;
+    },
+
+    myUnreadNotificationCount: async (_: any, __: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      const { rows } = await query(
+        `
+        SELECT COUNT(*)::int AS count
+        FROM notifications
+        WHERE user_id = $1
+          AND is_read = FALSE
+        `,
+        [user.id]
+      );
+
+      return rows[0]?.count ?? 0;
+    },
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -1409,11 +1466,11 @@ export const resolvers = {
           [id]
         );
         if (srcTels.length) {
-          const values = srcTels.map((_, i) => `($1, $${i + 2})`).join(", ");
+          const values = srcTels.map((_:any, i:any) => `($1, $${i + 2})`).join(", ");
           await client.query(
             `INSERT INTO post_tel_numbers (post_id, tel)
             VALUES ${values}`,
-            [newPostId, ...srcTels.map((r) => r.tel)]
+            [newPostId, ...srcTels.map((r:any) => r.tel)]
           );
         }
 
@@ -1428,14 +1485,14 @@ export const resolvers = {
         );
         if (srcAccs.length) {
           const values = srcAccs
-            .map((_, i) => {
+            .map((_:any, i:any) => {
               const base = 1 + i * 3;
               return `($1, $${base + 1}, $${base + 2}, $${base + 3})`;
             })
             .join(", ");
 
           const params: any[] = [newPostId];
-          srcAccs.forEach((r) => {
+          srcAccs.forEach((r:any) => {
             params.push(r.bank_id, r.bank_name, r.seller_account || "");
           });
 
@@ -1458,11 +1515,11 @@ export const resolvers = {
           [id]
         );
         if (srcImgs.length) {
-          const values = srcImgs.map((_, i) => `($1, $${i + 2})`).join(", ");
+          const values = srcImgs.map((_:any, i:any) => `($1, $${i + 2})`).join(", ");
           await client.query(
             `INSERT INTO post_images (post_id, file_id)
             VALUES ${values}`,
-            [newPostId, ...srcImgs.map((r) => r.file_id)]
+            [newPostId, ...srcImgs.map((r:any) => r.file_id)]
           );
         }
 
@@ -1480,12 +1537,68 @@ export const resolvers = {
         return newPostId;
       });
     },
-    createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
-      const author_id = requireAuth(ctx);
-      console.log("[Mutation] createChat :", ctx, author_id);
+    // createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
+    //   const author_id = requireAuth(ctx);
+    //   console.log("[Mutation] createChat :", ctx, author_id);
 
-      // ✅ ใช้ transaction ครอบทุกขั้นตอน
-      return await runInTransaction(author_id, async (client) => {
+    //   // ✅ ใช้ transaction ครอบทุกขั้นตอน
+    //   return await runInTransaction(author_id, async (client) => {
+    //     // 1) สร้าง chat ใหม่
+    //     const { rows } = await client.query(
+    //       `INSERT INTO chats (name, is_group, created_by)
+    //       VALUES ($1,$2,$3)
+    //       RETURNING *`,
+    //       [name || null, isGroup, author_id]
+    //     );
+    //     const chat = rows[0];
+
+    //     // 2) เพิ่มสมาชิกทั้งหมด (รวม creator)
+    //     const allMembers = Array.from(new Set([author_id, ...memberIds]));
+    //     for (const uid of allMembers) {
+    //       await client.query(
+    //         `INSERT INTO chat_members (chat_id, user_id)
+    //         VALUES ($1,$2)
+    //         ON CONFLICT DO NOTHING`,
+    //         [chat.id, uid]
+    //       );
+    //     }
+
+    //     // 3) ดึงข้อมูลสมาชิกและผู้สร้าง
+    //     const mem = await client.query(
+    //       `SELECT u.* 
+    //         FROM chat_members m
+    //         JOIN users u ON m.user_id = u.id
+    //         WHERE m.chat_id = $1`,
+    //       [chat.id]
+    //     );
+    //     const creator = await client.query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
+
+    //     // ✅ 4) บันทึก log (อยู่นอก query หลักแต่ยังใน transaction)
+    //     await addLog('info', 'chat-create', 'Chat created', {
+    //       chatId: chat.id,
+    //       userId: author_id,
+    //       members: allMembers.length,
+    //     });
+
+    //     // ✅ 5) คืนค่าผลลัพธ์
+    //     return {
+    //       ...chat,
+    //       created_by: creator.rows[0],
+    //       members: mem.rows,
+    //     };
+    //   });
+    // },
+
+    createChat: async (
+      _: any,
+      { name, isGroup, memberIds }: { name?: string; isGroup: boolean; memberIds: string[] },
+      ctx: any
+    ) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] createChat :", author_id);
+
+      // ✅ 1) รันทุกอย่างใน transaction (สร้าง chat + members + log)
+      const result = await runInTransaction(author_id, async (client) => {
         // 1) สร้าง chat ใหม่
         const { rows } = await client.query(
           `INSERT INTO chats (name, is_group, created_by)
@@ -1514,22 +1627,60 @@ export const resolvers = {
             WHERE m.chat_id = $1`,
           [chat.id]
         );
-        const creator = await client.query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
+        const creator = await client.query(
+          `SELECT * FROM users WHERE id = $1`,
+          [chat.created_by]
+        );
 
-        // ✅ 4) บันทึก log (อยู่นอก query หลักแต่ยังใน transaction)
+        // 4) บันทึก log
         await addLog('info', 'chat-create', 'Chat created', {
           chatId: chat.id,
           userId: author_id,
           members: allMembers.length,
         });
 
-        // ✅ 5) คืนค่าผลลัพธ์
+        // 5) คืนค่าผลลัพธ์ (ใช้เป็น response และใช้สร้าง noti ต่อ)
         return {
-          ...chat,
-          created_by: creator.rows[0],
-          members: mem.rows,
+          ...chat,                 // id, name, is_group, created_by (เป็น uuid จาก table)
+          created_by: creator.rows[0], // override ให้ field created_by เป็น object user (ตามที่คุณใช้ใน GraphQL)
+          members: mem.rows,       // [{ id, name, ... }]
         };
       });
+
+      // ✅ 2) สร้าง Notification ให้สมาชิกคนอื่น (อยู่นอก transaction → ไม่โดน rollback ถ้า noti พลาด)
+      const chat = result; // แค่ rename ให้สั้น
+      const creatorUser = chat.created_by; // user object
+      const members = chat.members as any[];
+
+      // member คนอื่นที่ไม่ใช่คนสร้าง
+      const recipients = members.filter((m: any) => m.id !== author_id);
+
+      await Promise.all(
+        recipients.map((m: any) =>
+          createNotification({
+            user_id: m.id,
+            type: 'CHAT_CREATED',
+            title: chat.is_group
+              ? `คุณถูกเพิ่มในกลุ่ม "${chat.name || ''}"`
+              : `เริ่มแชทใหม่กับ ${creatorUser.name}`,
+            message: chat.is_group
+              ? `${creatorUser.name} สร้างห้องและเพิ่มคุณเข้ากลุ่ม`
+              : `${creatorUser.name} เริ่มคุยกับคุณ`,
+            entity_type: 'chat',
+            entity_id: chat.id,
+            data: {
+              chat_id: chat.id,
+              chat_name: chat.name,
+              is_group: chat.is_group,
+              actor_id: creatorUser.id,
+              actor_name: creatorUser.name,
+            },
+          })
+        )
+      );
+
+      // ✅ 3) คืนค่า chat ตามเดิม (เดิมคุณ return object นี้อยู่แล้ว)
+      return chat;
     },
     addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
@@ -2139,6 +2290,45 @@ export const resolvers = {
         isBookmarked: result.isBookmarked,
         executionTime: `${((Date.now() - start) / 1000).toFixed(3)}s`,
       };
+    },
+
+    markNotificationRead: async (
+      _: any,
+      args: { id: string },
+      ctx: any
+    ) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      const { rows } = await query(
+        `
+        UPDATE notifications
+        SET is_read = TRUE
+        WHERE id = $1
+          AND user_id = $2
+        RETURNING id
+        `,
+        [args.id, user.id]
+      );
+
+      return rows.length > 0;
+    },
+
+    markAllNotificationsRead: async (_: any, __: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      await query(
+        `
+        UPDATE notifications
+        SET is_read = TRUE
+        WHERE user_id = $1
+          AND is_read = FALSE
+        `,
+        [user.id]
+      );
+
+      return true;
     },
   },
 };
