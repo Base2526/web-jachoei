@@ -55,6 +55,12 @@ const DELETE_POST = gql`
   }
 `;
 
+const CLONE_POST = gql`
+  mutation ($id: ID!) {
+    clonePost(id: $id)
+  }
+`;
+
 export default function Page(){
   const { id } = useParams<{id:string}>();
   const router = useRouter();
@@ -62,6 +68,7 @@ export default function Page(){
   const { data, loading, error } = useQuery(Q_POST, { variables: { id } });
 
   const [deletePost, { loading: deleting }] = useMutation(DELETE_POST);
+  const [clonePost, { loading: cloning }]   = useMutation(CLONE_POST);
 
   const handleDelete = async (id: string) => {
     try {
@@ -77,6 +84,24 @@ export default function Page(){
     }
   };
 
+  const handleClone = async (id: string) => {
+    try {
+      console.log("[handleClone]", id);
+      const { data: res } = await clonePost({ variables: { id } });
+
+      const newId = res?.clonePost;
+      if (newId) {
+        message.success("Cloned successfully");
+        // สมมติว่าหน้า view ใช้ path /admin/posts/[id]
+        router.push(`/post/${newId}`);
+      } else {
+        message.warning("Clone failed");
+      }
+    } catch (err: any) {
+      message.error(err?.message || "Clone error");
+    }
+  };
+
   if (loading) return <div>Loading...</div>;
   if (error)   return <div>Error: {String(error.message)}</div>;
 
@@ -88,6 +113,9 @@ export default function Page(){
           post={post} 
           loading={loading}
           onDelete={handleDelete} 
-          deleting={deleting} />;
+          deleting={deleting}
+          
+          onClone={handleClone}
+          cloning={cloning}/>;
 }
 

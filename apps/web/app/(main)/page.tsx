@@ -206,6 +206,7 @@ function PostsList() {
           pageSize,
           total: data?.postsPaged?.total || 0,
           showSizeChanger: true,
+          showTotal: (total, range) =>`${range[0]}-${range[1]} of ${total} items`,
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);

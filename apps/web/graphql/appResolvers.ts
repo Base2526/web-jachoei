@@ -510,17 +510,105 @@ export const resolvers = {
       const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
       return rows[0] || null;
     },
-    postsByUserId: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
-      const author_id = requireAuth(ctx);
-      console.log("[Query] postsByUserId :", author_id);
+    postsByUserId: async (_: any, { user_id }: { user_id: string }, ctx: any) => {
+      const author_id = requireAuth(ctx, { optionalWeb: true });
+      console.log("[Query] postsByUserId :", author_id, "target:", user_id);
 
-      const { rows } = await query(
-        `SELECT p.*, row_to_json(u.*) as author_json
-         FROM posts p LEFT JOIN users u ON p.author_id = u.id
-         WHERE p.author_id = $1
-         ORDER BY p.created_at DESC`, [user_id]
-      );
-      return rows.map((r: any)=>({ ...r, author: r.author_json }));
+      const params: any[] = [user_id];
+      const sql = `
+        SELECT
+          p.*,
+          row_to_json(u) AS author_json,
+
+          -- tel_numbers
+          (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', t.id,
+                  'tel', t.tel
+                )
+              ),
+              '[]'::json
+            )
+            FROM post_tel_numbers t
+            WHERE t.post_id = p.id
+          ) AS tel_numbers,
+
+          -- seller_accounts
+          (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', sa.id,
+                  'bank_id', sa.bank_id,
+                  'bank_name', sa.bank_name,
+                  'seller_account', sa.seller_account
+                )
+              ),
+              '[]'::json
+            )
+            FROM post_seller_accounts sa
+            WHERE sa.post_id = p.id
+          ) AS seller_accounts,
+
+          -- images
+          (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object('id', f.id, 'relpath', f.relpath)
+              ),
+              '[]'::json
+            )
+            FROM post_images pi
+            JOIN files f ON f.id = pi.file_id
+            WHERE pi.post_id = p.id
+          ) AS images,
+
+          -- bookmarks
+          COALESCE(
+            JSONB_AGG(DISTINCT JSONB_BUILD_OBJECT('user_id', bm.user_id))
+            FILTER (WHERE bm.user_id IS NOT NULL),
+            '[]'::JSONB
+          ) AS bookmarks
+
+        FROM posts p
+        LEFT JOIN users u ON p.author_id = u.id
+        LEFT JOIN bookmarks bm ON bm.post_id = p.id
+        WHERE p.author_id = $1
+        GROUP BY p.id, u.id
+        ORDER BY p.created_at DESC
+      `;
+
+      const { rows } = await query(sql, params);
+
+      return rows.map((r: any) => ({
+        ...r,
+        author: r.author_json,
+        images: (r.images || []).map((it: any) => ({
+          id: it.id,
+          url: buildFileUrlById(it.id),
+        })),
+
+        // ✅ ไม่ให้เป็น null
+        tel_numbers: (r.tel_numbers || []).map((it: any) => ({
+          id: it.id,
+          tel: it.tel,
+        })),
+
+        seller_accounts: (r.seller_accounts || []).map((it: any) => ({
+          id: it.id,
+          bank_id: it.bank_id,
+          bank_name: it.bank_name,
+          seller_account: it.seller_account,
+        })),
+
+        bookmarks: r.bookmarks || [],
+        isBookmarked:
+          Array.isArray(r.bookmarks) && author_id
+            ? r.bookmarks.some((b: any) => b.user_id === author_id)
+            : false,
+      }));
     },
     unreadCount: async (_:any, { chatId }:{ chatId: string }, ctx:any) => {
       const author_id = requireAuth(ctx);
@@ -1190,7 +1278,6 @@ export const resolvers = {
 
       });
     },
-
     deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] deletePost :", ctx, author_id);
@@ -1252,6 +1339,146 @@ export const resolvers = {
       });
 
       return result;
+    },
+    clonePost: async (
+      _: any,
+      { id }: { id: string },
+      ctx: any
+    ) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] clonePost :", author_id, id);
+
+      return runInTransaction(author_id, async (client) => {
+        // ==================================
+        // 1) หา source post
+        // ==================================
+        const { rows: srcPosts } = await client.query(
+          `SELECT *
+          FROM posts
+          WHERE id = $1`,
+          [id]
+        );
+        if (!srcPosts.length) {
+          throw new Error("Source post not found");
+        }
+        const src = srcPosts[0];
+
+        // ==================================
+        // 2) insert post ใหม่
+        // ==================================
+        const { rows: newPostRows } = await client.query(
+          `INSERT INTO posts (
+            first_last_name,
+            id_card,
+            title,
+            transfer_amount,
+            transfer_date,
+            website,
+            province_id,
+            detail,
+            status,
+            author_id,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW()
+          )
+          RETURNING id`,
+          [
+            src.first_last_name,
+            src.id_card,
+            (src.title || "") + " Clone",
+            src.transfer_amount,
+            src.transfer_date,
+            src.website,
+            src.province_id,
+            src.detail,
+            src.status,
+            author_id,
+          ]
+        );
+
+        const newPostId = newPostRows[0].id;
+
+        // ==================================
+        // 3) clone tel_numbers
+        // ==================================
+        const { rows: srcTels } = await client.query(
+          `SELECT tel FROM post_tel_numbers WHERE post_id=$1`,
+          [id]
+        );
+        if (srcTels.length) {
+          const values = srcTels.map((_, i) => `($1, $${i + 2})`).join(", ");
+          await client.query(
+            `INSERT INTO post_tel_numbers (post_id, tel)
+            VALUES ${values}`,
+            [newPostId, ...srcTels.map((r) => r.tel)]
+          );
+        }
+
+        // ==================================
+        // 4) clone seller_accounts
+        // ==================================
+        const { rows: srcAccs } = await client.query(
+          `SELECT bank_id, bank_name, seller_account
+          FROM post_seller_accounts
+          WHERE post_id=$1`,
+          [id]
+        );
+        if (srcAccs.length) {
+          const values = srcAccs
+            .map((_, i) => {
+              const base = 1 + i * 3;
+              return `($1, $${base + 1}, $${base + 2}, $${base + 3})`;
+            })
+            .join(", ");
+
+          const params: any[] = [newPostId];
+          srcAccs.forEach((r) => {
+            params.push(r.bank_id, r.bank_name, r.seller_account || "");
+          });
+
+          await client.query(
+            `INSERT INTO post_seller_accounts
+              (post_id, bank_id, bank_name, seller_account)
+            VALUES ${values}`,
+            params
+          );
+        }
+
+        // ==================================
+        // 5) clone images
+        // ==================================
+        const { rows: srcImgs } = await client.query(
+          `SELECT file_id
+          FROM post_images
+          WHERE post_id=$1
+          ORDER BY id`,
+          [id]
+        );
+        if (srcImgs.length) {
+          const values = srcImgs.map((_, i) => `($1, $${i + 2})`).join(", ");
+          await client.query(
+            `INSERT INTO post_images (post_id, file_id)
+            VALUES ${values}`,
+            [newPostId, ...srcImgs.map((r) => r.file_id)]
+          );
+        }
+
+        // ==================================
+        // 6) LOG
+        // ==================================
+        await addLog(
+          "info",
+          "post-clone",
+          "User cloned a post",
+          { author_id, source_post_id: id, cloned_post_id: newPostId }
+        );
+
+        // ❗ สำคัญ: RETURN เป็น string ตรง ๆ ไม่ห่อ object ใด ๆ
+        return newPostId;
+      });
     },
     createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
       const author_id = requireAuth(ctx);
