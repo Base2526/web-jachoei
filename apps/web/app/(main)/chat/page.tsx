@@ -180,6 +180,12 @@ const SUB_DELETED = gql`
   }
 `;
 
+const SUB_TIME = gql`
+  subscription TimeTick {
+    time
+  }
+`;
+
 type Member = { id: string; name?: string };
 type Chat = {
   id: string;
@@ -214,6 +220,7 @@ function ChatUI() {
     data: chats,
     refetch: refetchChats,
     loading: loadingChats,
+     subscribeToMore:  subscribeToMoreX,
   } = useQuery(Q_CHATS);
 
   const {
@@ -239,6 +246,40 @@ function ChatUI() {
   const [markUpTo] = useMutation(MUT_MARK_UPTO);
 
   const [deleteMessageMut] = useMutation(MUT_DELETE_MSG, { onError: () => {} });
+
+
+  // const { data, loading, error, subscribeToMore } = useQuery(Q_TIME_INIT);
+
+  //  useEffect(() => {
+  //   console.log("[SUB_TIME] : สมัคร subscription เมื่อ component mount");
+  //   // สมัคร subscription เมื่อ component mount
+  //   const unsubscribe = subscribeToMoreX({
+  //     document: SUB_TIME,
+  //     // ถ้ามี variables ก็ใส่ตรงนี้ได้
+  //     // variables: { ... },
+
+  //     updateQuery(prev, { subscriptionData }) {
+
+  //       console.log("[SUB_TIME][subscribeToMoreX]", subscriptionData);
+  //       if (!subscriptionData.data) return prev;
+
+  //       const newTime = subscriptionData.data.time; // จาก subscription { time }
+
+  //       // ต้อง return state ใหม่ให้ useQuery
+  //       return {
+  //         ...prev,
+  //         serverTime: newTime,
+  //       };
+  //     },
+  //   });
+
+  //   // cleanup ตอน unmount
+  //   return () => {
+  //     if (typeof unsubscribe === 'function') {
+  //       unsubscribe();
+  //     }
+  //   };
+  // }, []);
 
   // ถ้า query param to เปลี่ยน ให้ reset handledTo
   useEffect(() => {

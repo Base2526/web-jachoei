@@ -14,5 +14,9 @@
   },
   "devDependencies": {
     "typescript": "^5.4.0"
+  },
+  "exports": {
+    "./resolvers": "./dist/resolvers.js",
+    "./typeDefs": "./dist/typeDefs.js"
   }
 }

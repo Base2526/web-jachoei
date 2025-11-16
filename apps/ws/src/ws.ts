@@ -19,11 +19,11 @@ const PATH = "/graphql";// process.env.WS_PATH || "/graphql";
 const wss = new WebSocketServer({ port: PORT, path: PATH });
 
 // ✅ ตัวอย่าง ticker ง่าย ๆ - ยิงทุก 1 วินาที
-const TOPIC_TIME = "TIME_TICK";
-setInterval(() => {
-  const now = new Date().toISOString();
-  pubsub.publish(TOPIC_TIME, { time: now });
-}, 1000);
+// const TOPIC_TIME = "TIME_TICK";
+// setInterval(() => {
+//   const now = new Date().toISOString();
+//   pubsub.publish(TOPIC_TIME, { time: now });
+// }, 1000);
 
 useServer(
     { 

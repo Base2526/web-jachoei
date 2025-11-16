@@ -320,4 +320,11 @@ export const typeDefs = /* GraphQL */ `
 
     updateMe(data: MeInput!): User!
   }
+
+  type Subscription { 
+    messageAdded(chat_id: ID!): Message! 
+    userMessageAdded(user_id: ID!): Message! 
+
+    messageDeleted(chat_id: ID!): ID!
+  }
 `;

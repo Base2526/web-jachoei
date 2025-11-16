@@ -11,9 +11,15 @@ import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { persistWebFile, buildFileUrlById } from "@/lib/storage";
 import { requireAuth, sha256Hex } from "@/lib/auth"
 import { addLog } from '@/lib/log/log';
+import { withFilter } from "graphql-subscriptions";
 
 import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 // import { signUserToken } from "@/lib/auth/jwt";
+
+import { timeSubscription } from './subscriptions/time';
+
+// import { coreSubscriptionResolvers } from '@my/graphql-core/resolvers';
+// import {coreResolvers} from "g";
 
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -29,6 +35,12 @@ function normalizeStr(input: string): string {
     .replace(/_+/g, "_")         // แทน _ ซ้อนหลายตัวด้วย _
     .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
 }
+
+const TOPIC_TIME = "TIME_TICK";
+setInterval(() => {
+  const now = new Date().toISOString();
+  pubsub.publish(TOPIC_TIME, { time: now });
+}, 5000);
 
 export const resolvers = {
   Query: {
@@ -1883,6 +1895,45 @@ export const resolvers = {
         isBookmarked: result.isBookmarked,
         executionTime: `${((Date.now() - start) / 1000).toFixed(3)}s`,
       };
+    },
+  },
+
+  Subscription: {
+    // merge ของเดิม (ถ้ามี)
+    // ...(someOtherResolvers.Subscription || {}),
+    ...timeSubscription,
+
+    messageAdded: {
+      subscribe: withFilter(
+        (_:any, { chat_id }:{chat_id:string}) =>{
+          console.log("[graphql-core withFilter : messageAdded] @1");
+          return pubsub.asyncIterator(topicChat(chat_id))
+        } ,
+        (payload, variables) => {
+          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id);
+          return payload?.messageAdded?.chat_id === variables?.chat_id;
+        }
+      )
+    },
+    userMessageAdded: {
+      subscribe: withFilter(
+        (_:any, { user_id }:{user_id:string}) => pubsub.asyncIterator(topicUser(user_id)),
+        (payload, variables) => {
+          console.log("[graphql-core withFilter : userMessageAdded]");
+          return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
+        }
+      )
+    },
+    messageDeleted: {
+      subscribe: withFilter(
+        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicUser(chat_id)),
+        (payload, variables) => {
+          console.log("[graphql-core withFilter : messageDeleted]");
+          // return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
+
+          return payload.asyncIterator(topicChat(variables?.chat_id));
+        }
+      )
     },
   },
 };
