@@ -4,7 +4,8 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Descriptions, Image, Divider, Table, Typography, Button, Space, Tooltip, Popconfirm, message } from 'antd';
 import type { PostRecord } from './PostForm';
 import Link from 'next/link';
-import { MessageOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { MessageOutlined, DeleteOutlined, EditOutlined, CopyOutlined } from '@ant-design/icons';
+
 
 import { useSessionCtx } from '@/lib/session-context';
 import BookmarkButton from '@/components/BookmarkButton';
@@ -18,11 +19,14 @@ type Props = {
   onDelete?: (id?: any) => void;    
   deleting?: boolean;     
   title?: string;
+
+  onClone?: (id: string) => void;   
+  cloning?: boolean;              
 };
 
 // const DELETE_POST = gql`mutation ($id: ID!) { deletePost(id: $id) } `;
 
-export default function PostView({ post, loading, onDelete, deleting, title }: Props) {
+export default function PostView({ post, loading, onDelete, deleting, title, onClone, cloning}: Props) {
   console.log("[PostView]", post);
 
   const { user } = useSessionCtx();
@@ -57,6 +61,14 @@ export default function PostView({ post, loading, onDelete, deleting, title }: P
          } 
          {user?.id === (post as any)?.author.id && (
             <>
+              <Tooltip title="Clone">
+                <Button 
+                  type="text" 
+                  size="small" 
+                  onClick={() => onClone?.((post as any)?.id)}
+                  loading={cloning}
+                  icon={<CopyOutlined />} />
+              </Tooltip>
               <Tooltip title="Edit">
                 <Link href={`/post/${(post as any)?.id}/edit`} prefetch={false}>
                   <Button type="text" size="small" icon={<EditOutlined />} />

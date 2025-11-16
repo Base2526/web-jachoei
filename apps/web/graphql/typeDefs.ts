@@ -289,6 +289,7 @@ export const typeDefs = /* GraphQL */ `
     upsertPost(id: ID, data: PostInput!, images: [Upload!], image_ids_delete: [ID!]): Post!
     deletePost(id: ID!): Boolean!
     deletePosts(ids: [ID!]!): Boolean! 
+    clonePost(id: ID!): String!
 
     upsertUser(id: ID, data: UserInput!): User!
     uploadAvatar(user_id: ID!, file: Upload!): String! 
