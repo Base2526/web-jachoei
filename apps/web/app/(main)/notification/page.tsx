@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { gql, useQuery, useMutation } from '@apollo/client';
 import {
   List,
@@ -113,8 +113,23 @@ function getTagLabel(entity_type: string, type: string): string {
   return 'General';
 }
 
-function getTimeLabel(created_at: string): string {
-  const created = new Date(created_at);
+function getTimeLabel(created_at: string | number): string {
+  // Normalise input: convert string → number if looks like timestamp
+  let created: Date;
+
+  if (typeof created_at === "number") {
+    // Already timestamp (ms)
+    created = new Date(created_at);
+  } else if (/^\d+$/.test(created_at)) {
+    // Numeric string timestamp → convert to number
+    created = new Date(parseInt(created_at, 10));
+  } else {
+    // ISO string
+    created = new Date(created_at);
+  }
+
+  if (isNaN(created.getTime())) return "Invalid date";
+
   const now = new Date();
   const diffMs = now.getTime() - created.getTime();
   const diffSec = Math.floor(diffMs / 1000);
@@ -129,27 +144,37 @@ function getTimeLabel(created_at: string): string {
   return created.toLocaleDateString();
 }
 
-function getGroupLabel(created_at: string): string {
-  const d = new Date(created_at);
+function getGroupLabel(created_at: string | number): string {
+  // 1) รองรับ timestamp (number หรือ string)
+  const d = new Date(typeof created_at === 'number' ? created_at : Number(created_at) || created_at);
+
+  if (isNaN(d.getTime())) return 'Unknown';
+
   const now = new Date();
 
-  const created = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  // 2) normalize ให้เป็น 00:00 ของวัน (แก้ timezone)
+  const createdDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const diffMs = today.getTime() - created.getTime();
+  // 3) คำนวณ diff เป็นจำนวนวันจริง
+  const diffMs = today.getTime() - createdDay.getTime();
   const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
+  if (diffDay < 0) return 'Future';       // กันกรณี timestamp คลาด
   if (diffDay === 0) return 'Today';
   if (diffDay === 1) return 'Yesterday';
   if (diffDay <= 7) return 'This week';
+
   return 'Earlier';
 }
 
 function mapNotificationToItem(n: GqlNotification): NotificationItem {
+
+  console.log("[mapNotificationToItem] = ", n, getTimeLabel(new Date(n.created_at).toLocaleString()));
   return {
     ...n,
     tagLabel: getTagLabel(n.entity_type, n.type),
-    timeLabel: getTimeLabel(n.created_at),
+    timeLabel: getTimeLabel(n.created_at), // 
     groupLabel: getGroupLabel(n.created_at),
   };
 }
@@ -212,6 +237,10 @@ export default function NotificationPage() {
     acc[item.groupLabel].push(item);
     return acc;
   }, {});
+
+  useEffect(()=>{
+    console.log("notification =", data);
+  }, [data]);
 
   const alsoRefetch = async () => {
     await Promise.all([refetchNotifications(), refetchUnreadCount()]);
@@ -334,68 +363,70 @@ export default function NotificationPage() {
             <List
               itemLayout="horizontal"
               dataSource={groupItems}
-              renderItem={(item) => (
-                <List.Item
-                  onClick={() => onClickItem(item)}
-                  style={{
-                    cursor: 'pointer',
-                    background: item.is_read ? 'transparent' : 'rgba(24,144,255,0.06)',
-                    paddingLeft: 12,
-                    borderRadius: 8,
-                    marginTop: 8,
-                  }}
-                  actions={[
-                    <Dropdown
-                      key="more"
-                      overlay={menuForItem(item)}
-                      trigger={['click']}
-                    >
-                      <MoreOutlined onClick={(e) => e.stopPropagation()} />
-                    </Dropdown>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    avatar={
-                      <div style={{ position: 'relative' }}>
-                        {getIcon(item.entity_type)}
-                        {!item.is_read && (
-                          <span
-                            style={{
-                              position: 'absolute',
-                              top: -2,
-                              right: -2,
-                              width: 8,
-                              height: 8,
-                              borderRadius: '50%',
-                              background: '#1890ff',
-                            }}
+              renderItem={(item) => {
+                console.log("[renderItem] = ", item);
+                return  <List.Item
+                          onClick={() => onClickItem(item)}
+                          style={{
+                            cursor: 'pointer',
+                            background: item.is_read ? 'transparent' : 'rgba(24,144,255,0.06)',
+                            paddingLeft: 12,
+                            borderRadius: 8,
+                            marginTop: 8,
+                          }}
+                          actions={[
+                            <Dropdown
+                              key="more"
+                              overlay={menuForItem(item)}
+                              trigger={['click']}
+                            >
+                              <MoreOutlined onClick={(e) => e.stopPropagation()} />
+                            </Dropdown>,
+                          ]}
+                        >
+                          <List.Item.Meta
+                            avatar={
+                              <div style={{ position: 'relative' }}>
+                                {getIcon(item.entity_type)}
+                                {!item.is_read && (
+                                  <span
+                                    style={{
+                                      position: 'absolute',
+                                      top: -2,
+                                      right: -2,
+                                      width: 8,
+                                      height: 8,
+                                      borderRadius: '50%',
+                                      background: '#1890ff',
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            }
+                            title={
+                              <Space
+                                style={{ justifyContent: 'space-between', width: '100%' }}
+                              >
+                                <span style={{ fontWeight: item.is_read ? 400 : 600 }}>
+                                  {item.title}
+                                </span>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  {item.timeLabel} 
+                                </Text>
+                              </Space>
+                            }
+                            description={
+                              <Space direction="vertical" style={{ width: '100%' }}>
+                                <Text type="secondary" ellipsis>
+                                  {item.message}
+                                </Text>
+                                <Tag>{item.tagLabel}</Tag>
+                              </Space>
+                            }
                           />
-                        )}
-                      </div>
-                    }
-                    title={
-                      <Space
-                        style={{ justifyContent: 'space-between', width: '100%' }}
-                      >
-                        <span style={{ fontWeight: item.is_read ? 400 : 600 }}>
-                          {item.title}
-                        </span>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {item.timeLabel}
-                        </Text>
-                      </Space>
-                    }
-                    description={
-                      <Space direction="vertical" style={{ width: '100%' }}>
-                        <Text type="secondary" ellipsis>
-                          {item.message}
-                        </Text>
-                        <Tag>{item.tagLabel}</Tag>
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              )}
+                        </List.Item>
+                  }
+              }
             />
           </div>
         ))

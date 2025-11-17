@@ -124,12 +124,15 @@ export const resolvers = {
       const params: any[] = [];
       let whereSql = '';
 
-      // 🔎 SEARCH: title, เบอร์โทร, บัญชีคนขาย/ธนาคาร
+      /* --------------------------------------
+      * 🔎 SEARCH: title, phone, bank account
+      * -------------------------------------- */
       if (search) {
         params.push(`%${search}%`); // $1
         const idx = params.length;
+
         whereSql = `
-          WHERE
+          WHERE (
             p.title ILIKE $${idx}
             OR EXISTS (
               SELECT 1 FROM post_tel_numbers t
@@ -145,14 +148,27 @@ export const resolvers = {
                 OR s.bank_id ILIKE $${idx}
               )
             )
+          )
         `;
       }
 
-      // ✅ is_bookmarked (ต่อผู้ใช้ปัจจุบัน)
+      /* --------------------------------------
+      * 💡 ALWAYS enforce public status
+      * -------------------------------------- */
+      if (whereSql.trim() === '') {
+        whereSql = `WHERE p.status = 'public'`;
+      } else {
+        whereSql += ` AND p.status = 'public'`;
+      }
+
+      /* --------------------------------------
+      * ⭐ is_bookmarked (current user)
+      * -------------------------------------- */
       let isBookmarkedSelect = `false AS is_bookmarked`;
       if (author_id) {
-        params.push(author_id); // $N (ก่อน limit/offset)
+        params.push(author_id);
         const meIdx = params.length;
+
         isBookmarkedSelect = `
           EXISTS (
             SELECT 1 FROM bookmarks bm
@@ -162,7 +178,9 @@ export const resolvers = {
         `;
       }
 
-      // ✅ limit / offset
+      /* --------------------------------------
+      * LIMIT / OFFSET
+      * -------------------------------------- */
       params.push(limit, offset);
       const limitIdx = params.length - 1;
       const offsetIdx = params.length;
@@ -173,7 +191,7 @@ export const resolvers = {
           p.*,
           row_to_json(u) AS author_json,
 
-          -- รูปภาพทั้งหมด
+          -- images
           (
             SELECT json_agg(json_build_object('id', f.id, 'relpath', f.relpath) ORDER BY pi.id)
             FROM post_images pi
@@ -181,29 +199,29 @@ export const resolvers = {
             WHERE pi.post_id = p.id
           ) AS images_json,
 
-          -- เบอร์โทรทั้งหมด
+          -- tel numbers
           (
             SELECT json_agg(json_build_object('id', t.id, 'tel', t.tel) ORDER BY t.created_at)
             FROM post_tel_numbers t
             WHERE t.post_id = p.id
           ) AS tel_numbers_json,
 
-          -- บัญชีคนขายทั้งหมด
+          -- seller accounts
           (
             SELECT json_agg(
-                    json_build_object(
-                      'id', s.id,
-                      'bank_id', s.bank_id,
-                      'bank_name', s.bank_name,
-                      'seller_account', s.seller_account
-                    )
-                    ORDER BY s.created_at
-                  )
+              json_build_object(
+                'id', s.id,
+                'bank_id', s.bank_id,
+                'bank_name', s.bank_name,
+                'seller_account', s.seller_account
+              )
+              ORDER BY s.created_at
+            )
             FROM post_seller_accounts s
             WHERE s.post_id = p.id
           ) AS seller_accounts_json,
 
-          -- ✅ สถานะ bookmark ของผู้ใช้ปัจจุบัน
+          -- is_bookmarked
           ${isBookmarkedSelect}
 
         FROM posts p
@@ -233,7 +251,6 @@ export const resolvers = {
           bank_name: s.bank_name,
           seller_account: s.seller_account,
         })),
-        // ✅ boolean พร้อมใช้ในหน้า list
         is_bookmarked: !!r.is_bookmarked,
       }));
 
@@ -261,7 +278,7 @@ export const resolvers = {
         FROM posts p
         LEFT JOIN users u ON p.author_id = u.id
         LEFT JOIN provinces pr ON pr.id = p.province_id
-        WHERE p.id = $1
+        WHERE p.id = $1 
         `,
         [id, author_id ?? null]
       );
@@ -508,7 +525,7 @@ export const resolvers = {
       return rows;
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const author_id = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] user", id, author_id);
       const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
       return rows[0] || null;
