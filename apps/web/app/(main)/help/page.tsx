@@ -8,7 +8,7 @@ const { Panel } = Collapse;
 
 export default function HelpPage(){
   return (
-    <div style={{ display:'grid', gridTemplateColumns:'1fr 280px', gap:24, padding:'24px 16px', maxWidth:1200, margin:'0 auto' }}>
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 280px', gap:24, padding:'24px 16px',  margin:'0 auto' }}>
       <main>
         <Card>
           <Title level={2}><BookOutlined /> Help & Guide</Title>

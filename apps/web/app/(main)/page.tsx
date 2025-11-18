@@ -1,11 +1,11 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Table, Input, Space, Button, Tag, Popconfirm, message, Tooltip, Typography } from "antd";
+import { Table, Input, Space, Button, Tag, Popconfirm, message, Tooltip, Typography, Badge } from "antd";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  EyeOutlined,
+  CommentOutlined,
   EditOutlined,
   DeleteOutlined,
   MessageOutlined
@@ -31,6 +31,8 @@ const Q_POSTS_PAGED = gql`
         author { id name avatar }
         tel_numbers { id tel }
         seller_accounts { id bank_name seller_account }
+
+        comments_count
       }
     }
   }
@@ -111,13 +113,19 @@ function PostsList() {
 
   const cols = [
     { title: 'Images', dataIndex: 'images', render: (imgs: any) => <ThumbGrid images={imgs} width={160} height={110} /> },
-    // { title: 'Title', dataIndex: 'title' },
-      { title:'Title',  render: (_:any, r:any)=>{
-      return <Link href={`/post/${r.id}`}>{r.title}</Link>
-    } },
-    { title: 'Detail', dataIndex: 'detail' },
-    { title: 'Tel', dataIndex: 'tel_numbers', render: (tels: any) => <TelList items={tels} /> }, 
+    { title:'Title',  
+      onCell: () => ({ style: { verticalAlign: 'top' } }), 
+      render: (_:any, r:any)=>{return <Link href={`/post/${r.id}`}>{r.title}</Link> }},
+    { title: 'Detail', 
+      onCell: () => ({ style: { verticalAlign: 'top' } }), 
+      dataIndex: 'detail' },
+    { title: 'Tel', 
+      width: 200,  
+      onCell: () => ({ style: { verticalAlign: 'top' } }), 
+      dataIndex: 'tel_numbers', 
+      render: (tels: any) => <TelList items={tels} /> }, 
     { title: 'Seller Accounts',
+      onCell: () => ({ style: { verticalAlign: 'top' } }), 
       dataIndex: 'seller_accounts',
       render: (list: Array<{ id: string; bank_name?: string; seller_account?: string }> = []) => {
         if (!Array.isArray(list) || list.length === 0) return '-';
@@ -132,19 +140,13 @@ function PostsList() {
         );
       },
     },
-    // { title: 'Status', dataIndex: 'status', render: (s: string) => <Tag color={s === 'public' ? 'green' : 'red'}>{s}</Tag> },
-    { title: 'Author', render: (_: any, r: any) => <Link href={`/profile/${r.author.id}`} prefetch={false}>{r.author?.name}</Link> },
+    { title: 'Author', 
+      onCell: () => ({ style: { verticalAlign: 'top' } }), 
+      render: (_: any, r: any) => <Link href={`/profile/${r.author.id}`} prefetch={false}>{r.author?.name}</Link> },
     {
       title: 'Action', render: (_: any, r: any) =>
         <Space>
           { user?.id !== r.author?.id && <BookmarkButton postId={r.id} defaultBookmarked={r?.is_bookmarked ?? false} /> }
-
-          {/* <Tooltip title="View">
-            <Link href={`/post/${r.id}`} prefetch={false}>
-              <Button type="text" size="small" icon={<EyeOutlined />} />
-            </Link>
-          </Tooltip> */}
-
           {user?.id === r.author.id && (
             <>
               <Tooltip title="Edit">
@@ -179,6 +181,26 @@ function PostsList() {
               </Link>
             </Tooltip>
           )}
+
+         <Tooltip title={`Comments (${r.comments_count || 0})`}>
+          <Link href={`/post/${r.id}`} prefetch={false}>
+            <Badge
+              count={r.comments_count || 0}
+              size="small"
+              // ไม่อยากโชว์ถ้าเป็น 0 ก็ลบ showZero ทิ้ง
+              showZero={false}
+              offset={[0, 4]} // ขยับตำแหน่ง badge นิดหน่อย
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<CommentOutlined />}
+              />
+            </Badge>
+          </Link>
+        </Tooltip>
+
+          {/* < /> */}
         </Space>
     }
   ];

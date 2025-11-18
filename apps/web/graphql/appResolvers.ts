@@ -12,11 +12,19 @@ import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex } from "@/lib/auth"
 import { addLog } from '@/lib/log/log';
+import { v4 as uuidv4 } from 'uuid';
 
 import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 // import { signUserToken } from "@/lib/auth/jwt";
 
 import { GraphQLUpload } from "graphql-upload-nextjs";
+
+import { createNotification } from '@/lib/notifications/service'; 
+
+export const COMMENT_ADDED = 'COMMENT_ADDED';
+export const COMMENT_UPDATED = 'COMMENT_UPDATED';
+export const COMMENT_DELETED = 'COMMENT_DELETED';
+export const NOTI_CREATED   = 'NOTI_CREATED';
 
 type GraphQLUploadFile = {
   filename: string;
@@ -46,6 +54,14 @@ function normalizeStr(input: string): string {
     .replace(/[^a-z0-9]+/g, "_") // อะไรที่ไม่ใช่ a-z 0-9 → _
     .replace(/_+/g, "_")         // แทน _ ซ้อนหลายตัวด้วย _
     .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
+}
+
+async function getUserById(id: string) {
+  const { rows } = await query(
+    `SELECT * FROM users WHERE id = $1 LIMIT 1`,
+    [id]
+  );
+  return rows[0] || null;
 }
 
 export const resolvers = {
@@ -121,12 +137,15 @@ export const resolvers = {
       const params: any[] = [];
       let whereSql = '';
 
-      // 🔎 SEARCH: title, เบอร์โทร, บัญชีคนขาย/ธนาคาร
+      /* --------------------------------------
+      * 🔎 SEARCH: title, phone, bank account
+      * -------------------------------------- */
       if (search) {
         params.push(`%${search}%`); // $1
         const idx = params.length;
+
         whereSql = `
-          WHERE
+          WHERE (
             p.title ILIKE $${idx}
             OR EXISTS (
               SELECT 1 FROM post_tel_numbers t
@@ -142,14 +161,27 @@ export const resolvers = {
                 OR s.bank_id ILIKE $${idx}
               )
             )
+          )
         `;
       }
 
-      // ✅ is_bookmarked (ต่อผู้ใช้ปัจจุบัน)
+      /* --------------------------------------
+      * 💡 ALWAYS enforce public status
+      * -------------------------------------- */
+      if (whereSql.trim() === '') {
+        whereSql = `WHERE p.status = 'public'`;
+      } else {
+        whereSql += ` AND p.status = 'public'`;
+      }
+
+      /* --------------------------------------
+      * ⭐ is_bookmarked (current user)
+      * -------------------------------------- */
       let isBookmarkedSelect = `false AS is_bookmarked`;
       if (author_id) {
-        params.push(author_id); // $N (ก่อน limit/offset)
+        params.push(author_id);
         const meIdx = params.length;
+
         isBookmarkedSelect = `
           EXISTS (
             SELECT 1 FROM bookmarks bm
@@ -159,7 +191,9 @@ export const resolvers = {
         `;
       }
 
-      // ✅ limit / offset
+      /* --------------------------------------
+      * LIMIT / OFFSET
+      * -------------------------------------- */
       params.push(limit, offset);
       const limitIdx = params.length - 1;
       const offsetIdx = params.length;
@@ -170,7 +204,7 @@ export const resolvers = {
           p.*,
           row_to_json(u) AS author_json,
 
-          -- รูปภาพทั้งหมด
+          -- images
           (
             SELECT json_agg(json_build_object('id', f.id, 'relpath', f.relpath) ORDER BY pi.id)
             FROM post_images pi
@@ -178,29 +212,36 @@ export const resolvers = {
             WHERE pi.post_id = p.id
           ) AS images_json,
 
-          -- เบอร์โทรทั้งหมด
+          -- tel numbers
           (
             SELECT json_agg(json_build_object('id', t.id, 'tel', t.tel) ORDER BY t.created_at)
             FROM post_tel_numbers t
             WHERE t.post_id = p.id
           ) AS tel_numbers_json,
 
-          -- บัญชีคนขายทั้งหมด
+          -- seller accounts
           (
             SELECT json_agg(
-                    json_build_object(
-                      'id', s.id,
-                      'bank_id', s.bank_id,
-                      'bank_name', s.bank_name,
-                      'seller_account', s.seller_account
-                    )
-                    ORDER BY s.created_at
-                  )
+              json_build_object(
+                'id', s.id,
+                'bank_id', s.bank_id,
+                'bank_name', s.bank_name,
+                'seller_account', s.seller_account
+              )
+              ORDER BY s.created_at
+            )
             FROM post_seller_accounts s
             WHERE s.post_id = p.id
           ) AS seller_accounts_json,
 
-          -- ✅ สถานะ bookmark ของผู้ใช้ปัจจุบัน
+          -- 🔢 comments count
+          (
+            SELECT COUNT(*)
+            FROM comments c
+            WHERE c.post_id = p.id
+          ) AS comments_count,
+
+          -- is_bookmarked
           ${isBookmarkedSelect}
 
         FROM posts p
@@ -230,7 +271,7 @@ export const resolvers = {
           bank_name: s.bank_name,
           seller_account: s.seller_account,
         })),
-        // ✅ boolean พร้อมใช้ในหน้า list
+        comments_count: Number(r.comments_count || 0),
         is_bookmarked: !!r.is_bookmarked,
       }));
 
@@ -258,7 +299,7 @@ export const resolvers = {
         FROM posts p
         LEFT JOIN users u ON p.author_id = u.id
         LEFT JOIN provinces pr ON pr.id = p.province_id
-        WHERE p.id = $1
+        WHERE p.id = $1 
         `,
         [id, author_id ?? null]
       );
@@ -505,10 +546,10 @@ export const resolvers = {
       return rows;
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const author_id = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] user", id, author_id);
-      const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
-      return rows[0] || null;
+
+      return await getUserById(id);
     },
     postsByUserId: async (_: any, { user_id }: { user_id: string }, ctx: any) => {
       const author_id = requireAuth(ctx, { optionalWeb: true });
@@ -760,6 +801,118 @@ export const resolvers = {
       }));
 
       return { items, total };
+    },
+
+    // 
+    myNotifications: async (
+      _: any,
+      args: { limit?: number; offset?: number },
+      ctx: any
+    ) => {
+      const user = ctx.user; // สมมติ auth middleware ใส่มาแล้ว
+      if (!user) throw new Error('Unauthorized');
+
+      const limit = args.limit ?? 20;
+      const offset = args.offset ?? 0;
+
+      const { rows } = await query(
+        `
+        SELECT
+          id,
+          user_id,
+          type,
+          title,
+          message,
+          entity_type,
+          entity_id,
+          data,
+          is_read,
+          created_at
+        FROM notifications
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        OFFSET $3
+        `,
+        [user.id, limit, offset]
+      );
+
+      return rows;
+    },
+    myUnreadNotificationCount: async (_: any, __: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      const { rows } = await query(
+        `
+        SELECT COUNT(*)::int AS count
+        FROM notifications
+        WHERE user_id = $1
+          AND is_read = FALSE
+        `,
+        [user.id]
+      );
+
+      return rows[0]?.count ?? 0;
+    },
+    comments: async (_: any, { post_id }: { post_id: string }) => {
+      const { rows } = await query(
+        `
+        SELECT
+          c.id,
+          c.post_id,
+          c.user_id,
+          c.parent_id,
+          c.content,
+          c.created_at,
+          c.updated_at,
+          u.id   AS u_id,
+          u.name AS u_name,
+          u.avatar AS u_avatar
+        FROM comments c
+        JOIN users u ON c.user_id = u.id
+        WHERE c.post_id = $1
+        ORDER BY c.created_at ASC
+        `,
+        [post_id]
+      );
+
+      // สร้าง comment object พร้อม user + replies array
+      const byId = new Map<string, any>();
+
+      for (const r of rows) {
+        const comment = {
+          id: r.id,
+          post_id: r.post_id,
+          user_id: r.user_id,
+          parent_id: r.parent_id,
+          content: r.content,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          user: {
+            id: r.u_id,
+            name: r.u_name,
+            avatar: r.u_avatar,
+          },
+          replies: [] as any[],
+        };
+
+        byId.set(comment.id, comment);
+      }
+
+      // ประกอบ tree: ใครมี parent_id ก็ใส่เข้า replies ของ parent
+      const roots: any[] = [];
+
+      for (const comment of byId.values()) {
+        if (comment.parent_id && byId.has(comment.parent_id)) {
+          const parent = byId.get(comment.parent_id);
+          parent.replies.push(comment);
+        } else {
+          roots.push(comment);
+        }
+      }
+
+      return roots;
     },
   },
   Mutation: {
@@ -1409,11 +1562,11 @@ export const resolvers = {
           [id]
         );
         if (srcTels.length) {
-          const values = srcTels.map((_, i) => `($1, $${i + 2})`).join(", ");
+          const values = srcTels.map((_:any, i:any) => `($1, $${i + 2})`).join(", ");
           await client.query(
             `INSERT INTO post_tel_numbers (post_id, tel)
             VALUES ${values}`,
-            [newPostId, ...srcTels.map((r) => r.tel)]
+            [newPostId, ...srcTels.map((r:any) => r.tel)]
           );
         }
 
@@ -1428,14 +1581,14 @@ export const resolvers = {
         );
         if (srcAccs.length) {
           const values = srcAccs
-            .map((_, i) => {
+            .map((_:any, i:any) => {
               const base = 1 + i * 3;
               return `($1, $${base + 1}, $${base + 2}, $${base + 3})`;
             })
             .join(", ");
 
           const params: any[] = [newPostId];
-          srcAccs.forEach((r) => {
+          srcAccs.forEach((r:any) => {
             params.push(r.bank_id, r.bank_name, r.seller_account || "");
           });
 
@@ -1458,11 +1611,11 @@ export const resolvers = {
           [id]
         );
         if (srcImgs.length) {
-          const values = srcImgs.map((_, i) => `($1, $${i + 2})`).join(", ");
+          const values = srcImgs.map((_:any, i:any) => `($1, $${i + 2})`).join(", ");
           await client.query(
             `INSERT INTO post_images (post_id, file_id)
             VALUES ${values}`,
-            [newPostId, ...srcImgs.map((r) => r.file_id)]
+            [newPostId, ...srcImgs.map((r:any) => r.file_id)]
           );
         }
 
@@ -1480,12 +1633,68 @@ export const resolvers = {
         return newPostId;
       });
     },
-    createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
-      const author_id = requireAuth(ctx);
-      console.log("[Mutation] createChat :", ctx, author_id);
+    // createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
+    //   const author_id = requireAuth(ctx);
+    //   console.log("[Mutation] createChat :", ctx, author_id);
 
-      // ✅ ใช้ transaction ครอบทุกขั้นตอน
-      return await runInTransaction(author_id, async (client) => {
+    //   // ✅ ใช้ transaction ครอบทุกขั้นตอน
+    //   return await runInTransaction(author_id, async (client) => {
+    //     // 1) สร้าง chat ใหม่
+    //     const { rows } = await client.query(
+    //       `INSERT INTO chats (name, is_group, created_by)
+    //       VALUES ($1,$2,$3)
+    //       RETURNING *`,
+    //       [name || null, isGroup, author_id]
+    //     );
+    //     const chat = rows[0];
+
+    //     // 2) เพิ่มสมาชิกทั้งหมด (รวม creator)
+    //     const allMembers = Array.from(new Set([author_id, ...memberIds]));
+    //     for (const uid of allMembers) {
+    //       await client.query(
+    //         `INSERT INTO chat_members (chat_id, user_id)
+    //         VALUES ($1,$2)
+    //         ON CONFLICT DO NOTHING`,
+    //         [chat.id, uid]
+    //       );
+    //     }
+
+    //     // 3) ดึงข้อมูลสมาชิกและผู้สร้าง
+    //     const mem = await client.query(
+    //       `SELECT u.* 
+    //         FROM chat_members m
+    //         JOIN users u ON m.user_id = u.id
+    //         WHERE m.chat_id = $1`,
+    //       [chat.id]
+    //     );
+    //     const creator = await client.query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
+
+    //     // ✅ 4) บันทึก log (อยู่นอก query หลักแต่ยังใน transaction)
+    //     await addLog('info', 'chat-create', 'Chat created', {
+    //       chatId: chat.id,
+    //       userId: author_id,
+    //       members: allMembers.length,
+    //     });
+
+    //     // ✅ 5) คืนค่าผลลัพธ์
+    //     return {
+    //       ...chat,
+    //       created_by: creator.rows[0],
+    //       members: mem.rows,
+    //     };
+    //   });
+    // },
+
+    createChat: async (
+      _: any,
+      { name, isGroup, memberIds }: { name?: string; isGroup: boolean; memberIds: string[] },
+      ctx: any
+    ) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Mutation] createChat :", author_id);
+
+      // ✅ 1) รันทุกอย่างใน transaction (สร้าง chat + members + log)
+      const result = await runInTransaction(author_id, async (client) => {
         // 1) สร้าง chat ใหม่
         const { rows } = await client.query(
           `INSERT INTO chats (name, is_group, created_by)
@@ -1514,22 +1723,60 @@ export const resolvers = {
             WHERE m.chat_id = $1`,
           [chat.id]
         );
-        const creator = await client.query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
+        const creator = await client.query(
+          `SELECT * FROM users WHERE id = $1`,
+          [chat.created_by]
+        );
 
-        // ✅ 4) บันทึก log (อยู่นอก query หลักแต่ยังใน transaction)
+        // 4) บันทึก log
         await addLog('info', 'chat-create', 'Chat created', {
           chatId: chat.id,
           userId: author_id,
           members: allMembers.length,
         });
 
-        // ✅ 5) คืนค่าผลลัพธ์
+        // 5) คืนค่าผลลัพธ์ (ใช้เป็น response และใช้สร้าง noti ต่อ)
         return {
-          ...chat,
-          created_by: creator.rows[0],
-          members: mem.rows,
+          ...chat,                 // id, name, is_group, created_by (เป็น uuid จาก table)
+          created_by: creator.rows[0], // override ให้ field created_by เป็น object user (ตามที่คุณใช้ใน GraphQL)
+          members: mem.rows,       // [{ id, name, ... }]
         };
       });
+
+      // ✅ 2) สร้าง Notification ให้สมาชิกคนอื่น (อยู่นอก transaction → ไม่โดน rollback ถ้า noti พลาด)
+      const chat = result; // แค่ rename ให้สั้น
+      const creatorUser = chat.created_by; // user object
+      const members = chat.members as any[];
+
+      // member คนอื่นที่ไม่ใช่คนสร้าง
+      const recipients = members.filter((m: any) => m.id !== author_id);
+
+      await Promise.all(
+        recipients.map((m: any) =>
+          createNotification({
+            user_id: m.id,
+            type: 'CHAT_CREATED',
+            title: chat.is_group
+              ? `คุณถูกเพิ่มในกลุ่ม "${chat.name || ''}"`
+              : `เริ่มแชทใหม่กับ ${creatorUser.name}`,
+            message: chat.is_group
+              ? `${creatorUser.name} สร้างห้องและเพิ่มคุณเข้ากลุ่ม`
+              : `${creatorUser.name} เริ่มคุยกับคุณ`,
+            entity_type: 'chat',
+            entity_id: chat.id,
+            data: {
+              chat_id: chat.id,
+              chat_name: chat.name,
+              is_group: chat.is_group,
+              actor_id: creatorUser.id,
+              actor_name: creatorUser.name,
+            },
+          })
+        )
+      );
+
+      // ✅ 3) คืนค่า chat ตามเดิม (เดิมคุณ return object นี้อยู่แล้ว)
+      return chat;
     },
     addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}, ctx:any) => {
       const author_id = requireAuth(ctx);
@@ -2139,6 +2386,217 @@ export const resolvers = {
         isBookmarked: result.isBookmarked,
         executionTime: `${((Date.now() - start) / 1000).toFixed(3)}s`,
       };
+    },
+    markNotificationRead: async ( _: any, args: { id: string }, ctx: any ) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+      const { rows } = await query(
+        `
+        UPDATE notifications
+        SET is_read = TRUE
+        WHERE id = $1
+          AND user_id = $2
+        RETURNING id
+        `,
+        [args.id, user.id]
+      );
+
+      return rows.length > 0;
+    },
+    markAllNotificationsRead: async (_: any, __: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      await query(
+        `
+        UPDATE notifications
+        SET is_read = TRUE
+        WHERE user_id = $1
+          AND is_read = FALSE
+        `,
+        [user.id]
+      );
+
+      return true;
+    },
+    addComment: async (_: any, { post_id, content }: any, ctx: any) => {
+      const author_id = requireAuth(ctx); 
+      
+      const user = await getUserById(author_id); // { id, name, avatar, ... }
+
+      console.log("[Mutation] addComment:", author_id, user);
+
+      const id = uuidv4();
+
+      // insert comment
+      const { rows } = await query(
+        `
+        INSERT INTO comments (id, post_id, user_id, content)
+        VALUES ($1,$2,$3,$4)
+        RETURNING *
+        `,
+        [id, post_id, user.id, content]
+      );
+      const comment = rows[0];
+
+      console.log("[Mutation] addComment-comment", comment);
+
+      // หาเจ้าของโพสต์เพื่อแจ้งเตือน
+      const postRes = await query(
+        `SELECT id, author_id FROM posts WHERE id = $1`,
+        [post_id]
+      );
+      const post = postRes.rows[0];
+
+      if (post && post.author_id !== user.id) {
+        await createNotification({
+          user_id: post.author_id,
+          type: 'POST_COMMENT',
+          title: 'มีคอมเมนต์ใหม่ในโพสต์ของคุณ',
+          message: `${user.name}: ${content.substring(0, 80)}`,
+          entity_type: 'post',
+          entity_id: post_id,
+          data: {
+            post_id,
+            comment_id: comment.id,
+            actor_id: user.id,
+            actor_name: user.name,
+          },
+        });
+      }
+
+      // 👇 สร้าง object เวอร์ชัน GraphQL ที่มี user + replies
+      const gqlComment = {
+        ...comment,        // id, post_id, user_id, parent_id, content, created_at, updated_at
+        user: {
+          id: user.id,
+          name: user.name,
+          avatar: user.avatar ?? null,
+          // ถ้ามี field อื่นใน type User ก็เติมได้
+        },
+        replies: [] as any[],
+      };
+
+      // broadcast subscription → ส่ง object แบบเดียวกับที่ mutation คืน
+      await pubsub.publish(COMMENT_ADDED, {
+        commentAdded: gqlComment,
+      });
+
+      // คืนค่า object ที่พร้อม field user + replies
+      return gqlComment;
+    },
+    replyComment: async (_: any, { comment_id, content }: any, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      const user = await getUserById(author_id);
+
+      console.log("[replyComment]", author_id, user);
+
+      const id = uuidv4();
+
+      const { rows: baseRows } = await query(
+        `SELECT * FROM comments WHERE id = $1`,
+        [comment_id]
+      );
+      const parent = baseRows[0];
+      if (!parent) throw new Error('Comment not found');
+
+      const { rows } = await query(
+        `
+        INSERT INTO comments (id, post_id, user_id, parent_id, content)
+        VALUES ($1,$2,$3,$4,$5)
+        RETURNING *
+        `,
+        [id, parent.post_id, user.id, comment_id, content]
+      );
+      const reply = rows[0];
+
+      // noti เหมือนเดิม
+      if (parent.user_id !== user.id) {
+        await createNotification({
+          user_id: parent.user_id,
+          type: 'POST_COMMENT_REPLY',
+          title: 'มีคนตอบคอมเมนต์ของคุณ',
+          message: `${user.name}: ${content.substring(0, 80)}`,
+          entity_type: 'comment',
+          entity_id: comment_id,
+          data: {
+            post_id: parent.post_id,
+            comment_id,
+            reply_id: reply.id,
+            actor_id: user.id,
+            actor_name: user.name,
+          },
+        });
+      }
+
+      const gqlReply = {
+        ...reply,
+        user: {
+          id: user.id,
+          name: user.name,
+          avatar: user.avatar ?? null,
+        },
+        replies: [] as any[], // reply ใหม่ยังไม่มีลูกตัวเอง
+      };
+
+      await pubsub.publish(COMMENT_ADDED, {
+        commentAdded: gqlReply,
+      });
+
+      return gqlReply;
+    },
+
+    updateComment: async (_: any, { id, content }: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      // ตรวจว่าเป็นเจ้าของคอมเมนต์
+      const { rows: ownRows } = await query(
+        `SELECT * FROM comments WHERE id = $1`,
+        [id]
+      );
+      const c = ownRows[0];
+      if (!c) throw new Error('Comment not found');
+      if (c.user_id !== user.id) throw new Error('Forbidden');
+
+      const { rows } = await query(
+        `
+        UPDATE comments
+        SET content = $2, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [id, content]
+      );
+
+      const updated = rows[0];
+
+      await pubsub.publish(COMMENT_UPDATED, {
+        commentUpdated: updated,
+      });
+
+      return updated;
+    },
+
+    deleteComment: async (_: any, { id }: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      const { rows: ownRows } = await query(
+        `SELECT * FROM comments WHERE id = $1`,
+        [id]
+      );
+      const c = ownRows[0];
+      if (!c) return false;
+      if (c.user_id !== user.id) throw new Error('Forbidden');
+
+      await query(`DELETE FROM comments WHERE id = $1`, [id]);
+
+      await pubsub.publish(COMMENT_DELETED, {
+        commentDeleted: id,
+      });
+
+      return true;
     },
   },
 };

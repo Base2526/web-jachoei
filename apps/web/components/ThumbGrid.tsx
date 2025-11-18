@@ -8,7 +8,7 @@ export default function ThumbGrid({
   images,
   width = 160,
   height = 110,
-  radius = 8,
+  radius = 5,
   gap = 4,
 }: {
   images: Img[];
@@ -181,33 +181,98 @@ export default function ThumbGrid({
   );
 
   // 5 รูป: (คล้าย 1+4) ซ้ายใหญ่ span 2 แถว, ขวาเป็นกริด 2x2 สี่รูป
-  const render5 = () => (
-    <div
-      style={{
-        ...box,
-        display: 'grid',
-        gridTemplateColumns: '1.2fr 1fr',
-        gridTemplateRows: `1fr 1fr`,
-        gap,
-      }}
-    >
-      {/* ซ้ายใหญ่ (รูปที่ 0) */}
-      <div style={{ ...cellStyle({ gridRow: '1 / span 2' }) }}>
-        <img
-          src={images[0].url}
-          alt=""
-          style={{ ...imgBase, height: '100%' }}
-          onClick={() => openAt(0)}
-        />
-      </div>
+  // const render5 = () => (
+  //   <div
+  //     style={{
+  //       ...box,
+  //       display: 'grid',
+  //       gridTemplateColumns: '1.2fr 1fr',
+  //       gridTemplateRows: `1fr 1fr`,
+  //       gap,
+  //     }}
+  //   >
+  //     {/* ซ้ายใหญ่ (รูปที่ 0) */}
+  //     <div style={{ ...cellStyle({ gridRow: '1 / span 2' }) }}>
+  //       <img
+  //         src={images[0].url}
+  //         alt=""
+  //         style={{ ...imgBase, height: '100%' }}
+  //         onClick={() => openAt(0)}
+  //       />
+  //     </div>
 
-      {/* ขวา: 2x2 (รูปที่ 1..4) */}
+  //     {/* ขวา: 2x2 (รูปที่ 1..4) */}
+  //     <div
+  //       style={{
+  //         display: 'grid',
+  //         gridTemplateColumns: '1fr 1fr',
+  //         gridTemplateRows: '1fr 1fr',
+  //         gap,
+  //       }}
+  //     >
+  //       {images.slice(1, 5).map((it, i) => (
+  //         <div key={it.id} style={cellStyle()}>
+  //           <img
+  //             src={it.url}
+  //             alt=""
+  //             style={{ ...imgBase }}
+  //             onClick={() => openAt(i + 1)}
+  //           />
+  //         </div>
+  //       ))}
+  //     </div>
+
+  //     {/* ถ้ามีมากกว่า 5 แสดง +N มุมขวาบนของรูปสุดท้าย */}
+  //     {count > 5 && (
+  //       <div
+  //         style={{
+  //           position: 'absolute',
+  //           right: 8,
+  //           bottom: 8,
+  //           background: 'rgba(0,0,0,0.55)',
+  //           color: '#fff',
+  //           fontSize: 12,
+  //           padding: '2px 6px',
+  //           borderRadius: 999,
+  //         }}
+  //       >
+  //         +{count - 5}
+  //       </div>
+  //     )}
+  //   </div>
+  // );
+
+  // 5 รูปขึ้นไป: ซ้ายใหญ่ 1 รูป + ขวา 4 รูปเต็มพื้นที่
+const render5 = () => (
+  <div
+    style={{
+      ...box,
+      display: 'grid',
+      gridTemplateColumns: '1.2fr 1fr', // ✅ ใช้แค่ column
+      // ไม่ต้องมี gridTemplateRows แล้ว
+      gap,
+    }}
+  >
+    {/* ซ้ายใหญ่ (รูปที่ 0) */}
+    <div style={cellStyle()}>
+      <img
+        src={images[0].url}
+        alt=""
+        style={{ ...imgBase, height: '100%' }} // เต็มกล่องซ้าย
+        onClick={() => openAt(0)}
+      />
+    </div>
+
+    {/* ขวา: 2x2 (รูปที่ 1..4) เต็มความสูงกล่อง */}
+    <div style={cellStyle()}>
       <div
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
           gridTemplateRows: '1fr 1fr',
           gap,
+          width: '100%',
+          height: '100%',       // ✅ ให้กริดขวาเต็มความสูง cell
         }}
       >
         {images.slice(1, 5).map((it, i) => (
@@ -215,32 +280,34 @@ export default function ThumbGrid({
             <img
               src={it.url}
               alt=""
-              style={{ ...imgBase }}
+              style={imgBase}     // มี width/height 100% + objectFit: 'cover'
               onClick={() => openAt(i + 1)}
             />
           </div>
         ))}
       </div>
-
-      {/* ถ้ามีมากกว่า 5 แสดง +N มุมขวาบนของรูปสุดท้าย */}
-      {count > 5 && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 8,
-            bottom: 8,
-            background: 'rgba(0,0,0,0.55)',
-            color: '#fff',
-            fontSize: 12,
-            padding: '2px 6px',
-            borderRadius: 999,
-          }}
-        >
-          +{count - 5}
-        </div>
-      )}
     </div>
-  );
+
+    {/* +N overlay มุมขวาล่างของกล่องใหญ่ */}
+    {count > 5 && (
+      <div
+        style={{
+          position: 'absolute',
+          right: 5,
+          bottom: 5,
+          background: 'rgba(0,0,0,0.55)',
+          color: '#fff',
+          fontSize: 12,
+          padding: '2px 6px',
+          borderRadius: 5,
+        }}
+      >
+        +{count - 5}
+      </div>
+    )}
+  </div>
+);
+
 
   const thumb = useMemo(() => {
     switch (thumbCount) {
