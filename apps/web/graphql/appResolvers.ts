@@ -12,6 +12,7 @@ import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex } from "@/lib/auth"
 import { addLog } from '@/lib/log/log';
+import { v4 as uuidv4 } from 'uuid';
 
 import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 // import { signUserToken } from "@/lib/auth/jwt";
@@ -19,6 +20,11 @@ import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 import { GraphQLUpload } from "graphql-upload-nextjs";
 
 import { createNotification } from '@/lib/notifications/service'; 
+
+export const COMMENT_ADDED = 'COMMENT_ADDED';
+export const COMMENT_UPDATED = 'COMMENT_UPDATED';
+export const COMMENT_DELETED = 'COMMENT_DELETED';
+export const NOTI_CREATED   = 'NOTI_CREATED';
 
 type GraphQLUploadFile = {
   filename: string;
@@ -50,6 +56,13 @@ function normalizeStr(input: string): string {
     .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
 }
 
+async function getUserById(id: string) {
+  const { rows } = await query(
+    `SELECT * FROM users WHERE id = $1 LIMIT 1`,
+    [id]
+  );
+  return rows[0] || null;
+}
 
 export const resolvers = {
   Upload: GraphQLUpload,
@@ -221,6 +234,13 @@ export const resolvers = {
             WHERE s.post_id = p.id
           ) AS seller_accounts_json,
 
+          -- 🔢 comments count
+          (
+            SELECT COUNT(*)
+            FROM comments c
+            WHERE c.post_id = p.id
+          ) AS comments_count,
+
           -- is_bookmarked
           ${isBookmarkedSelect}
 
@@ -251,6 +271,7 @@ export const resolvers = {
           bank_name: s.bank_name,
           seller_account: s.seller_account,
         })),
+        comments_count: Number(r.comments_count || 0),
         is_bookmarked: !!r.is_bookmarked,
       }));
 
@@ -527,8 +548,8 @@ export const resolvers = {
     user: async (_: any, { id }: { id: string }, ctx: any) => {
       const author_id = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] user", id, author_id);
-      const { rows } = await query(`SELECT * FROM users WHERE id=$1`, [id]);
-      return rows[0] || null;
+
+      return await getUserById(id);
     },
     postsByUserId: async (_: any, { user_id }: { user_id: string }, ctx: any) => {
       const author_id = requireAuth(ctx, { optionalWeb: true });
@@ -818,7 +839,6 @@ export const resolvers = {
 
       return rows;
     },
-
     myUnreadNotificationCount: async (_: any, __: any, ctx: any) => {
       const user = ctx.user;
       if (!user) throw new Error('Unauthorized');
@@ -834,6 +854,65 @@ export const resolvers = {
       );
 
       return rows[0]?.count ?? 0;
+    },
+    comments: async (_: any, { post_id }: { post_id: string }) => {
+      const { rows } = await query(
+        `
+        SELECT
+          c.id,
+          c.post_id,
+          c.user_id,
+          c.parent_id,
+          c.content,
+          c.created_at,
+          c.updated_at,
+          u.id   AS u_id,
+          u.name AS u_name,
+          u.avatar AS u_avatar
+        FROM comments c
+        JOIN users u ON c.user_id = u.id
+        WHERE c.post_id = $1
+        ORDER BY c.created_at ASC
+        `,
+        [post_id]
+      );
+
+      // สร้าง comment object พร้อม user + replies array
+      const byId = new Map<string, any>();
+
+      for (const r of rows) {
+        const comment = {
+          id: r.id,
+          post_id: r.post_id,
+          user_id: r.user_id,
+          parent_id: r.parent_id,
+          content: r.content,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          user: {
+            id: r.u_id,
+            name: r.u_name,
+            avatar: r.u_avatar,
+          },
+          replies: [] as any[],
+        };
+
+        byId.set(comment.id, comment);
+      }
+
+      // ประกอบ tree: ใครมี parent_id ก็ใส่เข้า replies ของ parent
+      const roots: any[] = [];
+
+      for (const comment of byId.values()) {
+        if (comment.parent_id && byId.has(comment.parent_id)) {
+          const parent = byId.get(comment.parent_id);
+          parent.replies.push(comment);
+        } else {
+          roots.push(comment);
+        }
+      }
+
+      return roots;
     },
   },
   Mutation: {
@@ -2308,15 +2387,9 @@ export const resolvers = {
         executionTime: `${((Date.now() - start) / 1000).toFixed(3)}s`,
       };
     },
-
-    markNotificationRead: async (
-      _: any,
-      args: { id: string },
-      ctx: any
-    ) => {
+    markNotificationRead: async ( _: any, args: { id: string }, ctx: any ) => {
       const user = ctx.user;
       if (!user) throw new Error('Unauthorized');
-
       const { rows } = await query(
         `
         UPDATE notifications
@@ -2330,7 +2403,6 @@ export const resolvers = {
 
       return rows.length > 0;
     },
-
     markAllNotificationsRead: async (_: any, __: any, ctx: any) => {
       const user = ctx.user;
       if (!user) throw new Error('Unauthorized');
@@ -2344,6 +2416,185 @@ export const resolvers = {
         `,
         [user.id]
       );
+
+      return true;
+    },
+    addComment: async (_: any, { post_id, content }: any, ctx: any) => {
+      const author_id = requireAuth(ctx); 
+      
+      const user = await getUserById(author_id); // { id, name, avatar, ... }
+
+      console.log("[Mutation] addComment:", author_id, user);
+
+      const id = uuidv4();
+
+      // insert comment
+      const { rows } = await query(
+        `
+        INSERT INTO comments (id, post_id, user_id, content)
+        VALUES ($1,$2,$3,$4)
+        RETURNING *
+        `,
+        [id, post_id, user.id, content]
+      );
+      const comment = rows[0];
+
+      console.log("[Mutation] addComment-comment", comment);
+
+      // หาเจ้าของโพสต์เพื่อแจ้งเตือน
+      const postRes = await query(
+        `SELECT id, author_id FROM posts WHERE id = $1`,
+        [post_id]
+      );
+      const post = postRes.rows[0];
+
+      if (post && post.author_id !== user.id) {
+        await createNotification({
+          user_id: post.author_id,
+          type: 'POST_COMMENT',
+          title: 'มีคอมเมนต์ใหม่ในโพสต์ของคุณ',
+          message: `${user.name}: ${content.substring(0, 80)}`,
+          entity_type: 'post',
+          entity_id: post_id,
+          data: {
+            post_id,
+            comment_id: comment.id,
+            actor_id: user.id,
+            actor_name: user.name,
+          },
+        });
+      }
+
+      // 👇 สร้าง object เวอร์ชัน GraphQL ที่มี user + replies
+      const gqlComment = {
+        ...comment,        // id, post_id, user_id, parent_id, content, created_at, updated_at
+        user: {
+          id: user.id,
+          name: user.name,
+          avatar: user.avatar ?? null,
+          // ถ้ามี field อื่นใน type User ก็เติมได้
+        },
+        replies: [] as any[],
+      };
+
+      // broadcast subscription → ส่ง object แบบเดียวกับที่ mutation คืน
+      await pubsub.publish(COMMENT_ADDED, {
+        commentAdded: gqlComment,
+      });
+
+      // คืนค่า object ที่พร้อม field user + replies
+      return gqlComment;
+    },
+    replyComment: async (_: any, { comment_id, content }: any, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      const user = await getUserById(author_id);
+
+      console.log("[replyComment]", author_id, user);
+
+      const id = uuidv4();
+
+      const { rows: baseRows } = await query(
+        `SELECT * FROM comments WHERE id = $1`,
+        [comment_id]
+      );
+      const parent = baseRows[0];
+      if (!parent) throw new Error('Comment not found');
+
+      const { rows } = await query(
+        `
+        INSERT INTO comments (id, post_id, user_id, parent_id, content)
+        VALUES ($1,$2,$3,$4,$5)
+        RETURNING *
+        `,
+        [id, parent.post_id, user.id, comment_id, content]
+      );
+      const reply = rows[0];
+
+      // noti เหมือนเดิม
+      if (parent.user_id !== user.id) {
+        await createNotification({
+          user_id: parent.user_id,
+          type: 'POST_COMMENT_REPLY',
+          title: 'มีคนตอบคอมเมนต์ของคุณ',
+          message: `${user.name}: ${content.substring(0, 80)}`,
+          entity_type: 'comment',
+          entity_id: comment_id,
+          data: {
+            post_id: parent.post_id,
+            comment_id,
+            reply_id: reply.id,
+            actor_id: user.id,
+            actor_name: user.name,
+          },
+        });
+      }
+
+      const gqlReply = {
+        ...reply,
+        user: {
+          id: user.id,
+          name: user.name,
+          avatar: user.avatar ?? null,
+        },
+        replies: [] as any[], // reply ใหม่ยังไม่มีลูกตัวเอง
+      };
+
+      await pubsub.publish(COMMENT_ADDED, {
+        commentAdded: gqlReply,
+      });
+
+      return gqlReply;
+    },
+
+    updateComment: async (_: any, { id, content }: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      // ตรวจว่าเป็นเจ้าของคอมเมนต์
+      const { rows: ownRows } = await query(
+        `SELECT * FROM comments WHERE id = $1`,
+        [id]
+      );
+      const c = ownRows[0];
+      if (!c) throw new Error('Comment not found');
+      if (c.user_id !== user.id) throw new Error('Forbidden');
+
+      const { rows } = await query(
+        `
+        UPDATE comments
+        SET content = $2, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [id, content]
+      );
+
+      const updated = rows[0];
+
+      await pubsub.publish(COMMENT_UPDATED, {
+        commentUpdated: updated,
+      });
+
+      return updated;
+    },
+
+    deleteComment: async (_: any, { id }: any, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+
+      const { rows: ownRows } = await query(
+        `SELECT * FROM comments WHERE id = $1`,
+        [id]
+      );
+      const c = ownRows[0];
+      if (!c) return false;
+      if (c.user_id !== user.id) throw new Error('Forbidden');
+
+      await query(`DELETE FROM comments WHERE id = $1`, [id]);
+
+      await pubsub.publish(COMMENT_DELETED, {
+        commentDeleted: id,
+      });
 
       return true;
     },

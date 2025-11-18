@@ -45,6 +45,18 @@ export const coreTypeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  type Comment {
+    id: ID!
+    post_id: ID!
+    user_id: ID!
+    parent_id: ID
+    content: String!
+    created_at: String!
+    updated_at: String!
+    user: User!
+    replies: [Comment!]!
+  }
+
   type Query { _ok: String! }
   type Mutation { 
     send(text: String!): Boolean! 
@@ -58,5 +70,10 @@ export const coreTypeDefs = /* GraphQL */ `
 
 
     notificationCreated: Notification!  # push real-time
+
+
+    commentAdded(post_id: ID!): Comment!
+    commentUpdated(post_id: ID!): Comment!
+    commentDeleted(post_id: ID!): ID!          # ส่ง id ที่ลบ
   }
 `;

@@ -16,7 +16,7 @@ function GlobalWires() {
   const { user, admin } = useSessionCtx();
   const meId = user?.id?.toString() || admin?.id?.toString() || '';
 
-  console.log("[GOOGLE_CLIENT_ID]", GOOGLE_CLIENT_ID);
+  // console.log("[GOOGLE_CLIENT_ID]", GOOGLE_CLIENT_ID);
 
   useEffect(() => {
     const frontendLogout = () => {

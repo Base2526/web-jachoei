@@ -9,6 +9,11 @@ const topicTime = "TIME_TICK";
 
 const NOTI_TOPIC = 'NOTIFICATION_CREATED';
 
+export const COMMENT_ADDED = 'COMMENT_ADDED';
+export const COMMENT_UPDATED = 'COMMENT_UPDATED';
+export const COMMENT_DELETED = 'COMMENT_DELETED';
+export const NOTI_CREATED   = 'NOTI_CREATED';
+
 export const coreResolvers = {
   Query: { _ok: () => "ok" },
   Mutation: {
@@ -81,6 +86,33 @@ export const coreResolvers = {
           if (!user) return false;
           // รับเฉพาะ noti ที่ส่งให้ user นี้
           return payload.notificationCreated.user_id === user.id;
+        }
+      ),
+    },
+
+    commentAdded: {
+      subscribe: withFilter(
+        () => pubsub.asyncIterator(COMMENT_ADDED),
+        (payload, variables) => {
+          // filter ตาม post_id
+          return payload.commentAdded.post_id === variables.post_id;
+        }
+      ),
+    },
+    commentUpdated: {
+      subscribe: withFilter(
+        () => pubsub.asyncIterator(COMMENT_UPDATED),
+        (payload, variables) => {
+          return payload.commentUpdated.post_id === variables.post_id;
+        }
+      ),
+    },
+    commentDeleted: {
+      subscribe: withFilter(
+        () => pubsub.asyncIterator(COMMENT_DELETED),
+        (payload, variables) => {
+          // ตอนนี้ไม่มี post_id ใน payload ถ้าอยาก filter เพิ่ม
+          return true;
         }
       ),
     },

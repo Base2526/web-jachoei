@@ -109,6 +109,8 @@ export const typeDefs = /* GraphQL */ `
     detail: String
     tel_numbers: [TelNumber!]!
     seller_accounts: [SellerAccount!]!
+
+    comments_count: Int
   }
 
   type Chat { id: ID!, name: String, is_group: Boolean!, created_at: String! }
@@ -190,6 +192,18 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  type Comment {
+    id: ID!
+    post_id: ID!
+    user_id: ID!
+    parent_id: ID
+    content: String!
+    created_at: String!
+    updated_at: String!
+    user: User!
+    replies: [Comment!]!
+  }
+
   type Query {
     _health: String!
     meRole: String!
@@ -227,8 +241,9 @@ export const typeDefs = /* GraphQL */ `
 
     myNotifications(limit: Int, offset: Int): [Notification!]!
     myUnreadNotificationCount: Int!
-  }
 
+    comments(post_id: ID!): [Comment!]!
+  }
 
   input TelNumberInput {
     id: ID
@@ -340,5 +355,10 @@ export const typeDefs = /* GraphQL */ `
 
     markNotificationRead(id: ID!): Boolean!
     markAllNotificationsRead: Boolean!
+
+    addComment(post_id: ID!, content: String!): Comment!
+    replyComment(comment_id: ID!, content: String!): Comment!
+    updateComment(id: ID!, content: String!): Comment!
+    deleteComment(id: ID!): Boolean!
   }
 `;

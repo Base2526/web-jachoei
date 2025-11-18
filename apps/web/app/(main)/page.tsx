@@ -1,11 +1,11 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Table, Input, Space, Button, Tag, Popconfirm, message, Tooltip, Typography } from "antd";
+import { Table, Input, Space, Button, Tag, Popconfirm, message, Tooltip, Typography, Badge } from "antd";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  EyeOutlined,
+  CommentOutlined,
   EditOutlined,
   DeleteOutlined,
   MessageOutlined
@@ -31,6 +31,8 @@ const Q_POSTS_PAGED = gql`
         author { id name avatar }
         tel_numbers { id tel }
         seller_accounts { id bank_name seller_account }
+
+        comments_count
       }
     }
   }
@@ -179,6 +181,26 @@ function PostsList() {
               </Link>
             </Tooltip>
           )}
+
+         <Tooltip title={`Comments (${r.comments_count || 0})`}>
+          <Link href={`/post/${r.id}`} prefetch={false}>
+            <Badge
+              count={r.comments_count || 0}
+              size="small"
+              // ไม่อยากโชว์ถ้าเป็น 0 ก็ลบ showZero ทิ้ง
+              showZero={false}
+              offset={[0, 4]} // ขยับตำแหน่ง badge นิดหน่อย
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<CommentOutlined />}
+              />
+            </Badge>
+          </Link>
+        </Tooltip>
+
+          {/* < /> */}
         </Space>
     }
   ];

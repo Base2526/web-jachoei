@@ -11,6 +11,12 @@ CREATE TABLE notifications (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX idx_notifications_user_created_at
+  ON notifications (user_id, created_at DESC);
+
+CREATE INDEX idx_notifications_user_is_read
+  ON notifications (user_id, is_read);
+
 CREATE TABLE user_notification_settings (
   user_id         UUID PRIMARY KEY,
   chat_enabled    BOOLEAN NOT NULL DEFAULT TRUE,
