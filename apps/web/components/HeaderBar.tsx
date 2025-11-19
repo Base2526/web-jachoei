@@ -40,8 +40,14 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
   const { data: meData } = useQuery(Q_ME, { skip: !userSession, fetchPolicy: "cache-first" });
   const me = meData?.me;
 
+
+
   // ✅ ให้ SSR == Client: เริ่มจาก initialLang เสมอ
   const [currentLang, setCurrentLang] = useState<Lang>(initialLang);
+
+  useEffect(() => {
+
+  }, [me])
 
   // sync cookie หลัง mount
   useEffect(() => {

@@ -10,6 +10,15 @@ export const coreTypeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  type MessageImage {
+    id: ID!
+    file_id: ID!    # ← ใช้ bind กับ files.id
+    url: String!
+    mime: String
+    width: Int
+    height: Int
+  }
+
   type MessageReceipt {
     deliveredAt: String!
     readAt: String
@@ -17,12 +26,14 @@ export const coreTypeDefs = /* GraphQL */ `
   }
 
   type Message { 
-    id: ID!, 
-    chat_id: ID!,
-    sender: User,
-    text: String!, 
-    created_at: String! 
-    to_user_ids: [ID!]! 
+    id: ID!
+    chat_id: ID!
+    sender: User
+    text: String!
+    created_at: String!
+    to_user_ids: [ID!]!
+
+    images: [MessageImage!]! 
 
     is_deleted: Boolean!
     deleted_at: String

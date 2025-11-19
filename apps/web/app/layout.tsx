@@ -1,5 +1,9 @@
 'use client';
 import 'antd/dist/reset.css';
+
+
+import "./globals.css"; 
+
 import React, { useEffect, useState, useMemo} from "react";
 import { ApolloProvider } from "@apollo/client";
 import { client } from "lib/apollo"

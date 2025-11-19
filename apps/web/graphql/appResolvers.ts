@@ -450,14 +450,25 @@ export const resolvers = {
       }));
     },
     messages: async (
-                      _: any,
-                      { chat_id, limit = 50, offset = 0, includeDeleted = false }: { chat_id: string; limit?: number; offset?: number; includeDeleted?: boolean },
-                      ctx: any
-                    ) => {
+      _: any,
+      {
+        chat_id,
+        limit = 50,
+        offset = 0,
+        includeDeleted = false
+      }: {
+        chat_id: string;
+        limit?: number;
+        offset?: number;
+        includeDeleted?: boolean;
+      },
+      ctx: any
+    ) => {
       const author_id = requireAuth(ctx);
-      console.log("[Query] messages :", ctx, author_id);
 
       const filter = includeDeleted ? "" : "AND m.deleted_at IS NULL";
+
+      // ✨ NEW: ดึง images ด้วย (LEFT JOIN LATERAL)
       const { rows } = await query(
         `
         SELECT
@@ -465,7 +476,12 @@ export const resolvers = {
           (m.deleted_at IS NOT NULL) AS is_deleted,
           row_to_json(u.*) AS sender_json,
 
-          -- myReceipt ของคนที่ล็อกอิน
+          (
+            SELECT json_agg(row_to_json(mi.*))
+            FROM message_images mi
+            WHERE mi.message_id = m.id
+          ) AS images_json,
+
           (
             SELECT json_build_object(
               'delivered_at', r.delivered_at,
@@ -477,7 +493,6 @@ export const resolvers = {
             LIMIT 1
           ) AS my_receipt_json,
 
-          -- ผู้อ่านทั้งหมด (ที่มี read_at)
           (
             SELECT COALESCE(json_agg(row_to_json(ru.*) ORDER BY r2.read_at ASC), '[]'::json)
             FROM message_receipts r2
@@ -485,7 +500,6 @@ export const resolvers = {
             WHERE r2.message_id = m.id AND r2.read_at IS NOT NULL
           ) AS readers_json,
 
-          -- จำนวนผู้อ่าน
           (
             SELECT COUNT(*)::INT
             FROM message_receipts r3
@@ -501,32 +515,50 @@ export const resolvers = {
         [chat_id, author_id, limit, offset]
       );
 
-      const results =  rows.map((r: any) => {
+      // ✨ Format results
+      const results = rows.map((r: any) => {
         const createdISO = new Date(r.created_at).toISOString();
         const mr = r.my_receipt_json || null;
 
-        console.log("[r.is_deleted]", r.is_deleted, r.deleted_at);
         return {
-          ...r,
-          sender: r.sender_json,
+          id: r.id,
+          chat_id: r.chat_id,
           created_at: createdISO,
+          sender: r.sender_json,
+
+          // ✨ NEW: image objects
+          images: Array.isArray(r.images_json)
+            ? r.images_json.map((img: any) => ({
+                id: img.id,
+                url: img.url,
+                file_id: img.file_id,
+                mime: img.mime || null,
+                width: img.width || null,
+                height: img.height || null,
+              }))
+            : [],
+
+          text: r.is_deleted ? "" : r.text,
+
+          to_user_ids: r.to_user_ids || [],
 
           myReceipt: {
-            deliveredAt: mr?.delivered_at ? new Date(mr.delivered_at).toISOString() : createdISO,
-            readAt:      mr?.read_at      ? new Date(mr.read_at).toISOString()      : null,
-            isRead:      !!mr?.is_read,
+            deliveredAt: mr?.delivered_at
+              ? new Date(mr.delivered_at).toISOString()
+              : createdISO,
+            readAt: mr?.read_at ? new Date(mr.read_at).toISOString() : null,
+            isRead: !!mr?.is_read,
           },
 
           readers: Array.isArray(r.readers_json) ? r.readers_json : [],
           readersCount: Number(r.readers_count) || 0,
 
           is_deleted: r.is_deleted ?? false,
-          deleted_at: r.deleted_at ? new Date(r.deleted_at).toISOString() : '',
-          text: r.is_deleted ? "" : r.text,
+          deleted_at: r.deleted_at
+            ? new Date(r.deleted_at).toISOString()
+            : null,
         };
       });
-
-      // console.log("[messages - results] :", results);
 
       return results;
     },
@@ -1795,6 +1827,7 @@ export const resolvers = {
         return true;
       });
     },
+    /*
     sendMessage: async (
       _: any,
       { chat_id, text, to_user_ids }: { chat_id: string; text: string; to_user_ids: string[] },
@@ -1944,6 +1977,194 @@ export const resolvers = {
 
       return fullMessage;
     },
+    */
+
+   sendMessage: async (
+  _: any,
+  {
+    chat_id,
+    text,
+    to_user_ids,
+    images
+  }: {
+    chat_id: string;
+    text: string;
+    to_user_ids: string[];
+    images?: Promise<any>[];   // Upload scalar list
+  },
+  ctx: any
+) => {
+  const author_id = requireAuth(ctx);
+
+  const cleanTo = Array.from(
+    new Set(
+      (to_user_ids || [])
+        .filter(Boolean)
+        .filter((id) => id !== author_id)
+    )
+  );
+
+  // ===== Step 1: Pre-upload images (no transaction) =====
+  let uploadedFiles: {
+    id: number;
+    relpath: string;
+    mimetype: string | null;
+    filename: string;
+  }[] = [];
+
+  if (images && images.length > 0) {
+    uploadedFiles = await Promise.all(
+      images.map(async (imgPromise) => {
+        const upload = await imgPromise; // Upload object
+        
+        const renameTo = `chat_${chat_id}_${Date.now()}_${upload.fileName}`;
+        const fileRow = await persistUploadStream(upload, renameTo);
+        return {
+          id: fileRow.id,
+          relpath: fileRow.relpath,
+          mimetype: fileRow.mimetype,
+          filename: fileRow.filename,
+        };
+      })
+    );
+  }
+
+  // ===== Step 2: Use transaction for DB operations =====
+  const fullMessage = await runInTransaction(author_id, async (client) => {
+    // 1) Insert message
+    const msgRes = await client.query(
+      `
+      INSERT INTO messages (chat_id, sender_id, text)
+      VALUES ($1,$2,$3)
+      RETURNING *
+      `,
+      [chat_id, author_id, text]
+    );
+    const msg = msgRes.rows[0];
+
+    // 2) Insert message_images
+    if (uploadedFiles.length > 0) {
+      for (const f of uploadedFiles) {
+        await client.query(
+          `
+          INSERT INTO message_images (message_id, file_id, url, mime)
+          VALUES ($1,$2,$3,$4)
+          `,
+          [
+            msg.id,
+            f.id,
+            `/${f.relpath}`,
+            f.mimetype,
+          ]
+        );
+      }
+    }
+
+    // 3) Insert receipts for recipients (กันชน PK ด้วย ON CONFLICT)
+    if (cleanTo.length > 0) {
+      await client.query(
+        `
+        INSERT INTO message_receipts (message_id, user_id, delivered_at, read_at)
+        SELECT $1, uid, NOW(), NULL
+        FROM UNNEST($2::uuid[]) AS u(uid)
+        ON CONFLICT (message_id, user_id) DO NOTHING
+        `,
+        [msg.id, cleanTo]
+      );
+    }
+
+    // 4) sender receipt (ก็ใส่ ON CONFLICT เช่นกัน)
+    await client.query(
+      `
+      INSERT INTO message_receipts (message_id, user_id, delivered_at, read_at)
+      VALUES ($1,$2,NOW(),NOW())
+      ON CONFLICT (message_id, user_id) DO NOTHING
+      `,
+      [msg.id, author_id]
+    );
+
+    // 5) Hydrate images
+    const imgRows = (
+      await client.query(
+        `
+        SELECT id, file_id, url, mime, width, height
+        FROM message_images
+        WHERE message_id=$1
+        `,
+        [msg.id]
+      )
+    ).rows;
+
+    // 6) Hydrate sender + readers + receipt data
+    const senderQ = await client.query(`SELECT * FROM users WHERE id=$1`, [
+      author_id,
+    ]);
+
+    const readersQ = await client.query(
+      `
+      SELECT u.*
+      FROM message_receipts r
+      JOIN users u ON u.id=r.user_id
+      WHERE r.message_id=$1 AND r.read_at IS NOT NULL
+      `,
+      [msg.id]
+    );
+
+    const cntQ = await client.query(
+      `
+      SELECT COUNT(*)::int AS c
+      FROM message_receipts
+      WHERE message_id=$1 AND read_at IS NOT NULL
+      `,
+      [msg.id]
+    );
+
+    const myRecQ = await client.query(
+      `
+      SELECT delivered_at, read_at, (read_at IS NOT NULL) AS is_read
+      FROM message_receipts
+      WHERE message_id=$1 AND user_id=$2
+      `,
+      [msg.id, author_id]
+    );
+    const mr = myRecQ.rows[0] || {};
+
+    const myReceipt = {
+      deliveredAt: mr?.delivered_at
+        ? new Date(mr.delivered_at).toISOString()
+        : new Date(msg.created_at).toISOString(),
+      readAt: mr?.read_at ? new Date(mr.read_at).toISOString() : null,
+      isRead: !!mr?.is_read,
+    };
+
+    return {
+      id: msg.id,
+      chat_id: msg.chat_id,
+      sender: senderQ.rows[0],
+      text: msg.text,
+      created_at: new Date(msg.created_at).toISOString(),
+      to_user_ids: cleanTo,
+
+      images: imgRows,
+
+      myReceipt,
+      readers: readersQ.rows,
+      readersCount: Number(cntQ.rows[0]?.c || 0),
+      is_deleted: false,
+      deleted_at: null,
+    };
+  });
+
+  // ===== Step 3: publish realtime =====
+  await pubsub.publish(topicChat(fullMessage.chat_id), {
+    messageAdded: fullMessage,
+  });
+
+  return fullMessage;
+},
+
+
+
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
       const author_id = requireAuth(ctx);
       console.log("[Mutation] upsertUser :", ctx, author_id);
