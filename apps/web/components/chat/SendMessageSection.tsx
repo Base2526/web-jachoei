@@ -7,13 +7,16 @@ import React, {
   useState,
   useRef,
 } from "react";
-import { Input, Button, Upload, Image } from "antd";
+import { Input, Button, Upload, Image, Typography } from "antd";
 import {
   SendOutlined,
   SmileOutlined,
   PictureOutlined,
   DeleteOutlined,
+  CloseOutlined,
 } from "@ant-design/icons";
+
+const { Text } = Typography;
 
 type Member = { id: string; name?: string };
 type Chat = { id: string; members?: Member[] };
@@ -26,6 +29,8 @@ export default function SendMessageSection({
   setText,
   send,
   me,
+  replyTarget,
+  setReplyTarget,
 }: {
   chats?: { myChats?: Chat[] };
   sel: string | null;
@@ -37,9 +42,12 @@ export default function SendMessageSection({
       text: string;
       to_user_ids: string[];
       images?: File[];
+      reply_to_id?: string | null;
     };
   }) => Promise<any>;
   me: Me;
+  replyTarget: any | null;
+  setReplyTarget: (t: any | null) => void;
 }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
@@ -66,7 +74,7 @@ export default function SendMessageSection({
     (trimmed || uploadedImages.length > 0) &&
     toUserIds.length > 0;
 
-  // ส่งข้อความ + รูป
+  // ============= SEND MESSAGE ============
   const handleSend = useCallback(async () => {
     if (!canSend) return;
 
@@ -76,18 +84,20 @@ export default function SendMessageSection({
           chat_id: sel!,
           text: trimmed,
           to_user_ids: toUserIds,
-          images: uploadedImages,  // 👈 ต้องมี
+          images: uploadedImages,
+          reply_to_id: replyTarget?.id ?? null,
         },
       });
 
       setText("");
       setUploadedImages([]);
+      setReplyTarget(null);
     } catch (e) {
       console.error("[send] error:", e);
     }
-  }, [canSend, sel, trimmed, uploadedImages, toUserIds, setText, send]);
+  }, [canSend, sel, trimmed, uploadedImages, toUserIds, replyTarget, send, setText, setReplyTarget]);
 
-  // Enter = send
+  // Enter to send
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -95,7 +105,7 @@ export default function SendMessageSection({
     }
   };
 
-  // emoji list
+  // Emoji Picker
   const emojis = ["😀","😁","😂","🤣","😊","😍","😎","🤔","😢","🙏","👍","🔥","💯","🎉","✨","❤️","😡"];
 
   const appendEmoji = (emoji: string) => {
@@ -103,10 +113,10 @@ export default function SendMessageSection({
     textAreaRef.current?.focus?.();
   };
 
-  // Handle Image Upload
+  // Image Upload
   const beforeUpload = (file: File) => {
     setUploadedImages((prev) => [...prev, file]);
-    return false; // prevent auto upload
+    return false;
   };
 
   const removeImage = (file: File) => {
@@ -115,17 +125,145 @@ export default function SendMessageSection({
 
   const disabled = !me?.id || !chat || !sel;
 
+  // =========== RENDER REPLY PREVIEW ==========
+  const renderReplyPreview = () => {
+    if (!replyTarget) return null;
+
+    const isMine = replyTarget?.sender?.id === me?.id;
+    const senderLabel = isMine ? "You" : replyTarget?.sender?.name || "User";
+
+    const replyText: string =
+      typeof replyTarget?.text === "string" ? replyTarget.text : "";
+
+    const replyImages: any[] = Array.isArray(replyTarget?.images)
+      ? replyTarget.images
+      : [];
+
+    const hasImages = replyImages.length > 0;
+
+    const getSrc = (img: any) =>
+      img?.file_id ? `/api/files/${img.file_id}` : img?.url || "";
+
+    return (
+      <div
+        style={{
+          marginBottom: 10,
+          padding: "6px 10px",
+          borderRadius: 10,
+          background: "#f0f5ff",
+          borderLeft: "3px solid #1677ff",
+          fontSize: 12,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              marginBottom: 4,
+              color: "#1677ff",
+            }}
+          >
+            Replying to {senderLabel}
+          </div>
+
+          {/* text */}
+          {replyText && (
+            <div
+              style={{
+                marginBottom: hasImages ? 4 : 0,
+                overflow: "hidden",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                color: "#555",
+              }}
+            >
+              {replyText}
+            </div>
+          )}
+
+          {/* images */}
+          {hasImages && (
+            <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+              {replyImages.slice(0, 3).map((img: any, i: number) => {
+                const extra = replyImages.length - 3;
+                const isLast = i === 2 && extra > 0;
+
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      width: 45,
+                      height: 45,
+                      borderRadius: 6,
+                      overflow: "hidden",
+                      position: "relative",
+                    }}
+                  >
+                    <Image
+                      src={getSrc(img)}
+                      preview={false}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        filter: isLast ? "brightness(0.6)" : "none",
+                      }}
+                    />
+
+                    {isLast && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          background: "rgba(0,0,0,0.4)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#fff",
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        +{extra}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <Button
+          type="text"
+          icon={<CloseOutlined />}
+          onClick={() => setReplyTarget(null)}
+          style={{ padding: 0, color: "#666" }}
+        />
+      </div>
+    );
+  };
+
+  // ======================== RENDER ========================
   return (
     <div
       style={{
-        position: "relative",
         width: "100%",
         padding: 12,
         background: "#fff",
         borderTop: "1px solid #eee",
       }}
     >
-      {/* PREVIEW IMAGES */}
+      {/* ===== Reply Preview ===== */}
+      {renderReplyPreview()}
+
+      {/* ===== IMAGE PREVIEW ===== */}
       {uploadedImages.length > 0 && (
         <div
           style={{
@@ -146,7 +284,6 @@ export default function SendMessageSection({
                 borderRadius: 10,
                 overflow: "hidden",
                 border: "1px solid #ddd",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
               }}
             >
               <Image
@@ -176,20 +313,20 @@ export default function SendMessageSection({
         </div>
       )}
 
-      {/* MAIN INPUT BAR */}
+      {/* ===== INPUT BAR ===== */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          background: "#ffffff",
+          background: "#fff",
           borderRadius: 24,
           padding: "6px 12px",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
           border: "1px solid #eee",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
           gap: 10,
         }}
       >
-        {/* Upload Button */}
+        {/* Upload */}
         <Upload
           beforeUpload={beforeUpload}
           multiple
@@ -204,24 +341,24 @@ export default function SendMessageSection({
           />
         </Upload>
 
-        {/* Emoji Button */}
+        {/* Emoji */}
         <Button
           type="text"
           icon={<SmileOutlined style={{ fontSize: 20, color: "#888" }} />}
-          disabled={disabled}
           onClick={() => setShowEmoji((s) => !s)}
+          disabled={disabled}
           style={{ border: "none" }}
         />
 
-        {/* TEXT AREA */}
+        {/* Text Area */}
         <Input.TextArea
           ref={textAreaRef}
           autoSize={{ minRows: 1, maxRows: 4 }}
-          placeholder="Type a message…"
+          placeholder="Type a message..."
           value={text}
+          disabled={disabled}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={disabled}
           style={{
             border: "none",
             boxShadow: "none",
@@ -233,7 +370,7 @@ export default function SendMessageSection({
           }}
         />
 
-        {/* SEND BUTTON */}
+        {/* SEND */}
         <Button
           type="primary"
           shape="circle"
@@ -249,7 +386,7 @@ export default function SendMessageSection({
         />
       </div>
 
-      {/* EMOJI PICKER */}
+      {/* ===== EMOJI PICKER ===== */}
       {showEmoji && !disabled && (
         <div
           style={{
@@ -260,7 +397,7 @@ export default function SendMessageSection({
             border: "1px solid #eee",
             borderRadius: 12,
             padding: 10,
-            boxShadow: "0 4px 18px rgba(0,0,0,0.15)",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
             display: "grid",
             gridTemplateColumns: "repeat(8, 1fr)",
             gap: 6,
@@ -278,7 +415,6 @@ export default function SendMessageSection({
                 border: "none",
                 cursor: "pointer",
                 padding: 4,
-                transition: "0.15s",
               }}
             >
               {em}

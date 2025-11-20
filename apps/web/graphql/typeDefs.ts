@@ -46,6 +46,9 @@ export const typeDefs = /* GraphQL */ `
     myReceipt: MessageReceipt!
     readers: [User!]!
     readersCount: Int!
+
+    reply_to_id: ID
+    reply_to: Message
   }
 
   type MessageImage {
@@ -341,7 +344,7 @@ export const typeDefs = /* GraphQL */ `
 
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
     addMember(chat_id: ID!, user_id: ID!): Boolean!
-    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!, images: [Upload!]): Message!
+    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!, images: [Upload!], reply_to_id: ID): Message!
 
     updateMyProfile(data: MyProfileInput!): User!
 

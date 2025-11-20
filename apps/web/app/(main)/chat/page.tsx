@@ -12,17 +12,22 @@ import {
   Divider,
   Modal,
   message,
-  Tag,
   Dropdown,
   Radio,
   Select,
   Avatar,
   Image,
+  Spin,
+  type MenuProps,   
 } from "antd";
 import {
   MoreOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  UserOutlined,
+  TeamOutlined,
+  SmileOutlined,         
+  RollbackOutlined,  
 } from "@ant-design/icons";
 import { useSearchParams } from "next/navigation";
 
@@ -50,10 +55,12 @@ const Q_CHATS = gql`
       created_by {
         id
         name
+        avatar
       }
       members {
         id
         name
+        avatar
       }
     }
   }
@@ -65,22 +72,39 @@ const Q_MSGS = gql`
       id
       chat_id
       text
+      reply_to_id
+
+      reply_to {
+        id
+        text
+        images {
+          url
+        }
+        sender {
+          id
+          name
+        }
+      }
+
       created_at
       sender {
         id
         name
       }
+
       myReceipt {
         deliveredAt
         isRead
         readAt
       }
+
       images {
         id
         url
         mime
         file_id
       }
+
       readers {
         id
         name
@@ -94,6 +118,7 @@ const Q_MSGS = gql`
     }
   }
 `;
+
 
 const Q_USERS = gql`
   query ($q: String) {
@@ -128,14 +153,17 @@ const MUT_SEND = gql`
     $text: String!
     $to_user_ids: [ID!]!
     $images: [Upload!]
+    $reply_to_id: ID
   ) {
     sendMessage(
       chat_id: $chat_id
       text: $text
       to_user_ids: $to_user_ids
       images: $images
+      reply_to_id: $reply_to_id
     ) {
       id
+      reply_to_id
       images {
         id
         url
@@ -145,6 +173,7 @@ const MUT_SEND = gql`
     }
   }
 `;
+
 
 const MUT_CREATE = gql`
   mutation ($name: String, $isGroup: Boolean!, $memberIds: [ID!]!) {
@@ -216,6 +245,106 @@ const SUB_DELETED = gql`
   }
 `;
 
+// รูปแต่ละ tile + loading state
+type MessageImageTileProps = {
+  src: string;
+  aspectRatio: string;
+  dimmed?: boolean;
+  overlayText?: string | null;
+};
+
+function MessageImageTile({
+  src,
+  aspectRatio,
+  dimmed,
+  overlayText,
+}: MessageImageTileProps) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        aspectRatio,
+        overflow: "hidden",
+        background: "#f5f5f5",
+      }}
+    >
+      {loading && !error && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2,
+          }}
+        >
+          <Spin size="small" />
+        </div>
+      )}
+
+      {!error && (
+        <Image
+          src={src}
+          alt=""
+          preview
+          loading="lazy"
+          onLoad={() => setLoading(false)}
+          onError={() => {
+            setLoading(false);
+            setError(true);
+          }}
+          style={{
+            display: "block",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            filter: dimmed ? "brightness(0.65)" : "none",
+            visibility: loading ? "hidden" : "visible",
+          }}
+        />
+      )}
+
+      {error && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            color: "#999",
+          }}
+        >
+          Failed to load
+        </div>
+      )}
+
+      {overlayText && !error && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 22,
+            fontWeight: 600,
+            color: "#fff",
+            zIndex: 3,
+          }}
+        >
+          {overlayText}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== helper แสดงรูปใน message =====
 function renderMessageImages(m: any, isMine: boolean) {
   const imgs = Array.isArray(m.images) ? m.images : [];
@@ -225,7 +354,7 @@ function renderMessageImages(m: any, isMine: boolean) {
   const getSrc = (img: any) =>
     img?.file_id ? `/api/files/${img.file_id}` : img?.url || "";
 
-  // ----- 1 รูป -----
+  // 1 รูป
   if (count === 1) {
     const img = imgs[0];
     return (
@@ -245,25 +374,16 @@ function renderMessageImages(m: any, isMine: boolean) {
             lineHeight: 0,
           }}
         >
-          <Image
-            src={getSrc(img)}
-            alt=""
-            preview
-            style={{
-              display: "block",
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              aspectRatio: "4 / 3",
-            }}
-          />
+          <MessageImageTile src={getSrc(img)} aspectRatio="4 / 3" />
         </div>
       </div>
     );
   }
 
-  // ----- หลายรูป: ให้เต็มพื้นที่ ไม่มีขอบขาว -----
-  return (
+  const wrapper = (
+    content: React.ReactNode,
+    options: { maxWidth?: number } = {}
+  ) => (
     <div
       style={{
         marginTop: m.text?.trim() ? 8 : 2,
@@ -273,53 +393,125 @@ function renderMessageImages(m: any, isMine: boolean) {
     >
       <div
         style={{
-          maxWidth: 320,
+          maxWidth: options.maxWidth ?? 340,
           borderRadius: 18,
           overflow: "hidden",
           boxShadow: "0 2px 10px rgba(0,0,0,0.18)",
           lineHeight: 0,
         }}
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 2, // ถ้าอยากให้ติดกันสนิท แก้เป็น 0
-          }}
-        >
-          {imgs.map((img: any, index: number) => {
-            const isFirst = index === 0;
-            const tileExtraStyle =
-              count === 3 && isFirst
-                ? { gridColumn: "1 / span 2", aspectRatio: "4 / 3" }
-                : { aspectRatio: "1 / 1" };
-
-            return (
-              <div
-                key={img.id ?? index}
-                style={{
-                  position: "relative",
-                  overflow: "hidden",
-                  ...tileExtraStyle,
-                }}
-              >
-                <Image
-                  src={getSrc(img)}
-                  alt=""
-                  preview
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
+        {content}
       </div>
     </div>
+  );
+
+  // 2 รูป
+  if (count === 2) {
+    return wrapper(
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 2,
+        }}
+      >
+        {imgs.map((img: any, index: number) => (
+          <MessageImageTile
+            key={img.id ?? index}
+            src={getSrc(img)}
+            aspectRatio="4 / 3"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // 3 รูป
+  if (count === 3) {
+    return wrapper(
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 2,
+        }}
+      >
+        {imgs.map((img: any, index: number) => {
+          const isFirst = index === 0;
+          return (
+            <div
+              key={img.id ?? index}
+              style={{ gridColumn: isFirst ? "1 / span 2" : "auto" }}
+            >
+              <MessageImageTile
+                src={getSrc(img)}
+                aspectRatio={isFirst ? "4 / 3" : "1 / 1"}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // 4 รูป
+  if (count === 4) {
+    return wrapper(
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 2,
+        }}
+      >
+        {imgs.map((img: any, index: number) => (
+          <MessageImageTile
+            key={img.id ?? index}
+            src={getSrc(img)}
+            aspectRatio="1 / 1"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // 5+ รูป
+  const first = imgs[0];
+  const others = imgs.slice(1, 5);
+  const extraCount = count - 5;
+
+  return wrapper(
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "2fr 1.3fr",
+        gap: 2,
+      }}
+    >
+      <MessageImageTile src={getSrc(first)} aspectRatio="4 / 3" />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 2,
+        }}
+      >
+        {others.map((img: any, index: number) => {
+          const isLastTile = index === others.length - 1 && extraCount > 0;
+          return (
+            <MessageImageTile
+              key={img.id ?? index}
+              src={getSrc(img)}
+              aspectRatio="1 / 1"
+              dimmed={isLastTile}
+              overlayText={isLastTile ? `+${extraCount}` : null}
+            />
+          );
+        })}
+      </div>
+    </div>,
+    { maxWidth: 360 }
   );
 }
 
@@ -371,10 +563,10 @@ function renderDeliveryTicks(receipt: any) {
   let color = "#888";
 
   if (deliveredAt && !isRead) {
-    ticks = "✓✓"; // double gray
+    ticks = "✓✓";
   } else if (isRead) {
     ticks = "✓✓";
-    color = "#52c41a"; // green-ish
+    color = "#52c41a";
   }
 
   return (
@@ -403,7 +595,7 @@ function ChatUI() {
     useState<{ id: string; name?: string } | null>(null);
   const [replyTarget, setReplyTarget] = useState<any | null>(null);
 
-  const [leftCollapsed, setLeftCollapsed] = useState(false); // sidebar state
+  const [leftCollapsed, setLeftCollapsed] = useState(true);
 
   const searchParams = useSearchParams();
   const toParam = searchParams.get("to");
@@ -420,7 +612,6 @@ function ChatUI() {
 
   const handledToRef = useRef(false);
 
-  // scroll
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -437,13 +628,13 @@ function ChatUI() {
     data: chats,
     refetch: refetchChats,
     loading: loadingChats,
-    subscribeToMore,
   } = useQuery(Q_CHATS);
 
   const {
     data: msgs,
     refetch: refetchMsgs,
     subscribeToMore: subscribeToMoreMsgs,
+    loading: loadingMsgs
   } = useQuery(Q_MSGS, {
     skip: !sel,
     variables: { chat_id: sel },
@@ -457,7 +648,6 @@ function ChatUI() {
     console.log("[msgs] = ", msgs);
   }, [msgs]);
 
-  // ===== basic effects =====
   useEffect(() => {
     handledToRef.current = false;
   }, [toParam]);
@@ -483,7 +673,6 @@ function ChatUI() {
         const m = subscriptionData.data?.messageAdded;
         if (!m) return prev;
 
-        console.log("[sub messageAdded] = ", m);
         const appended = (prev.messages || []).concat([
           {
             id: m.id,
@@ -793,7 +982,7 @@ function ChatUI() {
   const nameGroup = () => {
     if (!sel || !chat) return "Select a chat";
     if (chat.is_group) {
-      return chat.name?.trim() ? chat.name : "Group Chat";
+      return chat.name?.trim() ? `Group Chat with ${chat.name}` : "Group Chat";
     }
     const partner = (chat.members || []).find((m: any) => m.id !== meId);
     return partner?.name ? `Chat with ${partner.name}` : "Chat";
@@ -806,168 +995,255 @@ function ChatUI() {
         gap: 16,
         alignItems: "stretch",
         width: "100%",
+        height: "80vh", // ความสูงเดียวกันทั้งซ้าย-ขวา
       }}
     >
-      {/* LEFT: list (expand/collapse + scroll) */}
-<div
-  style={{
-    width: leftCollapsed ? 56 : 320,
-    transition: "width 0.25s ease",
-    flexShrink: 0,
-  }}
->
-  <Card
-    size="small"
-    bodyStyle={{
-      padding: leftCollapsed ? "8px 4px" : 12,
-      maxHeight: "70vh",          // ความสูงฝั่งซ้าย
-      display: "flex",
-      flexDirection: "column",
-      overflow: "hidden",         // ซ่อนส่วนเกิน ให้เลื่อนใน div ข้างในแทน
-    }}
-    title={
-      <Space>
-        <Button
-          type="text"
-          shape="circle"
-          onClick={() => setLeftCollapsed((v) => !v)}
-          icon={leftCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-        />
-        {!leftCollapsed && <span>Chats</span>}
-      </Space>
-    }
-    extra={
-      !leftCollapsed && (
-        <Button
+      {/* LEFT */}
+      <div
+        style={{
+          width: leftCollapsed ? 56 : 320,
+          transition: "width 0.25s ease",
+          flexShrink: 0,
+          height: "100%",
+        }}
+      >
+        <Card
           size="small"
-          onClick={() => {
-            setOpenCreate(true);
-            refetchUsers({ q: "" });
+          style={{ height: "100%" }}
+          bodyStyle={{
+            padding: leftCollapsed ? "8px 4px" : 12,
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+            overflow: "hidden",
+          }}
+          title={
+            <Space>
+              <Button
+                type="text"
+                shape="circle"
+                onClick={() => setLeftCollapsed((v) => !v)}
+                icon={
+                  leftCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />
+                }
+              />
+              {!leftCollapsed && <span>Chats</span>}
+            </Space>
+          }
+          extra={
+            !leftCollapsed && (
+              <Button
+                size="small"
+                onClick={() => {
+                  setOpenCreate(true);
+                  refetchUsers({ q: "" });
+                }}
+              >
+                +
+              </Button>
+            )
+          }
+        >
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              paddingRight: leftCollapsed ? 0 : 4,
+            }}
+          >
+            <List
+              size="small"
+              dataSource={chats?.myChats || []}
+              renderItem={(c: any) => {
+                const partnerUser = !c.is_group
+                  ? (c.members || []).find((m: any) => m.id !== meId) || null
+                  : null;
+
+                const partnerName = partnerUser?.name || "User";
+
+                const titleText = (
+                  <span
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    {!leftCollapsed &&
+                      (c.is_group ? c.name || "Group" : partnerName)}
+                  </span>
+                );
+
+                const descText = c.is_group
+                  ? (c.members || [])
+                      .filter((m: any) => m.id !== meId)
+                      .map((m: any) => m.name)
+                      .join(", ")
+                  : null;
+
+                const initial = getInitial(
+                  c.is_group ? c.name || "G" : partnerName
+                );
+
+                const avatarSrc = c.is_group
+                  ? undefined
+                  : partnerUser?.avatar || undefined;
+
+                return (
+                  <List.Item
+                    onClick={() => {
+                      setSel(c.id);
+                      lastMsgCountRef.current = 0;
+                      setReplyTarget(null);
+                      refetchMsgs({ chat_id: c.id });
+                    }}
+                    style={{
+                      cursor: "pointer",
+                      background:
+                        sel === c.id ? "rgba(22,119,255,0.08)" : "transparent",
+                      borderRadius: 8,
+                      marginBottom: 4,
+                      padding: leftCollapsed ? "6px 4px" : undefined,
+                      justifyContent: leftCollapsed ? "center" : "flex-start",
+                    }}
+                    actions={
+                      leftCollapsed
+                        ? undefined
+                        : [
+                            // c.is_group ? <TeamOutlined /> : <UserOutlined />,
+                            <Dropdown
+                              key="more"
+                              menu={menuFor(c)}
+                              trigger={["click"]}
+                            >
+                              <Button
+                                type="text"
+                                icon={<MoreOutlined />}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </Dropdown>,
+                          ]
+                    }
+                  >
+                    {/* ============================
+                        LEFT COLLAPSED MODE (small)
+                    ============================ */}
+                    {leftCollapsed ? (
+                      <div style={{ position: "relative", display: "inline-block" }}>
+                        <Avatar
+                          src={avatarSrc}
+                          size={40}
+                          style={{
+                            background:
+                              sel === c.id ? "#1677ff" : "rgba(0,0,0,0.25)",
+                          }}
+                        >
+                          {!avatarSrc && initial}
+                        </Avatar>
+
+                        {/* badge bottom-right */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: -2,
+                            right: -2,
+                            background: "#fff",
+                            borderRadius: "50%",
+                            padding: 2,
+                            boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+                            lineHeight: 1,
+                          }}
+                        >
+                          {c.is_group ? (
+                            <TeamOutlined style={{ fontSize: 12 }} />
+                          ) : (
+                            <UserOutlined style={{ fontSize: 12 }} />
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* ============================
+                          NORMAL MODE (with Meta)
+                      ============================ */
+                      <List.Item.Meta
+                        avatar={
+                          <div style={{ position: "relative", display: "inline-block" }}>
+                            <Avatar
+                              src={avatarSrc}
+                              size={42}
+                              style={{ background: "#1677ff" }}
+                            >
+                              {!avatarSrc && initial}
+                            </Avatar>
+
+                            {/* badge bottom-right */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                bottom: -2,
+                                right: -2,
+                                background: "#fff",
+                                borderRadius: "50%",
+                                padding: 2,
+                                boxShadow: "0 0 4px rgba(0,0,0,0.15)",
+                                lineHeight: 1,
+                              }}
+                            >
+                              {c.is_group ? (
+                                <TeamOutlined style={{ fontSize: 12 }} />
+                              ) : (
+                                <UserOutlined style={{ fontSize: 12 }} />
+                              )}
+                            </div>
+                          </div>
+                        }
+                        title={titleText}
+                        description={descText}
+                      />
+                    )}
+                  </List.Item>
+                );
+              }}
+            />
+          </div>
+        </Card>
+      </div>
+
+      {/* RIGHT */}
+      <div style={{ flex: 1, minWidth: 0, height: "100%" }}>
+        <Card
+          title={nameGroup()}
+          style={{ height: "100%" }}
+          bodyStyle={{
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
           }}
         >
-          + 
-        </Button>
-      )
-    }
-  >
-    {/* ตรงนี้คือส่วนที่ scroll ได้ */}
-    <div
-      style={{
-        flex: 1,
-        overflowY: "auto",
-        paddingRight: leftCollapsed ? 0 : 4, // กัน scrollbar ทับตัวหนังสือ
-      }}
-    >
-      <List
-        size="small"
-        dataSource={chats?.myChats || []}
-        renderItem={(c: any) => {
-          const titleText = c.is_group
-            ? c.name || "Group"
-            : (c.members || []).find((m: any) => m.id !== meId)?.name || "1:1";
-
-          const descText = c.is_group
-            ? (c.members || [])
-                .filter((m: any) => m.id !== meId)
-                .map((m: any) => m.name)
-                .join(", ")
-            : null;
-
-          const initial = getInitial(
-            c.is_group
-              ? c.name || "G"
-              : (c.members || []).find((m: any) => m.id !== meId)?.name || "U"
-          );
-
-          return (
-            <List.Item
-              onClick={() => {
-                setSel(c.id);
-                lastMsgCountRef.current = 0;
-                setReplyTarget(null);
-                refetchMsgs({ chat_id: c.id });
-              }}
-              style={{
-                cursor: "pointer",
-                background:
-                  sel === c.id ? "rgba(22,119,255,0.08)" : "transparent",
-                borderRadius: 8,
-                marginBottom: 4,
-                padding: leftCollapsed ? "6px 4px" : undefined,
-                justifyContent: leftCollapsed ? "center" : "flex-start",
-              }}
-              actions={
-                leftCollapsed
-                  ? undefined
-                  : [
-                      c.is_group ? (
-                        <Tag color="blue" key="tag">
-                          Group
-                        </Tag>
-                      ) : (
-                        <Tag key="tag">1:1</Tag>
-                      ),
-                      <Dropdown
-                        key="more"
-                        menu={menuFor(c)}
-                        trigger={["click"]}
-                      >
-                        <Button
-                          type="text"
-                          icon={<MoreOutlined />}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </Dropdown>,
-                    ]
-              }
-            >
-              {leftCollapsed ? (
-                <Avatar
-                  style={{
-                    background:
-                      sel === c.id ? "#1677ff" : "rgba(0,0,0,0.25)",
-                  }}
-                >
-                  {initial}
-                </Avatar>
-              ) : (
-                <List.Item.Meta
-                  avatar={
-                    <Avatar style={{ background: "#1677ff" }}>
-                      {initial}
-                    </Avatar>
-                  }
-                  title={titleText}
-                  description={descText}
-                />
-              )}
-            </List.Item>
-          );
-        }}
-      />
-    </div>
-  </Card>
-</div>
-
-
-      {/* RIGHT: chat */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <Card title={nameGroup()}>
           {sel && (
             <>
               <div
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
                 style={{
-                  height: "60vh",
+                  flex: 1,
                   overflow: "auto",
                   border: "1px solid #eee",
                   padding: 12,
                   position: "relative",
                   background: "#fafafa",
                 }}
-              >
-                {isEmpty ? (
+              >  
+              {/* 1) กำลังโหลด Messages */}
+              {loadingMsgs ? (
+                <div
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Spin tip="Loading messages..." size="large" />
+                </div>
+              ) : 
+                isEmpty ? (
                   <div
                     style={{
                       height: "100%",
@@ -985,255 +1261,421 @@ function ChatUI() {
                 ) : (
                   <>
                     {messagesList.map((m: any, idx: number) => {
-                      const isMine = meId && m.sender?.id === meId;
-                      const createdAt = new Date(m.created_at);
-                      const prev = idx > 0 ? messagesList[idx - 1] : null;
-                      const prevDate = prev ? new Date(prev.created_at) : null;
+  const isMine = meId && m.sender?.id === meId;
+  const createdAt = new Date(m.created_at);
+  const prev = idx > 0 ? messagesList[idx - 1] : null;
+  const prevDate = prev ? new Date(prev.created_at) : null;
 
-                      const showDaySeparator =
-                        idx === 0 ||
-                        !isSameDay(
-                          createdAt,
-                          new Date(prev?.created_at || createdAt)
-                        );
+  const showDaySeparator =
+    idx === 0 ||
+    !isSameDay(
+      createdAt,
+      new Date(prev?.created_at || createdAt)
+    );
 
-                      const prevSameSender =
-                        prev &&
-                        prev.sender?.id === m.sender?.id &&
-                        prevDate &&
-                        createdAt.getTime() - prevDate.getTime() <
-                          5 * 60 * 1000;
+  const prevSameSender =
+    prev &&
+    prev.sender?.id === m.sender?.id &&
+    prevDate &&
+    createdAt.getTime() - prevDate.getTime() < 5 * 60 * 1000;
 
-                      const isGroupTop = !prevSameSender;
-                      const senderName = isMine
-                        ? meName || "Me"
-                        : m.sender?.name || "—";
+  const isGroupTop = !prevSameSender;
+  const senderName = isMine
+    ? meName || "Me"
+    : m.sender?.name || "—";
 
-                      const baseRadius = 18;
-                      const bubbleRadius = {
-                        borderTopLeftRadius: isMine
-                          ? baseRadius
-                          : isGroupTop
-                          ? baseRadius
-                          : 6,
-                        borderTopRightRadius: isMine
-                          ? isGroupTop
-                            ? baseRadius
-                            : 6
-                          : baseRadius,
-                        borderBottomLeftRadius: baseRadius,
-                        borderBottomRightRadius: baseRadius,
-                      };
+  const baseRadius = 18;
+  const bubbleRadius = {
+    borderTopLeftRadius: isMine
+      ? baseRadius
+      : isGroupTop
+      ? baseRadius
+      : 6,
+    borderTopRightRadius: isMine
+      ? isGroupTop
+        ? baseRadius
+        : 6
+      : baseRadius,
+    borderBottomLeftRadius: baseRadius,
+    borderBottomRightRadius: baseRadius,
+  };
 
-                      const wrapperMarginTop = isGroupTop ? 10 : 2;
+  const wrapperMarginTop = isGroupTop ? 10 : 2;
 
-                      const hasText =
-                        typeof m.text === "string" &&
-                        m.text.trim().length > 0;
-                      const hasImages =
-                        Array.isArray(m.images) && m.images.length > 0;
+  const hasText =
+    typeof m.text === "string" && m.text.trim().length > 0;
+  const hasImages =
+    Array.isArray(m.images) && m.images.length > 0;
 
-                      const timeLabel = createdAt.toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      });
+  const timeLabel = createdAt.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
+  // --------- reply object ----------
+  const reply = m.reply_to;
+  const hasReply = !!reply;
+  const replyText =
+    typeof reply?.text === "string" ? reply.text : "";
+  const replyImages: any[] = Array.isArray(reply?.images)
+    ? reply.images
+    : [];
+
+  const replySenderLabel =
+    reply?.sender?.id === meId
+      ? "You"
+      : reply?.sender?.name || "User";
+
+  const getReplyImgSrc = (img: any) =>
+    img?.file_id ? `/api/files/${img.file_id}` : img?.url || "";
+
+  return (
+    <div key={m.id} id={`msg-${m.id}`}>
+      {showDaySeparator && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            margin: "8px 0 12px",
+          }}
+        >
+          <span
+            style={{
+              background: "rgba(0,0,0,0.05)",
+              borderRadius: 999,
+              padding: "2px 12px",
+              fontSize: 12,
+              color: "#666",
+            }}
+          >
+            {formatDayLabel(createdAt)}
+          </span>
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: isMine ? "flex-end" : "flex-start",
+          padding: "2px 0",
+          marginTop: wrapperMarginTop,
+        }}
+        onDoubleClick={() =>
+          markRead({
+            variables: { message_id: m.id },
+          }).catch(() => {})
+        }
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isMine ? "row-reverse" : "row",
+            alignItems: "flex-end",
+            gap: 8,
+            maxWidth: "70%",
+          }}
+        >
+          {!isMine && isGroupTop && (
+            <Avatar
+              size={32}
+              style={{
+                background: "#999",
+                flexShrink: 0,
+              }}
+            >
+              {getInitial(senderName)}
+            </Avatar>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: isMine ? "flex-end" : "flex-start",
+              flex: 1,
+            }}
+          >
+            {!isMine && isGroupTop && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#999",
+                  marginBottom: 2,
+                }}
+              >
+                {senderName}
+              </div>
+            )}
+
+            {/* ====== REPLY BLOCK (อยู่บน bubble) ====== */}
+            {hasReply && (
+              <div
+                style={{
+                  marginBottom: hasText || hasImages ? 6 : 4,
+                  padding: "6px 8px",
+                  borderLeft: `3px solid ${
+                    isMine ? "#ffffff" : "#1677ff"
+                  }`,
+                  background: isMine
+                    ? "rgba(0,0,0,0.20)"
+                    : "#e6f4ff",
+                  borderRadius: 8,
+                  maxWidth: "100%",
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  const el = document.getElementById(
+                    `msg-${reply.id}`
+                  );
+                  if (el) {
+                    el.scrollIntoView({
+                      behavior: "smooth",
+                      block: "center",
+                    });
+                  }
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    marginBottom: 2,
+                    color: isMine ? "#ffffff" : "#1677ff",
+                  }}
+                >
+                  {replySenderLabel}
+                </div>
+
+                {replyText && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: isMine ? "#f5f5f5" : "#555",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {replyText}
+                  </div>
+                )}
+
+                {replyImages.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: replyText ? 4 : 0,
+                      display: "flex",
+                      gap: 4,
+                    }}
+                  >
+                    {replyImages.slice(0, 3).map((img, i) => {
+                      const extra = replyImages.length - 3;
+                      const isLast = i === 2 && extra > 0;
                       return (
-                        <div key={m.id}>
-                          {showDaySeparator && (
+                        <div
+                          key={img.id ?? i}
+                          style={{
+                            position: "relative",
+                            width: 36,
+                            height: 36,
+                            borderRadius: 6,
+                            overflow: "hidden",
+                            background: "#ddd",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Image
+                            src={getReplyImgSrc(img)}
+                            alt=""
+                            preview={false}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              filter:
+                                isLast && extra > 0
+                                  ? "brightness(0.65)"
+                                  : "none",
+                            }}
+                          />
+                          {isLast && extra > 0 && (
                             <div
                               style={{
+                                position: "absolute",
+                                inset: 0,
                                 display: "flex",
+                                alignItems: "center",
                                 justifyContent: "center",
-                                margin: "8px 0 12px",
+                                background:
+                                  "rgba(0,0,0,0.35)",
+                                color: "#fff",
+                                fontSize: 11,
+                                fontWeight: 600,
                               }}
                             >
-                              <span
-                                style={{
-                                  background: "rgba(0,0,0,0.05)",
-                                  borderRadius: 999,
-                                  padding: "2px 12px",
-                                  fontSize: 12,
-                                  color: "#666",
-                                }}
-                              >
-                                {formatDayLabel(createdAt)}
-                              </span>
+                              +{extra}
                             </div>
                           )}
-
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: isMine
-                                ? "flex-end"
-                                : "flex-start",
-                              padding: "2px 0",
-                              marginTop: wrapperMarginTop,
-                            }}
-                            onDoubleClick={() =>
-                              markRead({
-                                variables: { message_id: m.id },
-                              }).catch(() => {})
-                            }
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: isMine ? "row-reverse" : "row",
-                                alignItems: "flex-end",
-                                gap: 8,
-                                maxWidth: "70%",
-                              }}
-                            >
-                              {!isMine && isGroupTop && (
-                                <Avatar
-                                  size={32}
-                                  style={{
-                                    background: "#999",
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  {getInitial(senderName)}
-                                </Avatar>
-                              )}
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  alignItems: isMine
-                                    ? "flex-end"
-                                    : "flex-start",
-                                  flex: 1,
-                                }}
-                              >
-                                {!isMine && isGroupTop && (
-                                  <div
-                                    style={{
-                                      fontSize: 12,
-                                      color: "#999",
-                                      marginBottom: 2,
-                                    }}
-                                  >
-                                    {senderName}
-                                  </div>
-                                )}
-
-                                {hasText && (
-                                  <div
-                                    style={{
-                                      padding: "8px 12px",
-                                      background: isMine
-                                        ? "#1677ff"
-                                        : "#f5f5f5",
-                                      color: isMine ? "#fff" : "#000",
-                                      boxShadow:
-                                        "0 2px 6px rgba(0,0,0,0.06)",
-                                      wordBreak: "break-word",
-                                      whiteSpace: "pre-wrap",
-                                      ...bubbleRadius,
-                                    }}
-                                  >
-                                    {m.text}
-                                  </div>
-                                )}
-
-                                {hasImages &&
-                                  renderMessageImages(m, !!isMine)}
-
-                                <div
-                                  style={{
-                                    marginTop: 4,
-                                    display: "flex",
-                                    gap: 6,
-                                    alignItems: "center",
-                                    justifyContent: isMine
-                                      ? "flex-end"
-                                      : "flex-start",
-                                    fontSize: 11,
-                                  }}
-                                >
-                                  <span style={{ color: "#999" }}>
-                                    {timeLabel}
-                                  </span>
-
-                                  {isMine && (
-                                    <>
-                                      <span style={{ color: "#999" }}>
-                                        {m?.myReceipt?.isRead
-                                          ? "Read"
-                                          : m?.myReceipt?.deliveredAt
-                                          ? "Delivered"
-                                          : "Sent"}
-                                        {renderDeliveryTicks(m?.myReceipt)}
-                                      </span>
-                                      <span style={{ color: "#bbb" }}>
-                                        · {m?.readersCount ?? 0} read
-                                      </span>
-                                    </>
-                                  )}
-
-                                  {!isMine && (
-                                    <span style={{ color: "#bbb" }}>
-                                      {m?.readersCount ?? 0} read
-                                    </span>
-                                  )}
-
-                                  <Button
-                                    type="link"
-                                    size="small"
-                                    style={{ padding: 0 }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setReplyTarget(m);
-                                      scrollToBottom("smooth");
-                                    }}
-                                  >
-                                    Reply
-                                  </Button>
-
-                                  {isMine && (
-                                    <Button
-                                      type="link"
-                                      size="small"
-                                      danger
-                                      style={{ padding: 0 }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        Modal.confirm({
-                                          title: "Delete this message?",
-                                          okType: "danger",
-                                          onOk: async () => {
-                                            try {
-                                              await deleteMessageMut({
-                                                variables: {
-                                                  message_id: m.id,
-                                                },
-                                              });
-                                              await refetchMsgs({
-                                                chat_id: sel,
-                                              });
-                                            } catch (err: any) {
-                                              message.error(
-                                                err.message ||
-                                                  "Delete failed"
-                                              );
-                                            }
-                                          },
-                                        });
-                                      }}
-                                    >
-                                      Delete
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* ====== END REPLY BLOCK ====== */}
+
+            {hasText && (
+              <div
+                style={{
+                  padding: "8px 12px",
+                  background: isMine ? "#1677ff" : "#f5f5f5",
+                  color: isMine ? "#fff" : "#000",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
+                  ...bubbleRadius,
+                }}
+              >
+                {m.text}
+              </div>
+            )}
+
+            {hasImages && renderMessageImages(m, !!isMine)}
+
+            <div
+              style={{
+                marginTop: 4,
+                display: "flex",
+                justifyContent: isMine ? "flex-end" : "flex-start",
+              }}
+            >
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 11,
+                }}
+              >
+                <span style={{ color: "#999" }}>{timeLabel}</span>
+
+                {isMine ? (
+                  <>
+                    <span style={{ color: "#999" }}>
+                      {m?.myReceipt?.isRead
+                        ? "Read"
+                        : m?.myReceipt?.deliveredAt
+                        ? "Delivered"
+                        : "Sent"}
+                      {renderDeliveryTicks(m?.myReceipt)}
+                    </span>
+                    <span style={{ color: "#bbb" }}>
+                      · {m?.readersCount ?? 0} read
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ color: "#bbb" }}>
+                    {m?.readersCount ?? 0} read
+                  </span>
+                )}
+
+                <span style={{ width: 4 }} />
+
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<RollbackOutlined />}
+                  style={{ padding: 0 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReplyTarget(m);
+                    scrollToBottom("smooth");
+                  }}
+                />
+
+                <Dropdown
+                  trigger={["click"]}
+                  placement={isMine ? "topRight" : "topLeft"}
+                  arrow={{ pointAtCenter: true }}
+                  menu={{
+                    items: ([
+                      {
+                        key: "reply",
+                        label: "Reply",
+                        onClick: () => {
+                          setReplyTarget(m);
+                          scrollToBottom("smooth");
+                        },
+                      },
+                      {
+                        key: "forward",
+                        label: "Forward",
+                        disabled: true,
+                      },
+                      {
+                        key: "pin",
+                        label: "Pin",
+                        disabled: true,
+                      },
+                      {
+                        key: "report",
+                        label: "Report",
+                        disabled: true,
+                      },
+                      isMine
+                        ? {
+                            key: "remove",
+                            label: "Remove",
+                            danger: true,
+                            onClick: () => {
+                              Modal.confirm({
+                                title: "Delete this message?",
+                                okType: "danger",
+                                onOk: async () => {
+                                  try {
+                                    await deleteMessageMut({
+                                      variables: {
+                                        message_id: m.id,
+                                      },
+                                    });
+                                    await refetchMsgs({
+                                      chat_id: sel,
+                                    });
+                                  } catch (err: any) {
+                                    message.error(
+                                      err?.message ||
+                                        "Delete failed"
+                                    );
+                                  }
+                                },
+                              });
+                            },
+                          }
+                        : null,
+                    ].filter(Boolean) as MenuProps["items"]),
+                  }}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MoreOutlined />}
+                    style={{ padding: 0 }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Dropdown>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+})}
+
 
                     {isTyping && (
                       <div
@@ -1306,8 +1748,7 @@ function ChatUI() {
                           color: "#fff",
                           borderRadius: 999,
                           padding: "4px 12px",
-                          boxShadow:
-                            "0 2px 8px rgba(0,0,0,0.2)",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
                           cursor: "pointer",
                           fontSize: 12,
                           display: "flex",
@@ -1315,9 +1756,7 @@ function ChatUI() {
                           gap: 6,
                         }}
                       >
-                        <span style={{ fontWeight: 500 }}>
-                          New messages
-                        </span>
+                        <span style={{ fontWeight: 500 }}>New messages</span>
                         <span style={{ fontSize: 10 }}>▼</span>
                       </div>
                     )}
@@ -1325,9 +1764,9 @@ function ChatUI() {
                 )}
               </div>
 
-              <Divider />
+              <Divider style={{ margin: "8px 0" }} />
 
-              {replyTarget && (
+              {/* {replyTarget && (
                 <div
                   onClick={() => {
                     const el = document.getElementById(
@@ -1354,9 +1793,7 @@ function ChatUI() {
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{ fontWeight: 500, marginBottom: 2 }}
-                    >
+                    <div style={{ fontWeight: 500, marginBottom: 2 }}>
                       Replying to{" "}
                       {replyTarget.sender?.id === meId
                         ? "You"
@@ -1387,7 +1824,15 @@ function ChatUI() {
                     ✕
                   </Button>
                 </div>
-              )}
+              )} */}
+
+              {/* {replyTarget && (
+                <ReplyPreview
+                  target={replyTarget}
+                  meId={meId}
+                  onCancel={() => setReplyTarget(null)}
+                />
+              )} */}
 
               <SendMessageSection
                 chats={chats}
@@ -1406,6 +1851,9 @@ function ChatUI() {
                 }}
                 send={send}
                 me={me?.me ?? null}
+
+                replyTarget={replyTarget}
+                setReplyTarget={setReplyTarget}
               />
             </>
           )}
