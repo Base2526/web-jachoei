@@ -28,9 +28,9 @@ export async function query<T = any>(
     const duration = Date.now() - start;
 
     // === Print log after successful query ===
-    console.log(
-      `[SQL ${duration}ms]\n${text.trim()}\nParams: ${formatParams(params)}`
-    );
+    // console.log(
+    //   `[SQL ${duration}ms]\n${text.trim()}\nParams: ${formatParams(params)}`
+    // );
     return res;
   } catch (err: any) {
     console.error(

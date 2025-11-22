@@ -29,6 +29,8 @@ useServer(
                 "") as string;
             const token = String(raw).replace(/^Bearer\s+/i, "").trim();
 
+            console.log("[WebSocketServer][onSubscribe] = ", token);
+
             // 2) หา user
             let user: any = null;
             if (token) {
@@ -46,9 +48,13 @@ useServer(
             // 3) ถ้าไม่ผ่าน auth -> ส่ง GraphQLError[]
             if (!user) {
                 return [
-                new GraphQLError("UNAUTHENTICATED", {
-                    extensions: { code: "UNAUTHENTICATED" },
-                }),
+                    new GraphQLError("UNAUTHENTICATED", {
+                        extensions: { 
+                            code: "UNAUTHENTICATED",
+                            message: "Token expired or missing.",
+                            reason: "No valid Authorization header.",
+                        },
+                    }),
                 ];
             }
 

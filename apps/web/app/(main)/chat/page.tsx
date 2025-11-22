@@ -30,8 +30,12 @@ import {
   RollbackOutlined,  
 } from "@ant-design/icons";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import SendMessageSection from "@/components/chat/SendMessageSection";
+import { formatTimeAgo } from "@/components/comments/Helper"
+import { useGlobalChatStore } from "@/store/globalChatStore";
 
 const { Text } = Typography;
 
@@ -62,6 +66,24 @@ const Q_CHATS = gql`
         name
         avatar
       }
+
+      last_message_at
+      last_message {
+        id
+        text
+        created_at
+        sender {
+          id
+          name
+          avatar
+        }
+        images {
+          id
+          url
+          file_id
+          mime
+        }
+      }
     }
   }
 `;
@@ -90,6 +112,13 @@ const Q_MSGS = gql`
       sender {
         id
         name
+        avatar
+        phone
+        email
+        role
+        created_at
+        username
+        language
       }
 
       myReceipt {
@@ -163,12 +192,22 @@ const MUT_SEND = gql`
       reply_to_id: $reply_to_id
     ) {
       id
+      chat_id
+      text
+      created_at
       reply_to_id
+
+      sender {
+        id
+        name
+        avatar
+      }
+
       images {
         id
         url
-        mime
         file_id
+        mime
       }
     }
   }
@@ -583,6 +622,7 @@ function renderDeliveryTicks(receipt: any) {
 }
 
 function ChatUI() {
+  const router = useRouter();  
   const [sel, setSel] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [openCreate, setOpenCreate] = useState(false);
@@ -591,17 +631,49 @@ function ChatUI() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [openEdit, setOpenEdit] = useState(false);
   const [editName, setEditName] = useState("");
-  const [editTarget, setEditTarget] =
-    useState<{ id: string; name?: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<{ id: string; name?: string } | null>(null);
   const [replyTarget, setReplyTarget] = useState<any | null>(null);
-
   const [leftCollapsed, setLeftCollapsed] = useState(true);
-
   const searchParams = useSearchParams();
   const toParam = searchParams.get("to");
-
   const { data: me } = useQuery(Q_ME);
-  const [send] = useMutation(MUT_SEND);
+
+  const [send] = useMutation(MUT_SEND, {
+    // ให้ SUB จัดการ messages ด้านขวา → ไม่ต้อง refetchMsgs
+    // เราอัปเดตแค่ myChats (list ด้านซ้าย) พอ
+    update(cache, { data }) {
+      const newMsg = data?.sendMessage;
+      if (!newMsg) return;
+
+      // อัปเดตผลของ Q_CHATS ใน cache
+      cache.updateQuery<{ myChats: any[] }>({ query: Q_CHATS }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          myChats: old.myChats.map((chat) => {
+            if (chat.id !== newMsg.chat_id) return chat;
+
+            return {
+              ...chat,
+              last_message: {
+                // structure ให้เหมือนที่ query Q_CHATS ใช้อยู่
+                id: newMsg.id,
+                text: newMsg.text,
+                created_at: newMsg.created_at,
+                sender: newMsg.sender,
+                images: newMsg.images ?? [],
+              },
+              last_message_at: newMsg.created_at,
+            };
+          }),
+        };
+      });
+    },
+    onError(err) {
+      console.error("[MUT_SEND]", err);
+    },
+  });
+
   const [createChat] = useMutation(MUT_CREATE);
   const [addMember] = useMutation(MUT_ADD);
   const [renameChat] = useMutation(MUT_RENAME, { onError: () => {} });
@@ -609,6 +681,7 @@ function ChatUI() {
   const [markRead] = useMutation(MUT_MARK_READ);
   const [markUpTo] = useMutation(MUT_MARK_UPTO);
   const [deleteMessageMut] = useMutation(MUT_DELETE_MSG, { onError: () => {} });
+  const [openMembers, setOpenMembers] = useState(false);
 
   const handledToRef = useRef(false);
 
@@ -623,6 +696,11 @@ function ChatUI() {
 
   const meId = me?.me?.id;
   const meName = me?.me?.name as string | undefined;
+
+  // ด้านบนใน ChatUI()
+  const setCurrentChat = useGlobalChatStore((s:any) => s.setCurrentChat);
+  const clearUnread = useGlobalChatStore((s:any) => s.clearUnread);
+  
 
   const {
     data: chats,
@@ -645,8 +723,8 @@ function ChatUI() {
   });
 
   useEffect(() => {
-    console.log("[msgs] = ", msgs);
-  }, [msgs]);
+    console.log("[sel] = ", sel);
+  }, [sel]);
 
   useEffect(() => {
     handledToRef.current = false;
@@ -664,13 +742,23 @@ function ChatUI() {
 
   // subscriptions
   useEffect(() => {
-    if (!sel) return;
+
+    console.log("[chat page] sel =", sel);
+
+    if (!sel) {
+      console.log("[chat page] no sel, skip subscribe");
+      return;
+    }
+
+    console.log("[chat page] subscribing with chat_id =", sel);
 
     const unsubAdded = subscribeToMoreMsgs({
       document: SUB,
       variables: { chat_id: sel },
       updateQuery(prev, { subscriptionData }) {
         const m = subscriptionData.data?.messageAdded;
+
+        console.log("[subscribeToMoreMsgs] = ", subscriptionData);
         if (!m) return prev;
 
         const appended = (prev.messages || []).concat([
@@ -688,6 +776,8 @@ function ChatUI() {
             images: m.images || [],
           },
         ]);
+
+        console.log("[msgs] =", appended);
         return { ...prev, messages: appended };
       },
     });
@@ -945,6 +1035,8 @@ function ChatUI() {
 
   // auto-scroll
   useEffect(() => {
+
+    // console.log("[messagesList] =", messagesList);
     const list = messagesList;
     const currentCount = list.length;
     const prevCount = lastMsgCountRef.current;
@@ -980,13 +1072,128 @@ function ChatUI() {
   }, [messagesList, meId, isAtBottom]);
 
   const nameGroup = () => {
-    if (!sel || !chat) return "Select a chat";
-    if (chat.is_group) {
-      return chat.name?.trim() ? `Group Chat with ${chat.name}` : "Group Chat";
+    if (!sel || !chat) {
+      return "Select a chat";
     }
+
+    // ====== Group Chat ======
+    if (chat.is_group) {
+      const title = chat.name?.trim() || "Group Chat";
+
+      const others = (chat.members || []).filter((m: any) => m.id !== meId);
+      const total = others.length;
+
+      // เอาไว้โชว์แค่ 3 คนแรก + นับต่อท้าย
+      const previewNames = others.slice(0, 3).map((m: any) => m.name).join(", ");
+      const extra = total > 3 ? ` +${total - 3} more` : "";
+      const membersText = previewNames + extra;
+
+      const initial = getInitial(title);
+
+      return (
+        <Space align="center" size={12}>
+          <div
+            style={{
+              position: "relative",
+              display: "inline-block",
+            }}
+          >
+            <Avatar size={32} style={{ background: "#1677ff" }}>
+              {initial}
+            </Avatar>
+            {/* badge bottom-right */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: -2,
+                right: -2,
+                width: 18,
+                height: 18,
+                background: "#fff",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+              }}
+            >
+              <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+            </div>
+          </div>
+
+          <div style={{ lineHeight: 1.2 }}>
+            <div style={{ fontWeight: 600 }}>{title}</div>
+            {membersText && (
+              <div style={{ fontSize: 12, color: "#999" }}>{membersText}</div>
+            )}
+          </div>
+
+        </Space>
+      );
+    }
+
+    // ====== 1:1 Chat ======
     const partner = (chat.members || []).find((m: any) => m.id !== meId);
-    return partner?.name ? `Chat with ${partner.name}` : "Chat";
+    const partnerName = partner?.name || "Chat";
+    const avatarSrc = (partner as any)?.avatar;
+    const initial = getInitial(partnerName);
+
+    return (
+      <Link
+        href={`/profile/${partner?.id}`}
+        style={{ textDecoration: "none", color: "inherit" }}
+      >
+        <Space align="center" style={{ cursor: "pointer" }}>
+          <div
+            style={{
+              position: "relative",
+              display: "inline-block",
+            }}
+          >
+            <Avatar size={32} src={avatarSrc} style={{ background: "#1677ff" }}>
+              {!avatarSrc && initial}
+            </Avatar>
+
+            <div
+              style={{
+                position: "absolute",
+                bottom: -2,
+                right: -2,
+                width: 18,
+                height: 18,
+                background: "#fff",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+              }}
+            >
+              <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+            </div>
+          </div>
+
+          <span style={{ fontWeight: 600 }}>{partnerName}</span>
+        </Space>
+      </Link>
+    );
   };
+
+  const sortedChats = useMemo(() => {
+    const list = chats?.myChats || [];
+
+    return [...list].sort((a: any, b: any) => {
+      const aTime = a.last_message_at
+        ? new Date(a.last_message_at).getTime()
+        : 0;
+      const bTime = b.last_message_at
+        ? new Date(b.last_message_at).getTime()
+        : 0;
+
+      // เรียงจากใหม่ → เก่า
+      return bTime - aTime;
+    });
+  }, [chats]);
 
   return (
     <div
@@ -1053,8 +1260,11 @@ function ChatUI() {
           >
             <List
               size="small"
-              dataSource={chats?.myChats || []}
+              // dataSource={chats?.myChats || []}
+              dataSource={sortedChats}
               renderItem={(c: any) => {
+
+                // console.log("[page] = ", c);
                 const partnerUser = !c.is_group
                   ? (c.members || []).find((m: any) => m.id !== meId) || null
                   : null;
@@ -1062,25 +1272,49 @@ function ChatUI() {
                 const partnerName = partnerUser?.name || "User";
 
                 const titleText = (
-                  <span
-                    style={{ display: "flex", alignItems: "center", gap: 6 }}
-                  >
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     {!leftCollapsed &&
                       (c.is_group ? c.name || "Group" : partnerName)}
                   </span>
                 );
 
-                const descText = c.is_group
+                // ===== safe last_message + images =====
+                const last = c.last_message;
+                const images = Array.isArray(last?.images) ? last.images : [];
+
+                let lastText = "";
+
+                if (last?.text && last.text.trim()) {
+                  const t = last.text.trim();
+                  lastText = t.length > 60 ? t.slice(0, 57) + "…" : t;
+                } else if (images.length > 0) {
+                  lastText =
+                    images.length === 1
+                      ? "📷 Photo"
+                      : `📷 ${images.length} photos`;
+                }
+
+                const fallbackDesc = c.is_group
                   ? (c.members || [])
                       .filter((m: any) => m.id !== meId)
                       .map((m: any) => m.name)
                       .join(", ")
-                  : null;
+                  : "";
+
+                // === time ago จาก last_message_at หรือ created_at ของ last
+                const lastAtRaw = c.last_message_at || last?.created_at;
+                const timeAgo = lastAtRaw ? formatTimeAgo(lastAtRaw) : "";
+
+                // === รวมข้อความ + timeAgo
+                const descCore = lastText || fallbackDesc || "";
+                const combinedDesc =
+                  descCore && timeAgo
+                    ? `${descCore} · ${timeAgo}`
+                    : descCore || timeAgo; // ถ้าไม่มี text ให้แสดงเวลาอย่างเดียว
 
                 const initial = getInitial(
                   c.is_group ? c.name || "G" : partnerName
                 );
-
                 const avatarSrc = c.is_group
                   ? undefined
                   : partnerUser?.avatar || undefined;
@@ -1089,6 +1323,8 @@ function ChatUI() {
                   <List.Item
                     onClick={() => {
                       setSel(c.id);
+                      setCurrentChat(c.id);   // แจ้ง global ว่าเปิดห้องนี้อยู่
+                      clearUnread(c.id);      // เคลียร์ unread ของห้องนี้
                       lastMsgCountRef.current = 0;
                       setReplyTarget(null);
                       refetchMsgs({ chat_id: c.id });
@@ -1106,7 +1342,6 @@ function ChatUI() {
                       leftCollapsed
                         ? undefined
                         : [
-                            // c.is_group ? <TeamOutlined /> : <UserOutlined />,
                             <Dropdown
                               key="more"
                               menu={menuFor(c)}
@@ -1119,13 +1354,70 @@ function ChatUI() {
                               />
                             </Dropdown>,
                           ]
-                    }
-                  >
-                    {/* ============================
-                        LEFT COLLAPSED MODE (small)
-                    ============================ */}
-                    {leftCollapsed ? (
-                      <div style={{ position: "relative", display: "inline-block" }}>
+                    }>
+                    {!leftCollapsed ? (
+                      <List.Item.Meta
+                        avatar={
+                          <div
+                            style={{
+                              position: "relative",
+                              display: "inline-block",
+                            }}>
+                            <Avatar
+                              src={avatarSrc}
+                              size={42}
+                              style={{ background: "#1677ff" }}>
+                              {!avatarSrc && initial}
+                            </Avatar>
+                            {/* badge bottom-right */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                bottom: -2,
+                                right: -2,
+                                width: 18,
+                                height: 18,
+                                background: "#fff",
+                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+                              }}
+                            >
+                              {c.is_group ? (
+                                <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                              ) : (
+                                <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                              )}
+                            </div>
+                          </div>
+                        }
+                        title={titleText}
+                        description={
+                          combinedDesc ? (
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#888",
+                                display: "inline-block",
+                                maxWidth: "100%",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {combinedDesc}
+                            </span>
+                          ) : null
+                        }
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          position: "relative",
+                          display: "inline-block",
+                        }}>
                         <Avatar
                           src={avatarSrc}
                           size={40}
@@ -1136,66 +1428,29 @@ function ChatUI() {
                         >
                           {!avatarSrc && initial}
                         </Avatar>
-
                         {/* badge bottom-right */}
                         <div
                           style={{
                             position: "absolute",
                             bottom: -2,
                             right: -2,
+                            width: 18,
+                            height: 18,
                             background: "#fff",
                             borderRadius: "50%",
-                            padding: 2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
                             boxShadow: "0 0 4px rgba(0,0,0,0.2)",
-                            lineHeight: 1,
                           }}
                         >
                           {c.is_group ? (
-                            <TeamOutlined style={{ fontSize: 12 }} />
+                            <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
                           ) : (
-                            <UserOutlined style={{ fontSize: 12 }} />
+                            <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
                           )}
                         </div>
                       </div>
-                    ) : (
-                      /* ============================
-                          NORMAL MODE (with Meta)
-                      ============================ */
-                      <List.Item.Meta
-                        avatar={
-                          <div style={{ position: "relative", display: "inline-block" }}>
-                            <Avatar
-                              src={avatarSrc}
-                              size={42}
-                              style={{ background: "#1677ff" }}
-                            >
-                              {!avatarSrc && initial}
-                            </Avatar>
-
-                            {/* badge bottom-right */}
-                            <div
-                              style={{
-                                position: "absolute",
-                                bottom: -2,
-                                right: -2,
-                                background: "#fff",
-                                borderRadius: "50%",
-                                padding: 2,
-                                boxShadow: "0 0 4px rgba(0,0,0,0.15)",
-                                lineHeight: 1,
-                              }}
-                            >
-                              {c.is_group ? (
-                                <TeamOutlined style={{ fontSize: 12 }} />
-                              ) : (
-                                <UserOutlined style={{ fontSize: 12 }} />
-                              )}
-                            </div>
-                          </div>
-                        }
-                        title={titleText}
-                        description={descText}
-                      />
                     )}
                   </List.Item>
                 );
@@ -1207,15 +1462,52 @@ function ChatUI() {
 
       {/* RIGHT */}
       <div style={{ flex: 1, minWidth: 0, height: "100%" }}>
-        <Card
-          title={nameGroup()}
-          style={{ height: "100%" }}
-          bodyStyle={{
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-          }}
-        >
+      <Card
+        title={nameGroup()}
+        extra={
+          <Dropdown
+            trigger={["click"]}
+            placement="bottomRight"
+            menu={{
+              items: [
+                {
+                  key: "members",
+                  label: "View Members",
+                  onClick: () => setOpenMembers(true),
+                },
+                {
+                  key: "add",
+                  label: "Add Member",
+                  onClick: () => onAddMember(chat),
+                  disabled: !chat?.is_group,
+                },
+                {
+                  key: "rename",
+                  label: "Rename Group",
+                  onClick: () => onEdit(chat),
+                  disabled: !chat?.is_group,
+                },
+                {
+                  type: "divider",
+                },
+                {
+                  key: "delete",
+                  label: "Delete Chat",
+                  danger: true,
+                  onClick: () => onDelete(chat),
+                },
+              ],
+            }}
+          >
+            <Button type="text" icon={<MoreOutlined />} />
+          </Dropdown>
+        }
+        style={{ height: "100%" }}
+        bodyStyle={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+        }}>
           {sel && (
             <>
               <div
@@ -1261,422 +1553,420 @@ function ChatUI() {
                 ) : (
                   <>
                     {messagesList.map((m: any, idx: number) => {
-  const isMine = meId && m.sender?.id === meId;
-  const createdAt = new Date(m.created_at);
-  const prev = idx > 0 ? messagesList[idx - 1] : null;
-  const prevDate = prev ? new Date(prev.created_at) : null;
+                      const isMine = meId && m.sender?.id === meId;
+                      const createdAt = new Date(m.created_at);
+                      const prev = idx > 0 ? messagesList[idx - 1] : null;
+                      const prevDate = prev ? new Date(prev.created_at) : null;
 
-  const showDaySeparator =
-    idx === 0 ||
-    !isSameDay(
-      createdAt,
-      new Date(prev?.created_at || createdAt)
-    );
+                      const showDaySeparator =
+                        idx === 0 ||
+                        !isSameDay(
+                          createdAt,
+                          new Date(prev?.created_at || createdAt)
+                        );
 
-  const prevSameSender =
-    prev &&
-    prev.sender?.id === m.sender?.id &&
-    prevDate &&
-    createdAt.getTime() - prevDate.getTime() < 5 * 60 * 1000;
+                      const prevSameSender =
+                        prev &&
+                        prev.sender?.id === m.sender?.id &&
+                        prevDate &&
+                        createdAt.getTime() - prevDate.getTime() < 5 * 60 * 1000;
 
-  const isGroupTop = !prevSameSender;
-  const senderName = isMine
-    ? meName || "Me"
-    : m.sender?.name || "—";
+                      const isGroupTop = !prevSameSender;
+                      const senderName = isMine
+                        ? meName || "Me"
+                        : m.sender?.name || "—";
 
-  const baseRadius = 18;
-  const bubbleRadius = {
-    borderTopLeftRadius: isMine
-      ? baseRadius
-      : isGroupTop
-      ? baseRadius
-      : 6,
-    borderTopRightRadius: isMine
-      ? isGroupTop
-        ? baseRadius
-        : 6
-      : baseRadius,
-    borderBottomLeftRadius: baseRadius,
-    borderBottomRightRadius: baseRadius,
-  };
+                      const baseRadius = 18;
+                      const bubbleRadius = {
+                        borderTopLeftRadius: isMine
+                          ? baseRadius
+                          : isGroupTop
+                          ? baseRadius
+                          : 6,
+                        borderTopRightRadius: isMine
+                          ? isGroupTop
+                            ? baseRadius
+                            : 6
+                          : baseRadius,
+                        borderBottomLeftRadius: baseRadius,
+                        borderBottomRightRadius: baseRadius,
+                      };
 
-  const wrapperMarginTop = isGroupTop ? 10 : 2;
+                      const wrapperMarginTop = isGroupTop ? 10 : 2;
 
-  const hasText =
-    typeof m.text === "string" && m.text.trim().length > 0;
-  const hasImages =
-    Array.isArray(m.images) && m.images.length > 0;
+                      const hasText =
+                        typeof m.text === "string" && m.text.trim().length > 0;
+                      const hasImages =
+                        Array.isArray(m.images) && m.images.length > 0;
 
-  const timeLabel = createdAt.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+                      const timeLabel = createdAt.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      });
 
-  // --------- reply object ----------
-  const reply = m.reply_to;
-  const hasReply = !!reply;
-  const replyText =
-    typeof reply?.text === "string" ? reply.text : "";
-  const replyImages: any[] = Array.isArray(reply?.images)
-    ? reply.images
-    : [];
+                      // --------- reply object ----------
+                      const reply = m.reply_to;
+                      const hasReply = !!reply;
+                      const replyText =
+                        typeof reply?.text === "string" ? reply.text : "";
+                      const replyImages: any[] = Array.isArray(reply?.images)
+                        ? reply.images
+                        : [];
 
-  const replySenderLabel =
-    reply?.sender?.id === meId
-      ? "You"
-      : reply?.sender?.name || "User";
+                      const replySenderLabel =
+                        reply?.sender?.id === meId
+                          ? "You"
+                          : reply?.sender?.name || "User";
 
-  const getReplyImgSrc = (img: any) =>
-    img?.file_id ? `/api/files/${img.file_id}` : img?.url || "";
+                      const getReplyImgSrc = (img: any) =>
+                        img?.file_id ? `/api/files/${img.file_id}` : img?.url || "";
 
-  return (
-    <div key={m.id} id={`msg-${m.id}`}>
-      {showDaySeparator && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            margin: "8px 0 12px",
-          }}
-        >
-          <span
-            style={{
-              background: "rgba(0,0,0,0.05)",
-              borderRadius: 999,
-              padding: "2px 12px",
-              fontSize: 12,
-              color: "#666",
-            }}
-          >
-            {formatDayLabel(createdAt)}
-          </span>
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: isMine ? "flex-end" : "flex-start",
-          padding: "2px 0",
-          marginTop: wrapperMarginTop,
-        }}
-        onDoubleClick={() =>
-          markRead({
-            variables: { message_id: m.id },
-          }).catch(() => {})
-        }
-      >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: isMine ? "row-reverse" : "row",
-            alignItems: "flex-end",
-            gap: 8,
-            maxWidth: "70%",
-          }}
-        >
-          {!isMine && isGroupTop && (
-            <Avatar
-              size={32}
-              style={{
-                background: "#999",
-                flexShrink: 0,
-              }}
-            >
-              {getInitial(senderName)}
-            </Avatar>
-          )}
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: isMine ? "flex-end" : "flex-start",
-              flex: 1,
-            }}
-          >
-            {!isMine && isGroupTop && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "#999",
-                  marginBottom: 2,
-                }}
-              >
-                {senderName}
-              </div>
-            )}
-
-            {/* ====== REPLY BLOCK (อยู่บน bubble) ====== */}
-            {hasReply && (
-              <div
-                style={{
-                  marginBottom: hasText || hasImages ? 6 : 4,
-                  padding: "6px 8px",
-                  borderLeft: `3px solid ${
-                    isMine ? "#ffffff" : "#1677ff"
-                  }`,
-                  background: isMine
-                    ? "rgba(0,0,0,0.20)"
-                    : "#e6f4ff",
-                  borderRadius: 8,
-                  maxWidth: "100%",
-                  cursor: "pointer",
-                }}
-                onClick={() => {
-                  const el = document.getElementById(
-                    `msg-${reply.id}`
-                  );
-                  if (el) {
-                    el.scrollIntoView({
-                      behavior: "smooth",
-                      block: "center",
-                    });
-                  }
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 500,
-                    marginBottom: 2,
-                    color: isMine ? "#ffffff" : "#1677ff",
-                  }}
-                >
-                  {replySenderLabel}
-                </div>
-
-                {replyText && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: isMine ? "#f5f5f5" : "#555",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      overflow: "hidden",
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                    }}
-                  >
-                    {replyText}
-                  </div>
-                )}
-
-                {replyImages.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: replyText ? 4 : 0,
-                      display: "flex",
-                      gap: 4,
-                    }}
-                  >
-                    {replyImages.slice(0, 3).map((img, i) => {
-                      const extra = replyImages.length - 3;
-                      const isLast = i === 2 && extra > 0;
                       return (
-                        <div
-                          key={img.id ?? i}
-                          style={{
-                            position: "relative",
-                            width: 36,
-                            height: 36,
-                            borderRadius: 6,
-                            overflow: "hidden",
-                            background: "#ddd",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <Image
-                            src={getReplyImgSrc(img)}
-                            alt=""
-                            preview={false}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                              filter:
-                                isLast && extra > 0
-                                  ? "brightness(0.65)"
-                                  : "none",
-                            }}
-                          />
-                          {isLast && extra > 0 && (
+                        <div key={m.id} id={`msg-${m.id}`}>
+                          {showDaySeparator && (
                             <div
                               style={{
-                                position: "absolute",
-                                inset: 0,
                                 display: "flex",
-                                alignItems: "center",
                                 justifyContent: "center",
-                                background:
-                                  "rgba(0,0,0,0.35)",
-                                color: "#fff",
-                                fontSize: 11,
-                                fontWeight: 600,
+                                margin: "8px 0 12px",
                               }}
                             >
-                              +{extra}
+                              <span
+                                style={{
+                                  background: "rgba(0,0,0,0.05)",
+                                  borderRadius: 999,
+                                  padding: "2px 12px",
+                                  fontSize: 12,
+                                  color: "#666",
+                                }}
+                              >
+                                {formatDayLabel(createdAt)}
+                              </span>
                             </div>
                           )}
+
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: isMine ? "flex-end" : "flex-start",
+                              padding: "2px 0",
+                              marginTop: wrapperMarginTop,
+                            }}
+                            onDoubleClick={() =>
+                              markRead({
+                                variables: { message_id: m.id },
+                              }).catch(() => {})
+                            }
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: isMine ? "row-reverse" : "row",
+                                alignItems: "flex-end",
+                                gap: 8,
+                                maxWidth: "70%",
+                              }}
+                            >
+                              {!isMine && isGroupTop && (
+                                <Avatar
+                                  size={32}
+                                  style={{
+                                    background: "#999",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {getInitial(senderName)}
+                                </Avatar>
+                              )}
+
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: isMine ? "flex-end" : "flex-start",
+                                  flex: 1,
+                                }}
+                              >
+                                {!isMine && isGroupTop && (
+                                  <div
+                                    style={{
+                                      fontSize: 12,
+                                      color: "#999",
+                                      marginBottom: 2,
+                                    }}
+                                  >
+                                    {senderName}
+                                  </div>
+                                )}
+
+                                {/* ====== REPLY BLOCK (อยู่บน bubble) ====== */}
+                                {hasReply && (
+                                  <div
+                                    style={{
+                                      marginBottom: hasText || hasImages ? 6 : 4,
+                                      padding: "6px 8px",
+                                      borderLeft: `3px solid ${
+                                        isMine ? "#ffffff" : "#1677ff"
+                                      }`,
+                                      background: isMine
+                                        ? "rgba(0,0,0,0.20)"
+                                        : "#e6f4ff",
+                                      borderRadius: 8,
+                                      maxWidth: "100%",
+                                      cursor: "pointer",
+                                    }}
+                                    onClick={() => {
+                                      const el = document.getElementById(
+                                        `msg-${reply.id}`
+                                      );
+                                      if (el) {
+                                        el.scrollIntoView({
+                                          behavior: "smooth",
+                                          block: "center",
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        fontWeight: 500,
+                                        marginBottom: 2,
+                                        color: isMine ? "#ffffff" : "#1677ff",
+                                      }}
+                                    >
+                                      {replySenderLabel}
+                                    </div>
+
+                                    {replyText && (
+                                      <div
+                                        style={{
+                                          fontSize: 12,
+                                          color: isMine ? "#f5f5f5" : "#555",
+                                          whiteSpace: "pre-wrap",
+                                          wordBreak: "break-word",
+                                          overflow: "hidden",
+                                          display: "-webkit-box",
+                                          WebkitLineClamp: 2,
+                                          WebkitBoxOrient: "vertical",
+                                        }}
+                                      >
+                                        {replyText}
+                                      </div>
+                                    )}
+
+                                    {replyImages.length > 0 && (
+                                      <div
+                                        style={{
+                                          marginTop: replyText ? 4 : 0,
+                                          display: "flex",
+                                          gap: 4,
+                                        }}
+                                      >
+                                        {replyImages.slice(0, 3).map((img, i) => {
+                                          const extra = replyImages.length - 3;
+                                          const isLast = i === 2 && extra > 0;
+                                          return (
+                                            <div
+                                              key={img.id ?? i}
+                                              style={{
+                                                position: "relative",
+                                                width: 36,
+                                                height: 36,
+                                                borderRadius: 6,
+                                                overflow: "hidden",
+                                                background: "#ddd",
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              <Image
+                                                src={getReplyImgSrc(img)}
+                                                alt=""
+                                                preview={false}
+                                                style={{
+                                                  width: "100%",
+                                                  height: "100%",
+                                                  objectFit: "cover",
+                                                  filter:
+                                                    isLast && extra > 0
+                                                      ? "brightness(0.65)"
+                                                      : "none",
+                                                }}
+                                              />
+                                              {isLast && extra > 0 && (
+                                                <div
+                                                  style={{
+                                                    position: "absolute",
+                                                    inset: 0,
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    background:
+                                                      "rgba(0,0,0,0.35)",
+                                                    color: "#fff",
+                                                    fontSize: 11,
+                                                    fontWeight: 600,
+                                                  }}
+                                                >
+                                                  +{extra}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {/* ====== END REPLY BLOCK ====== */}
+
+                                {hasText && (
+                                  <div
+                                    style={{
+                                      padding: "8px 12px",
+                                      background: isMine ? "#1677ff" : "#f5f5f5",
+                                      color: isMine ? "#fff" : "#000",
+                                      boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                                      wordBreak: "break-word",
+                                      whiteSpace: "pre-wrap",
+                                      ...bubbleRadius,
+                                    }}
+                                  >
+                                    {m.text}
+                                  </div>
+                                )}
+
+                                {hasImages && renderMessageImages(m, !!isMine)}
+
+                                <div
+                                  style={{
+                                    marginTop: 4,
+                                    display: "flex",
+                                    justifyContent: isMine ? "flex-end" : "flex-start",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      fontSize: 11,
+                                    }}
+                                  >
+                                    <span style={{ color: "#999" }}>{timeLabel}</span>
+
+                                    {isMine ? (
+                                      <>
+                                        <span style={{ color: "#999" }}>
+                                          {m?.myReceipt?.isRead
+                                            ? "Read"
+                                            : m?.myReceipt?.deliveredAt
+                                            ? "Delivered"
+                                            : "Sent"}
+                                          {renderDeliveryTicks(m?.myReceipt)}
+                                        </span>
+                                        <span style={{ color: "#bbb" }}>
+                                          · {m?.readersCount ?? 0} read
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span style={{ color: "#bbb" }}>
+                                        {m?.readersCount ?? 0} read
+                                      </span>
+                                    )}
+
+                                    <span style={{ width: 4 }} />
+
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      icon={<RollbackOutlined />}
+                                      style={{ padding: 0 }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setReplyTarget(m);
+                                        scrollToBottom("smooth");
+                                      }}
+                                    />
+
+                                    <Dropdown
+                                      trigger={["click"]}
+                                      placement={isMine ? "topRight" : "topLeft"}
+                                      arrow={{ pointAtCenter: true }}
+                                      menu={{
+                                        items: ([
+                                          {
+                                            key: "reply",
+                                            label: "Reply",
+                                            onClick: () => {
+                                              setReplyTarget(m);
+                                              scrollToBottom("smooth");
+                                            },
+                                          },
+                                          {
+                                            key: "forward",
+                                            label: "Forward",
+                                            disabled: true,
+                                          },
+                                          {
+                                            key: "pin",
+                                            label: "Pin",
+                                            disabled: true,
+                                          },
+                                          {
+                                            key: "report",
+                                            label: "Report",
+                                            disabled: true,
+                                          },
+                                          isMine
+                                            ? {
+                                                key: "remove",
+                                                label: "Remove",
+                                                danger: true,
+                                                onClick: () => {
+                                                  Modal.confirm({
+                                                    title: "Delete this message?",
+                                                    okType: "danger",
+                                                    onOk: async () => {
+                                                      try {
+                                                        await deleteMessageMut({
+                                                          variables: {
+                                                            message_id: m.id,
+                                                          },
+                                                        });
+                                                        await refetchMsgs({
+                                                          chat_id: sel,
+                                                        });
+                                                      } catch (err: any) {
+                                                        message.error(
+                                                          err?.message ||
+                                                            "Delete failed"
+                                                        );
+                                                      }
+                                                    },
+                                                  });
+                                                },
+                                              }
+                                            : null,
+                                        ].filter(Boolean) as MenuProps["items"]),
+                                      }}
+                                    >
+                                      <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<MoreOutlined />}
+                                        style={{ padding: 0 }}
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                    </Dropdown>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* ====== END REPLY BLOCK ====== */}
-
-            {hasText && (
-              <div
-                style={{
-                  padding: "8px 12px",
-                  background: isMine ? "#1677ff" : "#f5f5f5",
-                  color: isMine ? "#fff" : "#000",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
-                  wordBreak: "break-word",
-                  whiteSpace: "pre-wrap",
-                  ...bubbleRadius,
-                }}
-              >
-                {m.text}
-              </div>
-            )}
-
-            {hasImages && renderMessageImages(m, !!isMine)}
-
-            <div
-              style={{
-                marginTop: 4,
-                display: "flex",
-                justifyContent: isMine ? "flex-end" : "flex-start",
-              }}
-            >
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 11,
-                }}
-              >
-                <span style={{ color: "#999" }}>{timeLabel}</span>
-
-                {isMine ? (
-                  <>
-                    <span style={{ color: "#999" }}>
-                      {m?.myReceipt?.isRead
-                        ? "Read"
-                        : m?.myReceipt?.deliveredAt
-                        ? "Delivered"
-                        : "Sent"}
-                      {renderDeliveryTicks(m?.myReceipt)}
-                    </span>
-                    <span style={{ color: "#bbb" }}>
-                      · {m?.readersCount ?? 0} read
-                    </span>
-                  </>
-                ) : (
-                  <span style={{ color: "#bbb" }}>
-                    {m?.readersCount ?? 0} read
-                  </span>
-                )}
-
-                <span style={{ width: 4 }} />
-
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<RollbackOutlined />}
-                  style={{ padding: 0 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setReplyTarget(m);
-                    scrollToBottom("smooth");
-                  }}
-                />
-
-                <Dropdown
-                  trigger={["click"]}
-                  placement={isMine ? "topRight" : "topLeft"}
-                  arrow={{ pointAtCenter: true }}
-                  menu={{
-                    items: ([
-                      {
-                        key: "reply",
-                        label: "Reply",
-                        onClick: () => {
-                          setReplyTarget(m);
-                          scrollToBottom("smooth");
-                        },
-                      },
-                      {
-                        key: "forward",
-                        label: "Forward",
-                        disabled: true,
-                      },
-                      {
-                        key: "pin",
-                        label: "Pin",
-                        disabled: true,
-                      },
-                      {
-                        key: "report",
-                        label: "Report",
-                        disabled: true,
-                      },
-                      isMine
-                        ? {
-                            key: "remove",
-                            label: "Remove",
-                            danger: true,
-                            onClick: () => {
-                              Modal.confirm({
-                                title: "Delete this message?",
-                                okType: "danger",
-                                onOk: async () => {
-                                  try {
-                                    await deleteMessageMut({
-                                      variables: {
-                                        message_id: m.id,
-                                      },
-                                    });
-                                    await refetchMsgs({
-                                      chat_id: sel,
-                                    });
-                                  } catch (err: any) {
-                                    message.error(
-                                      err?.message ||
-                                        "Delete failed"
-                                    );
-                                  }
-                                },
-                              });
-                            },
-                          }
-                        : null,
-                    ].filter(Boolean) as MenuProps["items"]),
-                  }}
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<MoreOutlined />}
-                    style={{ padding: 0 }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </Dropdown>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-})}
-
-
                     {isTyping && (
                       <div
                         style={{
@@ -1764,76 +2054,8 @@ function ChatUI() {
                 )}
               </div>
 
-              <Divider style={{ margin: "8px 0" }} />
-
-              {/* {replyTarget && (
-                <div
-                  onClick={() => {
-                    const el = document.getElementById(
-                      `msg-${replyTarget.id}`
-                    );
-                    if (el) {
-                      el.scrollIntoView({
-                        behavior: "smooth",
-                        block: "center",
-                      });
-                    }
-                  }}
-                  style={{
-                    marginBottom: 8,
-                    padding: "6px 10px",
-                    borderRadius: 8,
-                    background: "#f0f5ff",
-                    borderLeft: "3px solid #1677ff",
-                    fontSize: 12,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, marginBottom: 2 }}>
-                      Replying to{" "}
-                      {replyTarget.sender?.id === meId
-                        ? "You"
-                        : replyTarget.sender?.name || "User"}
-                    </div>
-
-                    <div
-                      style={{
-                        maxHeight: 80,
-                        overflowY: "auto",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                        paddingRight: 4,
-                      }}
-                    >
-                      {replyTarget.text}
-                    </div>
-                  </div>
-
-                  <Button
-                    type="text"
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setReplyTarget(null);
-                    }}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              )} */}
-
-              {/* {replyTarget && (
-                <ReplyPreview
-                  target={replyTarget}
-                  meId={meId}
-                  onCancel={() => setReplyTarget(null)}
-                />
-              )} */}
-
+              {/* <Divider style={{ margin: "8px 0" }} /> */}
+              
               <SendMessageSection
                 chats={chats}
                 sel={sel}
@@ -1932,6 +2154,72 @@ function ChatUI() {
           placeholder="Chat name"
           value={editName}
           onChange={(e) => setEditName(e.target.value)}
+        />
+      </Modal>
+
+      {/* MEMBERS MODAL */}
+      <Modal
+        open={openMembers && !!chat}
+        title={
+          chat
+            ? `Members (${(chat.members || []).length})`
+            : "Members"
+        }
+        footer={null}
+        onCancel={() => setOpenMembers(false)}
+      >
+        <List
+          dataSource={chat?.members || []}
+          renderItem={(m: any) => {
+            const isMe = m.id === meId;
+            const initial = getInitial(m.name);
+            const avatarSrc = m.avatar || undefined;
+
+            return (
+              <List.Item
+                onClick={() => {
+                  setOpenMembers(false);         // ปิด modal ก่อน
+                  router.push(`/profile/${m.id}`); // ไปหน้าโปรไฟล์
+                }}
+                style={{
+                  cursor: "pointer",
+                  borderRadius: 6,
+                  transition: "background 0.15s",
+                  padding: "6px 8px",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = "#f5f5f5";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                }}
+              >
+                <List.Item.Meta
+                  avatar={
+                    <Avatar src={avatarSrc} style={{ background: "#1677ff" }}>
+                      {!avatarSrc && initial}
+                    </Avatar>
+                  }
+                  title={
+                    <span>
+                      {m.name}{" "}
+                      {isMe && (
+                        <span style={{ color: "#999", fontSize: 12 }}>(You)</span>
+                      )}
+                    </span>
+                  }
+                  description={
+                    m.email ||
+                    m.phone || (
+                      <span style={{ color: "#bbb", fontSize: 12 }}>
+                        Click to view profile
+                      </span>
+                    )
+                  }
+                />
+              </List.Item>
+            );
+          }}
         />
       </Modal>
     </div>

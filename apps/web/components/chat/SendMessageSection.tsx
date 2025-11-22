@@ -77,6 +77,7 @@ export default function SendMessageSection({
   // ============= SEND MESSAGE ============
   const handleSend = useCallback(async () => {
     if (!canSend) return;
+    console.log("[handleSend] = ", sel, toUserIds, replyTarget?.id);
 
     try {
       await send({

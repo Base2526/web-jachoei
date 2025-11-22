@@ -38,7 +38,8 @@
     "react-dom": "18.2.0",
     "sharp": "^0.34.5",
     "swr": "^2.3.6",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/cookie": "^0.6.0",

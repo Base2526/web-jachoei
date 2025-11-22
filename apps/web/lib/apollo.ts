@@ -14,6 +14,8 @@ import { getMainDefinition } from "@apollo/client/utilities";
 import { onError } from "@apollo/client/link/error";
 import { createUploadLink } from 'apollo-upload-client';
 
+import { useSessionCtx } from '@/lib/session-context';
+
 import { addLog } from './log/log';
 
 function backendLogout(reason?: string) {
@@ -108,6 +110,10 @@ const wsLink =
           url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string, // e.g. "ws://localhost:8081/graphql"
           connectionParams: () => {
             const token = localStorage.getItem("token");
+
+            const { user } = useSessionCtx();
+
+            console.log("[GraphQLWsLink] = ", token, user);
             return token ? { Authorization: `Bearer ${token}` } : {};
           },
         })

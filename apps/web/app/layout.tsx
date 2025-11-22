@@ -10,6 +10,7 @@ import { client } from "lib/apollo"
 
 // import { getStoredUser, type StoredUser } from "@/utils/storage";
 import GlobalChatSub from "@/components/GlobalChatSub";
+import { GlobalChatListener } from "@/components/GlobalChatListener";
 import { SessionProvider, useSessionCtx } from '@/lib/session-context';
 // import { useSession } from '@/lib/useSession'
 
@@ -40,7 +41,7 @@ function GlobalWires() {
     } 
   }, []);
 
-  return meId ? <GlobalChatSub meId={meId} client={client} /> : null;
+  return meId ? <><GlobalChatListener /><GlobalChatSub meId={meId} client={client} /></>  : null;
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }){

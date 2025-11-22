@@ -63,19 +63,37 @@ export function insertCommentIntoTree(
 export function formatTimeAgo(createdAt: any) {
   if (!createdAt) return '';
 
-  // ถ้าเป็น string ของตัวเลข เช่น "1763478008860"
-  // ให้ parse เป็น Number
+  // parse timestamp
   const timestamp = typeof createdAt === 'string'
-    ? parseInt(createdAt, 10)
+    ? Date.parse(createdAt)
     : createdAt;
 
-  // ถ้าตัวเลขเป็น 10 หลัก (seconds) ให้แปลงเป็น ms
-  const ms = timestamp < 20000000000 ? timestamp * 1000 : timestamp;
-
-  const date = new Date(ms);
+  const date = new Date(timestamp);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
 
+  // ===== FUTURE TIME (diffMs < 0) =====
+  if (diffMs < 0) {
+    const sec = Math.floor(Math.abs(diffMs) / 1000);
+    if (sec < 60) return 'in a few seconds';
+
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `in ${min} minute${min > 1 ? 's' : ''}`;
+
+    const hour = Math.floor(min / 60);
+    if (hour < 24) return `in ${hour} hour${hour > 1 ? 's' : ''}`;
+
+    const day = Math.floor(hour / 24);
+    if (day < 30) return `in ${day} day${day > 1 ? 's' : ''}`;
+
+    const month = Math.floor(day / 30);
+    if (month < 12) return `in ${month} month${month > 1 ? 's' : ''}`;
+
+    const year = Math.floor(month / 12);
+    return `in ${year} year${year > 1 ? 's' : ''}`;
+  }
+
+  // ===== PAST TIME =====
   const sec = Math.floor(diffMs / 1000);
   if (sec < 60) return 'just now';
 
@@ -94,5 +112,3 @@ export function formatTimeAgo(createdAt: any) {
   const year = Math.floor(month / 12);
   return `${year} year${year > 1 ? 's' : ''} ago`;
 }
-
-

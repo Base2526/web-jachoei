@@ -22,6 +22,9 @@ export const typeDefs = /* GraphQL */ `
     created_by: User
     created_at: String!
     members: [User!]!
+
+    last_message: Message
+    last_message_at: String
   }
   
   type MessageReceipt {

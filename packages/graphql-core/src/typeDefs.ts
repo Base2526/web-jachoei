@@ -25,7 +25,7 @@ export const coreTypeDefs = /* GraphQL */ `
     isRead: Boolean!
   }
 
-  type Message { 
+  type Message {
     id: ID!
     chat_id: ID!
     sender: User
@@ -41,6 +41,9 @@ export const coreTypeDefs = /* GraphQL */ `
     myReceipt: MessageReceipt!
     readers: [User!]!
     readersCount: Int!
+
+    reply_to_id: ID
+    reply_to: Message
   }
 
   type Notification {
@@ -86,5 +89,9 @@ export const coreTypeDefs = /* GraphQL */ `
     commentAdded(post_id: ID!): Comment!
     commentUpdated(post_id: ID!): Comment!
     commentDeleted(post_id: ID!): ID!          # ส่ง id ที่ลบ
+
+
+
+    incomingMessage(user_id: ID!): Message!
   }
 `;
