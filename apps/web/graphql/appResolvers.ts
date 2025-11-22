@@ -552,6 +552,8 @@ export const resolvers = {
     ) => {
       const author_id = requireAuth(ctx);
 
+      console.log("[Query] messages :", author_id, limit, offset);
+
       const filter = includeDeleted ? "" : "AND m.deleted_at IS NULL";
 
       // ===== MAIN MESSAGE FETCH =====
@@ -689,7 +691,7 @@ export const resolvers = {
         };
       });
 
-      console.log("[Query] messages", chat_id);
+      console.log("[Query] messages", chat_id, results.length);
       return results;
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {

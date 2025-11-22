@@ -79,8 +79,10 @@ export default function SendMessageSection({
   // ============= SEND MESSAGE ============
   const handleSend = useCallback(async () => {
     if (!canSend) return;
-
     console.log("[handleSend] = ", sel, toUserIds, replyTarget?.id);
+
+    const nowIso = new Date().toISOString();
+    const tempId = "temp-" + nowIso;
 
     try {
       await send({
@@ -91,7 +93,30 @@ export default function SendMessageSection({
           images: uploadedImages,
           reply_to_id: replyTarget?.id ?? null,
         },
-      });
+        optimisticResponse: {
+          sendMessage: {
+            __typename: "Message",
+            id: tempId,
+            chat_id: sel!,
+            text: trimmed,
+            created_at: nowIso,
+            reply_to_id: replyTarget?.id ?? null,
+            sender: {
+              __typename: "User",
+              id: me?.id,
+              name: me?.name || "Me",
+              avatar: null,
+            },
+            images: uploadedImages.map((file, idx) => ({
+              __typename: "ChatImage",
+              id: `temp-img-${idx}`,
+              url: URL.createObjectURL(file),
+              file_id: null,
+              mime: file.type,
+            })),
+          },
+        },
+      } as any);
 
       setText("");
       setUploadedImages([]);
@@ -109,7 +134,10 @@ export default function SendMessageSection({
     send,
     setText,
     setReplyTarget,
+    me?.id,
+    me?.name,
   ]);
+
 
   // Enter to send
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

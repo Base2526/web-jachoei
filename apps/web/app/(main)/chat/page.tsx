@@ -639,13 +639,39 @@ function ChatUI() {
   const { data: me } = useQuery(Q_ME);
 
   const [send] = useMutation(MUT_SEND, {
-    // ให้ SUB จัดการ messages ด้านขวา → ไม่ต้อง refetchMsgs
-    // เราอัปเดตแค่ myChats (list ด้านซ้าย) พอ
     update(cache, { data }) {
       const newMsg = data?.sendMessage;
       if (!newMsg) return;
 
-      // อัปเดตผลของ Q_CHATS ใน cache
+      // 1) อัปเดต messages ของห้องนั้นใน Q_MSGS
+      cache.updateQuery<{ messages: any[] }>({
+        query: Q_MSGS,
+        variables: { chat_id: newMsg.chat_id },
+      }, (old) => {
+        if (!old) {
+          return { messages: [newMsg] };
+        }
+        // กันกรณี duplicated จาก SUB
+        const exists = old.messages.some((m) => m.id === newMsg.id);
+        if (exists) return old;
+
+        return {
+          ...old,
+          messages: [...old.messages, {
+            ...newMsg,
+            // เติม field ที่ Q_MSGS ต้องใช้แต่ MUT_SEND ไม่คืนให้
+            reply_to_id: newMsg.reply_to_id ?? null,
+            reply_to: null,
+            myReceipt: null,
+            readers: [],
+            readersCount: 0,
+            deleted_at: null,
+            is_deleted: false,
+          }],
+        };
+      });
+
+      // 2) อัปเดต list ซ้ายมือ (Q_CHATS) เหมือนเดิม
       cache.updateQuery<{ myChats: any[] }>({ query: Q_CHATS }, (old) => {
         if (!old) return old;
         return {
@@ -656,7 +682,6 @@ function ChatUI() {
             return {
               ...chat,
               last_message: {
-                // structure ให้เหมือนที่ query Q_CHATS ใช้อยู่
                 id: newMsg.id,
                 text: newMsg.text,
                 created_at: newMsg.created_at,
@@ -712,10 +737,12 @@ function ChatUI() {
     data: msgs,
     refetch: refetchMsgs,
     subscribeToMore: subscribeToMoreMsgs,
-    loading: loadingMsgs
+    loading: loadingMsgs,
+    networkStatus,
   } = useQuery(Q_MSGS, {
     skip: !sel,
     variables: { chat_id: sel },
+    notifyOnNetworkStatusChange: true,
   });
 
   const { data: users, refetch: refetchUsers } = useQuery(Q_USERS, {
@@ -1015,6 +1042,7 @@ function ChatUI() {
   );
 
   const messagesList = msgs?.messages || [];
+  const initialLoading = !msgs && loadingMsgs;
   const isEmpty = messagesList.length === 0;
 
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
@@ -1523,7 +1551,8 @@ function ChatUI() {
                 }}
               >  
               {/* 1) กำลังโหลด Messages */}
-              {loadingMsgs ? (
+              {initialLoading ? (
+                // ✅ spinner เฉพาะช่วงโหลดครั้งแรกจริง ๆ
                 <div
                   style={{
                     height: "100%",
@@ -1929,13 +1958,31 @@ function ChatUI() {
                                                     okType: "danger",
                                                     onOk: async () => {
                                                       try {
+                                                        // await deleteMessageMut({
+                                                        //   variables: {
+                                                        //     message_id: m.id,
+                                                        //   },
+                                                        // });
+                                                        // await refetchMsgs({
+                                                        //   chat_id: sel,
+                                                        // });
                                                         await deleteMessageMut({
                                                           variables: {
                                                             message_id: m.id,
                                                           },
-                                                        });
-                                                        await refetchMsgs({
-                                                          chat_id: sel,
+                                                          // optional: optimistic ลบจาก cache ทันที
+                                                          update(cache) {
+                                                            cache.updateQuery<{ messages: any[] }>({
+                                                              query: Q_MSGS,
+                                                              variables: { chat_id: sel },
+                                                            }, (old) => {
+                                                              if (!old) return old;
+                                                              return {
+                                                                ...old,
+                                                                messages: old.messages.filter((msg) => msg.id !== m.id),
+                                                              };
+                                                            });
+                                                          },
                                                         });
                                                       } catch (err: any) {
                                                         message.error(
