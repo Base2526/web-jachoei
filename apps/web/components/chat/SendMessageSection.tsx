@@ -6,6 +6,7 @@ import React, {
   KeyboardEvent,
   useState,
   useRef,
+  useEffect,
 } from "react";
 import { Input, Button, Upload, Image, Typography } from "antd";
 import {
@@ -52,6 +53,7 @@ export default function SendMessageSection({
   const [showEmoji, setShowEmoji] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
   const textAreaRef = useRef<any>(null);
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null);
 
   // หา chat ที่เลือก
   const chat = useMemo(
@@ -77,6 +79,7 @@ export default function SendMessageSection({
   // ============= SEND MESSAGE ============
   const handleSend = useCallback(async () => {
     if (!canSend) return;
+
     console.log("[handleSend] = ", sel, toUserIds, replyTarget?.id);
 
     try {
@@ -96,7 +99,17 @@ export default function SendMessageSection({
     } catch (e) {
       console.error("[send] error:", e);
     }
-  }, [canSend, sel, trimmed, uploadedImages, toUserIds, replyTarget, send, setText, setReplyTarget]);
+  }, [
+    canSend,
+    sel,
+    trimmed,
+    uploadedImages,
+    toUserIds,
+    replyTarget,
+    send,
+    setText,
+    setReplyTarget,
+  ]);
 
   // Enter to send
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -107,12 +120,39 @@ export default function SendMessageSection({
   };
 
   // Emoji Picker
-  const emojis = ["😀","😁","😂","🤣","😊","😍","😎","🤔","😢","🙏","👍","🔥","💯","🎉","✨","❤️","😡"];
+  const emojis = [
+    "😀","😁","😂","🤣","😊","😍","😎","🤔","😢","🙏",
+    "👍","🔥","💯","🎉","✨","❤️","😡"
+  ];
 
   const appendEmoji = (emoji: string) => {
     setText(text + emoji);
     textAreaRef.current?.focus?.();
+    // ถ้าอยากให้เลือกแล้ว dialog ยังไม่ปิด ให้ไม่เรียก setShowEmoji(false)
+    // ถ้าอยากให้ปิดทันทีตอนเลือก ก็เพิ่มบรรทัดนี้:
+    // setShowEmoji(false);
   };
+
+  // ปิด emoji dialog เมื่อคลิกนอกพื้นที่
+  useEffect(() => {
+    if (!showEmoji) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        emojiPickerRef.current &&
+        target &&
+        !emojiPickerRef.current.contains(target)
+      ) {
+        setShowEmoji(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showEmoji]);
 
   // Image Upload
   const beforeUpload = (file: File) => {
@@ -170,7 +210,6 @@ export default function SendMessageSection({
             Replying to {senderLabel}
           </div>
 
-          {/* text */}
           {replyText && (
             <div
               style={{
@@ -188,7 +227,6 @@ export default function SendMessageSection({
             </div>
           )}
 
-          {/* images */}
           {hasImages && (
             <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
               {replyImages.slice(0, 3).map((img: any, i: number) => {
@@ -259,6 +297,7 @@ export default function SendMessageSection({
         padding: 12,
         background: "#fff",
         borderTop: "1px solid #eee",
+        position: "relative", // ⭐ เพื่อให้ absolute emoji ผูกกับ container นี้
       }}
     >
       {/* ===== Reply Preview ===== */}
@@ -390,6 +429,7 @@ export default function SendMessageSection({
       {/* ===== EMOJI PICKER ===== */}
       {showEmoji && !disabled && (
         <div
+          ref={emojiPickerRef}
           style={{
             position: "absolute",
             bottom: 70,

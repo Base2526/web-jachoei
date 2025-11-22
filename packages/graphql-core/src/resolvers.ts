@@ -54,16 +54,14 @@ export const coreResolvers = {
     messageAdded: {
       subscribe: withFilter(
         // (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),
-        (_: any, { chat_id }: { chat_id: string }) => {
+        (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
           const topic = topicChat(chat_id);
-          console.log("[SUB INIT] subscribe chat_id=", chat_id, "topic=", topic);
+          console.log("[SUB INIT] subscribe chat_id=", chat_id, "topic=", topic, "ctx=", ctx);
           return pubsub.asyncIterator(topic);
         },
-        (payload, variables) => {
-          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id);
-          // return payload?.messageAdded?.chat_id === variables?.chat_id;
-
-          return true;
+        (payload, variables, ctx: any) => {
+          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id, ctx);
+          return payload?.messageAdded?.chat_id === variables?.chat_id;
         }
       )
     },

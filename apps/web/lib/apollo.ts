@@ -14,8 +14,6 @@ import { getMainDefinition } from "@apollo/client/utilities";
 import { onError } from "@apollo/client/link/error";
 import { createUploadLink } from 'apollo-upload-client';
 
-import { useSessionCtx } from '@/lib/session-context';
-
 import { addLog } from './log/log';
 
 function backendLogout(reason?: string) {
@@ -60,11 +58,11 @@ const httpLink = createUploadLink({
 const authLink = setContext((_, { headers }) => {
   if (typeof window === "undefined") return { headers }; // SSR ไม่มี localStorage
 
-  const token = localStorage.getItem("token");
+  // const token = localStorage.getItem("token");
   return {
     headers: {
       ...headers,
-      Authorization: token ? `Bearer ${token}` : "",
+      // Authorization: token ? `Bearer ${token}` : "",
     },
   };
 });
@@ -108,14 +106,11 @@ const wsLink =
     ? new GraphQLWsLink(
         createClient({
           url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string, // e.g. "ws://localhost:8081/graphql"
-          connectionParams: () => {
-            const token = localStorage.getItem("token");
-
-            const { user } = useSessionCtx();
-
-            console.log("[GraphQLWsLink] = ", token, user);
-            return token ? { Authorization: `Bearer ${token}` } : {};
-          },
+          // connectionParams: () => {
+          //   // const token = localStorage.getItem("token");
+          //   // return token ? { Authorization: `Bearer ${token}` } : {};
+          // },
+          connectionParams: {},
         })
       )
     : null;
