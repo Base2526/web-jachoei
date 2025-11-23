@@ -1,6 +1,6 @@
 "use client";
 
-import { gql, useQuery, useMutation } from "@apollo/client";
+import { gql, useQuery, useMutation, useApolloClient } from "@apollo/client";
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   List,
@@ -604,6 +604,7 @@ const PAGE_SIZE = 40;
 
 function ChatUI() {
   const router = useRouter();  
+  const client = useApolloClient();  
   const [sel, setSel] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [openCreate, setOpenCreate] = useState(false);
@@ -628,8 +629,6 @@ function ChatUI() {
     update(cache, { data }) {
       const newMsg = data?.sendMessage;
       if (!newMsg) return;
-
-      console.log("Q_MSGS = ", newMsg);
 
       // 1) อัปเดต messages ของห้องนั้นใน Q_MSGS
       cache.updateQuery<{ messages: any[] }>({
@@ -757,64 +756,55 @@ function ChatUI() {
 
   // subscriptions
   useEffect(() => {
-
-    console.log("[chat page] sel =", sel);
-
     if (!sel) {
-      console.log("[chat page] no sel, skip subscribe");
       return;
     }
-
-    console.log("[chat page] subscribing with chat_id =", sel);
-
     const unsubAdded = subscribeToMoreMsgs({
       document: SUB,
       variables: { chat_id: sel },
-      // updateQuery(prev, { subscriptionData }) {
-      //   const m = subscriptionData.data?.messageAdded;
-      //   if (!m) return prev;
-
-      //   const existing = prev.messages?.some((msg: any) => msg.id === m.id);
-      //   if (existing) {
-      //     console.log("[SUB] duplicated id, skip append =", m.id);
-      //     return prev;
-      //   }
-
-      //   const appended = [...(prev.messages || []), {
-      //     __typename: "Message",
-      //     id: m.id,
-      //     chat_id: m.chat_id,
-      //     text: m.text,
-      //     created_at: m.created_at,
-      //     reply_to_id: m.reply_to_id ?? null,
-      //     reply_to: m.reply_to ?? null,
-      //     sender: m.sender,
-      //     myReceipt: m.myReceipt,
-      //     readers: m.readers ?? [],
-      //     readersCount: m.readersCount ?? 0,
-      //     deleted_at: m.deleted_at ?? null,
-      //     is_deleted: m.is_deleted ?? false,
-      //     images: m.images ?? [],
-      //   }];
-
-      //   return { ...prev, messages: appended };
-      // }
-
       updateQuery(prev, { subscriptionData }) {
         const m = subscriptionData.data?.messageAdded;
         if (!m) return prev;
 
-        const exists = prev.messages?.some(x => x.id === m.id);
+        // กัน duplicated message ในห้อง
+        const exists = prev.messages?.some((x: any) => x.id === m.id);
         if (exists) {
           console.log("⚠ skip duplicate messageFromSub:", m.id);
           return prev;
         }
 
+        // ⭐ อัปเดต list ซ้าย (Q_CHATS) ให้ last_message_at เป็นของ message นี้
+        client.cache.updateQuery<{ myChats: any[] }>({
+          query: Q_CHATS,
+        }, (old) => {
+          if (!old) return old;
+
+          return {
+            ...old,
+            myChats: old.myChats.map((chat) => {
+              if (chat.id !== m.chat_id) return chat;
+
+              return {
+                ...chat,
+                last_message: {
+                  id: m.id,
+                  text: m.text,
+                  created_at: m.created_at,
+                  sender: m.sender,
+                  images: m.images ?? [],
+                },
+                last_message_at: m.created_at,
+              };
+            }),
+          };
+        });
+
+        // ⭐ เพิ่ม message ใหม่เข้า messages ของห้องนี้
         return {
           ...prev,
-          messages: [...prev.messages, m]
+          messages: [...(prev.messages || []), m],
         };
-      }
+      },
     });
 
     const unsubDeleted = subscribeToMoreMsgs({

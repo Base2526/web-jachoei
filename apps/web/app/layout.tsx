@@ -1,27 +1,19 @@
 'use client';
 import 'antd/dist/reset.css';
-
-
 import "./globals.css"; 
 
 import React, { useEffect, useState, useMemo} from "react";
 import { ApolloProvider } from "@apollo/client";
 import { client } from "lib/apollo"
-
-// import { getStoredUser, type StoredUser } from "@/utils/storage";
-import GlobalChatSub from "@/components/GlobalChatSub";
 import { GlobalChatListener } from "@/components/GlobalChatListener";
 import { SessionProvider, useSessionCtx } from '@/lib/session-context';
-// import { useSession } from '@/lib/useSession'
-
 import { GoogleOAuthProvider } from '@react-oauth/google';
+
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!;
 
 function GlobalWires() {
   const { user, admin } = useSessionCtx();
   const meId = user?.id?.toString() || admin?.id?.toString() || '';
-
-  // console.log("[GOOGLE_CLIENT_ID]", GOOGLE_CLIENT_ID);
 
   useEffect(() => {
     const frontendLogout = () => {
@@ -41,7 +33,7 @@ function GlobalWires() {
     } 
   }, []);
 
-  return meId ? <><GlobalChatListener /><GlobalChatSub meId={meId} client={client} /></>  : null;
+  return meId ? <GlobalChatListener /> : null;
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }){

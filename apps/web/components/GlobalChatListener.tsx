@@ -6,7 +6,9 @@ import {
   useGlobalChatStore,
   getGlobalChatState,
 } from "@/store/globalChatStore";
+import { notify } from "@/lib/notify";
 
+// ===== QUERIES =====
 const Q_ME = gql`
   query {
     me {
@@ -43,6 +45,7 @@ const Q_CHATS = gql`
   }
 `;
 
+// ===== SUBSCRIPTIONS =====
 const SUB_INCOMING = gql`
   subscription ($user_id: ID!) {
     incomingMessage(user_id: $user_id) {
@@ -65,6 +68,34 @@ const SUB_INCOMING = gql`
   }
 `;
 
+const SUB_USER_MESSAGE = gql`
+  subscription ($user_id: ID!) {
+    userMessageAdded(user_id: $user_id) {
+      id
+      chat_id
+      sender {
+        id
+        name
+        phone
+        email
+      }
+      text
+      created_at
+      to_user_ids
+    }
+  }
+`;
+
+const SUB_TIME = gql`
+  subscription {
+    time
+  }
+`;
+
+
+// ====================================
+//     GLOBAL CHAT LISTENER (FINAL)
+// ====================================
 export function GlobalChatListener() {
   const { data: meData } = useQuery(Q_ME);
   const meId = meData?.me?.id;
@@ -72,7 +103,7 @@ export function GlobalChatListener() {
   const incrementUnread = useGlobalChatStore((s: any) => s.incrementUnread);
   const setWindowFocused = useGlobalChatStore((s: any) => s.setWindowFocused);
 
-  // ติดตาม focus/blur ของ window
+  // ติดตาม Window Focus → Zustand
   useEffect(() => {
     const onFocus = () => setWindowFocused(true);
     const onBlur = () => setWindowFocused(false);
@@ -85,66 +116,114 @@ export function GlobalChatListener() {
     };
   }, [setWindowFocused]);
 
+  // ===========================================================
+  // A) SUB_INCOMING → unread + update last_message list ซ้าย
+  // ===========================================================
   useSubscription(SUB_INCOMING, {
     skip: !meId,
     variables: { user_id: meId },
     onData: ({ data, client }) => {
-
-        
-
       const m = data.data?.incomingMessage;
       if (!m) return;
 
-      // ====== logic ที่คุณถาม ======
-      const state = getGlobalChatState(); // ดึง state ปัจจุบันจาก Zustand
+      const state = getGlobalChatState();
+      console.log("[SUB_INCOMING]", m, state);
 
-      console.log("SUB_INCOMING = @1", data, state);
-      if (state.currentChatId === m.chat_id && state.windowFocused) {
-        // อยู่ในห้องนั้น + หน้าต่างโฟกัสแล้ว → ไม่ต้อง + unread
-      } else {
-        // ไม่ได้อยู่ในห้อง หรือ tab ไม่โฟกัส → + unread
+      const isCurrentRoom = state.currentChatId === m.chat_id;
+      const isFocused = state.windowFocused;
+
+      if (!(isCurrentRoom && isFocused)) {
         incrementUnread(m.chat_id);
 
-        // optional: Browser notification
         if (typeof window !== "undefined" && "Notification" in window) {
-
-            console.log("SUB_INCOMING = @2", Notification.permission);
           if (Notification.permission === "granted") {
-            try{
-                new Notification(m.sender?.name || "New message", {
+            try {
+              new Notification(m.sender?.name || "New message", {
                 body: m.text || "ส่งรูปภาพมา",
-                });
+              });
             } catch (e) {
-            console.error("Notification error:", e);
+              console.error("Notification error:", e);
             }
           }
-        }else{
-            console.log("SUB_INCOMING = @3", Notification.permission);
         }
       }
 
-      // ====== อัปเดต cache myChats ให้ last_message/last_message_at เปลี่ยน ======
+      // อัปเดต sidebar last_message
       client.cache.updateQuery<{ myChats: any[] }>({ query: Q_CHATS }, (old) => {
         if (!old) return old;
+
         return {
-          myChats: old.myChats.map((chat) => {
-            if (chat.id !== m.chat_id) return chat;
-            return {
-              ...chat,
-              last_message: {
-                id: m.id,
-                text: m.text,
-                created_at: m.created_at,
-                sender: m.sender,
-                images: m.images ?? [],
-              },
-              last_message_at: m.created_at,
-            };
-          }),
+          myChats: old.myChats.map((chat) =>
+            chat.id !== m.chat_id
+              ? chat
+              : {
+                  ...chat,
+                  last_message: {
+                    id: m.id,
+                    text: m.text,
+                    created_at: m.created_at,
+                    sender: m.sender,
+                    images: m.images ?? [],
+                  },
+                  last_message_at: m.created_at,
+                }
+          ),
         };
       });
     },
   });
 
-  return null; // ไม่ต้อง render อะไร
+  // ===========================================================
+  // B) SUB_USER_MESSAGE → ใช้สำหรับ notify + dispatch event
+  // ===========================================================
+  useSubscription(SUB_USER_MESSAGE, {
+    skip: !meId,
+    variables: { user_id: meId },
+    onData: async ({ data }) => {
+      const msg = data.data?.userMessageAdded;
+      if (!msg) return;
+
+      const isChatPage =
+        typeof window !== "undefined" &&
+        window.location.pathname.startsWith("/chat");
+
+      const activeChatId =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("chatId")
+          : null;
+
+      const isActiveChat = isChatPage && activeChatId === msg.chat_id;
+
+      if (!isActiveChat) {
+        await notify("ข้อความใหม่", {
+          body: msg.text,
+          tag: `chat-${msg.chat_id}`,
+        });
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("chat-unread", {
+              detail: {
+                chatId: msg.chat_id,
+                count: 1,
+                lastText: msg.text,
+              },
+            })
+          );
+        }
+      }
+    },
+  });
+
+  // ===========================================================
+  // C) SUB_TIME → debug WebSocket ทำงานปกติ
+  // ===========================================================
+  useSubscription(SUB_TIME, {
+    onData: ({ data }) => {
+      console.log("[TIME SUB] =", data.data?.time);
+    },
+    onError: (err) => console.error("[TIME SUB ERROR]", err),
+  });
+
+  return null;
 }
