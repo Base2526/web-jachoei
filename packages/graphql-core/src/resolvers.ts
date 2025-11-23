@@ -53,10 +53,9 @@ export const coreResolvers = {
     },
     messageAdded: {
       subscribe: withFilter(
-        // (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),
         (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
           const topic = topicChat(chat_id);
-          console.log("[SUB INIT] subscribe chat_id=", chat_id, "topic=", topic, "ctx=", ctx);
+          // console.log("[SUB INIT] subscribe chat_id=", chat_id, "topic=", topic, "ctx=", ctx);
           return pubsub.asyncIterator(topic);
         },
         (payload, variables, ctx: any) => {

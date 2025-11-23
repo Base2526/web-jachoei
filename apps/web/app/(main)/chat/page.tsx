@@ -39,6 +39,64 @@ import { useGlobalChatStore } from "@/store/globalChatStore";
 
 const { Text } = Typography;
 
+const MESSAGE_FIELDS = gql`
+  fragment MessageFields on Message {
+    id
+    chat_id
+    text
+    reply_to_id
+
+    reply_to {
+      id
+      text
+      images {
+        url
+      }
+      sender {
+        id
+        name
+      }
+    }
+
+    created_at
+    sender {
+      id
+      name
+      # avatar
+      # phone
+      # email
+      # role
+      # created_at
+      # username
+      # language
+    }
+
+    myReceipt {
+      deliveredAt
+      isRead
+      readAt
+    }
+
+    images {
+      id
+      url
+      mime
+      file_id
+    }
+
+    readers {
+      id
+      name
+      phone
+      email
+      created_at
+    }
+    readersCount
+    deleted_at
+    is_deleted
+  }
+`;
+
 // ===== GraphQL =====
 const Q_ME = gql`
   query {
@@ -91,61 +149,10 @@ const Q_CHATS = gql`
 const Q_MSGS = gql`
   query ($chat_id: ID!, $limit: Int, $offset: Int) {
     messages(chat_id: $chat_id, limit: $limit, offset: $offset) {
-      id
-      chat_id
-      text
-      reply_to_id
-
-      reply_to {
-        id
-        text
-        images {
-          url
-        }
-        sender {
-          id
-          name
-        }
-      }
-
-      created_at
-      sender {
-        id
-        name
-        avatar
-        phone
-        email
-        role
-        created_at
-        username
-        language
-      }
-
-      myReceipt {
-        deliveredAt
-        isRead
-        readAt
-      }
-
-      images {
-        id
-        url
-        mime
-        file_id
-      }
-
-      readers {
-        id
-        name
-        phone
-        email
-        created_at
-      }
-      readersCount
-      deleted_at
-      is_deleted
+      ...MessageFields
     }
   }
+  ${MESSAGE_FIELDS}
 `;
 
 
@@ -244,38 +251,10 @@ const MUT_DELETE = gql`
 const SUB = gql`
   subscription ($chat_id: ID!) {
     messageAdded(chat_id: $chat_id) {
-      id
-      chat_id
-      sender {
-        id
-        name
-      }
-      text
-      created_at
-      to_user_ids
-      myReceipt {
-        deliveredAt
-        isRead
-        readAt
-      }
-      images {
-        id
-        url
-        mime
-        file_id
-      }
-      readers {
-        id
-        name
-        phone
-        email
-        created_at
-      }
-      readersCount
-      deleted_at
-      is_deleted
+      ...MessageFields
     }
   }
+  ${MESSAGE_FIELDS}
 `;
 
 const SUB_DELETED = gql`
@@ -650,6 +629,8 @@ function ChatUI() {
       const newMsg = data?.sendMessage;
       if (!newMsg) return;
 
+      console.log("Q_MSGS = ", newMsg);
+
       // 1) อัปเดต messages ของห้องนั้นใน Q_MSGS
       cache.updateQuery<{ messages: any[] }>({
         query: Q_MSGS,
@@ -789,31 +770,51 @@ function ChatUI() {
     const unsubAdded = subscribeToMoreMsgs({
       document: SUB,
       variables: { chat_id: sel },
+      // updateQuery(prev, { subscriptionData }) {
+      //   const m = subscriptionData.data?.messageAdded;
+      //   if (!m) return prev;
+
+      //   const existing = prev.messages?.some((msg: any) => msg.id === m.id);
+      //   if (existing) {
+      //     console.log("[SUB] duplicated id, skip append =", m.id);
+      //     return prev;
+      //   }
+
+      //   const appended = [...(prev.messages || []), {
+      //     __typename: "Message",
+      //     id: m.id,
+      //     chat_id: m.chat_id,
+      //     text: m.text,
+      //     created_at: m.created_at,
+      //     reply_to_id: m.reply_to_id ?? null,
+      //     reply_to: m.reply_to ?? null,
+      //     sender: m.sender,
+      //     myReceipt: m.myReceipt,
+      //     readers: m.readers ?? [],
+      //     readersCount: m.readersCount ?? 0,
+      //     deleted_at: m.deleted_at ?? null,
+      //     is_deleted: m.is_deleted ?? false,
+      //     images: m.images ?? [],
+      //   }];
+
+      //   return { ...prev, messages: appended };
+      // }
+
       updateQuery(prev, { subscriptionData }) {
         const m = subscriptionData.data?.messageAdded;
-
-        console.log("[subscribeToMoreMsgs] = ", subscriptionData);
         if (!m) return prev;
 
-        const appended = (prev.messages || []).concat([
-          {
-            id: m.id,
-            chat_id: m.chat_id,
-            text: m.text,
-            created_at: m.created_at,
-            sender: m.sender,
-            myReceipt: m.myReceipt,
-            readers: m.readers,
-            readersCount: m.readersCount,
-            deleted_at: m.deleted_at ?? null,
-            is_deleted: m.is_deleted ?? false,
-            images: m.images || [],
-          },
-        ]);
+        const exists = prev.messages?.some(x => x.id === m.id);
+        if (exists) {
+          console.log("⚠ skip duplicate messageFromSub:", m.id);
+          return prev;
+        }
 
-        console.log("[msgs] =", appended);
-        return { ...prev, messages: appended };
-      },
+        return {
+          ...prev,
+          messages: [...prev.messages, m]
+        };
+      }
     });
 
     const unsubDeleted = subscribeToMoreMsgs({

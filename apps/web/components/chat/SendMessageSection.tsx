@@ -104,12 +104,27 @@ export default function SendMessageSection({
             text: trimmed,
             created_at: nowIso,
             reply_to_id: replyTarget?.id ?? null,
+            reply_to: null,
+
             sender: {
               __typename: "User",
               id: me?.id,
               name: me?.name || "Me",
               avatar: null,
             },
+
+            // ให้ตรงกับ Q_MSGS
+            myReceipt: {
+              __typename: "MessageReceipt",
+              deliveredAt: nowIso,
+              isRead: true,
+              readAt: nowIso,
+            },
+            readers: [],
+            readersCount: 0,
+            deleted_at: null,
+            is_deleted: false,
+
             images: uploadedImages.map((file, idx) => ({
               __typename: "ChatImage",
               id: `temp-img-${idx}`,
@@ -118,7 +133,7 @@ export default function SendMessageSection({
               mime: file.type,
             })),
           },
-        },
+        }
       } as any);
 
       setText("");

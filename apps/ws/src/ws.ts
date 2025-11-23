@@ -62,7 +62,7 @@ useServer(
                     contextValue: { user },
                 };
 
-                console.log("[ws-onSubscribe]", execArgs);
+                // console.log("[ws-onSubscribe]", execArgs);
                 return execArgs;
             } catch (err) {
                 console.error("invalid token", err);
