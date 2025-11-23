@@ -712,6 +712,7 @@ function ChatUI() {
   // ด้านบนใน ChatUI()
   const setCurrentChat = useGlobalChatStore((s:any) => s.setCurrentChat);
   const clearUnread = useGlobalChatStore((s:any) => s.clearUnread);
+  const unreadByChat = useGlobalChatStore((s:any) => s.unreadByChat);
   
 
   const {
@@ -1443,6 +1444,8 @@ function ChatUI() {
                   ? undefined
                   : partnerUser?.avatar || undefined;
 
+                const unread = unreadByChat[c.id] ?? 0;
+
                 return (
                   <List.Item
                     onClick={() => {
@@ -1494,6 +1497,32 @@ function ChatUI() {
                               style={{ background: "#1677ff" }}>
                               {!avatarSrc && initial}
                             </Avatar>
+
+                            {unread > 0 && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: -4,
+                                  right: -4,
+                                  minWidth: 18,
+                                  height: 18,
+                                  padding: "0 4px",
+                                  background: "#ff4d4f",
+                                  borderRadius: 999,
+                                  color: "#fff",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  boxShadow: "0 0 4px rgba(0,0,0,0.25)",
+                                  zIndex: 10,
+                                }}
+                              >
+                                {unread > 99 ? "99+" : unread}
+                              </div>
+                            )}
+
                             {/* badge bottom-right */}
                             <div
                               style={{
@@ -1553,6 +1582,31 @@ function ChatUI() {
                         >
                           {!avatarSrc && initial}
                         </Avatar>
+
+                        {unread > 0 && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: -4,
+                                  right: -4,
+                                  minWidth: 18,
+                                  height: 18,
+                                  padding: "0 4px",
+                                  background: "#ff4d4f",
+                                  borderRadius: 999,
+                                  color: "#fff",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  boxShadow: "0 0 4px rgba(0,0,0,0.25)",
+                                  zIndex: 10,
+                                }}
+                              >
+                                {unread > 99 ? "99+" : unread}
+                              </div>
+                            )}
                         {/* badge bottom-right */}
                         <div
                           style={{

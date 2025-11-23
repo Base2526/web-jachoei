@@ -8,6 +8,8 @@ import type { MenuProps } from "antd";
 import { useSession } from "@/lib/useSession";
 import { gql, useQuery } from "@apollo/client";
 
+import { useGlobalChatStore } from "@/store/globalChatStore"; 
+
 const { Header } = Layout;
 const { Text } = Typography;
 
@@ -40,7 +42,9 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
   const { data: meData } = useQuery(Q_ME, { skip: !userSession, fetchPolicy: "cache-first" });
   const me = meData?.me;
 
-
+  const totalUnread = useGlobalChatStore((s: any) =>
+    Object.values(s.unreadByChat || {}).reduce((sum: number, n: any) => sum + (n || 0), 0)
+  );
 
   // ✅ ให้ SSR == Client: เริ่มจาก initialLang เสมอ
   const [currentLang, setCurrentLang] = useState<Lang>(initialLang);
@@ -133,7 +137,36 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
               <Button
                 type="text"
                 onClick={() => router.push("/chat")}
-                icon={<MessageOutlined style={{ fontSize: 18, color: "#000" }} />}
+                icon={
+                  <span style={{ position: "relative", display: "inline-block" }}>
+                    <MessageOutlined style={{ fontSize: 18, color: "#000" }} />
+
+                    {/* 🔴 Badge แสดงจำนวน unread */}
+                    {totalUnread > 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          right: -10,
+                          minWidth: 18,
+                          height: 18,
+                          padding: "0 5px",
+                          background: "#ff4d4f",
+                          borderRadius: 999,
+                          color: "#fff",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 0 4px rgba(0,0,0,0.3)",
+                        }}
+                      >
+                        {totalUnread > 99 ? "99+" : totalUnread}
+                      </span>
+                    )}
+                  </span>
+                }
               />
             </Tooltip>
             <Tooltip title="แจ้งเตือน">
