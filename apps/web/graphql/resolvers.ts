@@ -41,7 +41,7 @@ setInterval(() => {
   console.log("[appResolvers.ts][TIME_TICK]");
   pubsub.publish("TIME_TICK", { time: now });
 
-}, 20000);
+}, 50000);
 
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
