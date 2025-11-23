@@ -8,7 +8,7 @@ import React, {
   useRef,
   useEffect,
 } from "react";
-import { Input, Button, Upload, Image, Typography } from "antd";
+import { Input, Button, Upload, Image, Typography, message } from "antd"; // ★ เพิ่ม message
 import {
   SendOutlined,
   SmileOutlined,
@@ -18,6 +18,9 @@ import {
 } from "@ant-design/icons";
 
 const { Text } = Typography;
+
+// ★ กำหนดจำนวนรูปสูงสุดต่อหนึ่งข้อความ
+const MAX_IMAGES = 4;
 
 type Member = { id: string; name?: string };
 type Chat = { id: string; members?: Member[] };
@@ -138,7 +141,6 @@ export default function SendMessageSection({
     me?.name,
   ]);
 
-
   // Enter to send
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -156,9 +158,6 @@ export default function SendMessageSection({
   const appendEmoji = (emoji: string) => {
     setText(text + emoji);
     textAreaRef.current?.focus?.();
-    // ถ้าอยากให้เลือกแล้ว dialog ยังไม่ปิด ให้ไม่เรียก setShowEmoji(false)
-    // ถ้าอยากให้ปิดทันทีตอนเลือก ก็เพิ่มบรรทัดนี้:
-    // setShowEmoji(false);
   };
 
   // ปิด emoji dialog เมื่อคลิกนอกพื้นที่
@@ -182,9 +181,22 @@ export default function SendMessageSection({
     };
   }, [showEmoji]);
 
-  // Image Upload
+  // ★ Image Upload — จำกัดสูงสุด 4 รูป
   const beforeUpload = (file: File) => {
-    setUploadedImages((prev) => [...prev, file]);
+    setUploadedImages((prev) => {
+      if (prev.length >= MAX_IMAGES) {
+        message.warning(`You can upload up to ${MAX_IMAGES} images per message.`);
+        return prev;
+      }
+
+      const next = [...prev, file].slice(0, MAX_IMAGES);
+      if (next.length >= MAX_IMAGES && prev.length < MAX_IMAGES) {
+        // เตือนตอนที่กำลังจะครบ 4
+        message.warning(`You can upload up to ${MAX_IMAGES} images per message.`);
+      }
+      return next;
+    });
+    // ป้องกันไม่ให้ Upload อัปโหลดจริง (เราเก็บไฟล์ใน state แล้ว)
     return false;
   };
 
@@ -333,52 +345,58 @@ export default function SendMessageSection({
 
       {/* ===== IMAGE PREVIEW ===== */}
       {uploadedImages.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            marginBottom: 10,
-            overflowX: "auto",
-            paddingBottom: 6,
-          }}
-        >
-          {uploadedImages.map((img, index) => (
-            <div
-              key={index}
-              style={{
-                position: "relative",
-                width: 80,
-                height: 80,
-                borderRadius: 10,
-                overflow: "hidden",
-                border: "1px solid #ddd",
-              }}
-            >
-              <Image
-                src={URL.createObjectURL(img)}
-                alt="preview"
-                width={80}
-                height={80}
-                style={{ objectFit: "cover" }}
-                preview={false}
-              />
-
-              <Button
-                size="small"
-                type="text"
-                icon={<DeleteOutlined style={{ color: "#fff" }} />}
+        <>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              marginBottom: 6,
+              overflowX: "auto",
+              paddingBottom: 6,
+            }}
+          >
+            {uploadedImages.map((img, index) => (
+              <div
+                key={index}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  background: "rgba(0,0,0,0.5)",
-                  borderRadius: 0,
+                  position: "relative",
+                  width: 80,
+                  height: 80,
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  border: "1px solid #ddd",
                 }}
-                onClick={() => removeImage(img)}
-              />
-            </div>
-          ))}
-        </div>
+              >
+                <Image
+                  src={URL.createObjectURL(img)}
+                  alt="preview"
+                  width={80}
+                  height={80}
+                  style={{ objectFit: "cover" }}
+                  preview={false}
+                />
+
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<DeleteOutlined style={{ color: "#fff" }} />}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    background: "rgba(0,0,0,0.5)",
+                    borderRadius: 0,
+                  }}
+                  onClick={() => removeImage(img)}
+                />
+              </div>
+            ))}
+          </div>
+          {/* ★ counter แสดงจำนวนรูป */}
+          <Text type="secondary" style={{ fontSize: 12, marginBottom: 6, display: "block" }}>
+            {uploadedImages.length}/{MAX_IMAGES} images
+          </Text>
+        </>
       )}
 
       {/* ===== INPUT BAR ===== */}
@@ -400,7 +418,7 @@ export default function SendMessageSection({
           multiple
           showUploadList={false}
           accept="image/*"
-          disabled={disabled}
+          disabled={disabled || uploadedImages.length >= MAX_IMAGES} // ★ ปิดปุ่มเมื่อครบ 4
         >
           <Button
             type="text"

@@ -89,8 +89,8 @@ const Q_CHATS = gql`
 `;
 
 const Q_MSGS = gql`
-  query ($chat_id: ID!) {
-    messages(chat_id: $chat_id) {
+  query ($chat_id: ID!, $limit: Int, $offset: Int) {
+    messages(chat_id: $chat_id, limit: $limit, offset: $offset) {
       id
       chat_id
       text
@@ -621,6 +621,8 @@ function renderDeliveryTicks(receipt: any) {
   );
 }
 
+const PAGE_SIZE = 40;
+
 function ChatUI() {
   const router = useRouter();  
   const [sel, setSel] = useState<string | null>(null);
@@ -634,6 +636,11 @@ function ChatUI() {
   const [editTarget, setEditTarget] = useState<{ id: string; name?: string } | null>(null);
   const [replyTarget, setReplyTarget] = useState<any | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(true);
+
+  // 🔹 pagination state
+  const [msgHasMore, setMsgHasMore] = useState(true);
+  const [msgLoadingMore, setMsgLoadingMore] = useState(false);
+
   const searchParams = useSearchParams();
   const toParam = searchParams.get("to");
   const { data: me } = useQuery(Q_ME);
@@ -738,10 +745,10 @@ function ChatUI() {
     refetch: refetchMsgs,
     subscribeToMore: subscribeToMoreMsgs,
     loading: loadingMsgs,
-    networkStatus,
+    fetchMore,
   } = useQuery(Q_MSGS, {
     skip: !sel,
-    variables: { chat_id: sel },
+    variables: { chat_id: sel, limit: PAGE_SIZE, offset: 0 },
     notifyOnNetworkStatusChange: true,
   });
 
@@ -836,9 +843,14 @@ function ChatUI() {
     if (loadingChats) return;
     const list = chats?.myChats || [];
     if (!sel && list.length > 0) {
+      // const firstId = list[0].id;
+      // setSel(firstId);
+      // refetchMsgs({ chat_id: firstId });
+
       const firstId = list[0].id;
       setSel(firstId);
-      refetchMsgs({ chat_id: firstId });
+      setMsgHasMore(true);
+      refetchMsgs({ chat_id: firstId, limit: PAGE_SIZE, offset: 0 });
     }
   }, [toParam, chats, loadingChats, sel, refetchMsgs]);
 
@@ -861,9 +873,12 @@ function ChatUI() {
           });
           const newId = data?.createChat?.id;
           if (newId) {
+            // await refetchChats();
+            // setSel(newId);
+            // refetchMsgs({ chat_id: newId });
+
             await refetchChats();
-            setSel(newId);
-            refetchMsgs({ chat_id: newId });
+            await openChatById(newId);
           } else {
             message.error("Cannot create chat");
           }
@@ -886,8 +901,12 @@ function ChatUI() {
 
     if (existing) {
       handledToRef.current = true;
+      // setSel(existing.id);
+      // refetchMsgs({ chat_id: existing.id });
+
       setSel(existing.id);
-      refetchMsgs({ chat_id: existing.id });
+      setMsgHasMore(true);
+      refetchMsgs({ chat_id: existing.id, limit: PAGE_SIZE, offset: 0 });
       return;
     }
 
@@ -899,9 +918,12 @@ function ChatUI() {
         });
         const newId = data?.createChat?.id;
         if (newId) {
+          // await refetchChats();
+          // setSel(newId);
+          // refetchMsgs({ chat_id: newId });
+
           await refetchChats();
-          setSel(newId);
-          refetchMsgs({ chat_id: newId });
+          await openChatById(newId);
         } else {
           message.error("Cannot create chat");
         }
@@ -910,6 +932,12 @@ function ChatUI() {
       }
     })();
   }, [toParam, me, chats, loadingChats, createChat, refetchChats, refetchMsgs]);
+
+  const openChatById = async (id: string) => {
+    setSel(id);
+    setMsgHasMore(true);
+    await refetchMsgs({ chat_id: id, limit: PAGE_SIZE, offset: 0 });
+  };
 
   // existing 1:1
   const existingOneToOnePartnerIds = useMemo(() => {
@@ -1041,7 +1069,18 @@ function ChatUI() {
     [chats, sel]
   );
 
-  const messagesList = msgs?.messages || [];
+  // const messagesList = msgs?.messages || [];
+  const rawMsgs = msgs?.messages || [];
+  const messagesList = useMemo(
+    () =>
+      [...rawMsgs].sort(
+        (a: any, b: any) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ),
+    [rawMsgs]
+  );
+
+
   const initialLoading = !msgs && loadingMsgs;
   const isEmpty = messagesList.length === 0;
 
@@ -1051,16 +1090,82 @@ function ChatUI() {
     }
   };
 
+  // 🔹 load older messages when scroll to top
+  const loadOlder = async () => {
+    if (!sel || msgLoadingMore || !msgHasMore) return;
+
+    const el = messagesContainerRef.current;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+    const currentCount = msgs?.messages?.length ?? 0;
+
+    setMsgLoadingMore(true);
+
+    try {
+      const res = await fetchMore({
+        variables: {
+          chat_id: sel,
+          limit: PAGE_SIZE,
+          offset: currentCount,
+        },
+        updateQuery(prev, { fetchMoreResult }) {
+          if (!fetchMoreResult || !fetchMoreResult.messages) return prev;
+          const older = fetchMoreResult.messages || [];
+          if (!older.length) return prev;
+
+          // รวม page เดิม + page ใหม่
+          return {
+            ...prev,
+            messages: [...prev.messages, ...older],
+          };
+        },
+      });
+
+      const loaded = res?.data?.messages ?? [];
+      if (loaded.length < PAGE_SIZE) {
+        setMsgHasMore(false); // ไม่มีให้โหลดเพิ่มแล้ว
+      }
+
+      // รักษา scroll position ไว้ (content ยาวขึ้นด้านบน)
+      requestAnimationFrame(() => {
+        if (!el) return;
+        const newScrollHeight = el.scrollHeight;
+        el.scrollTop = newScrollHeight - prevScrollHeight;
+      });
+    } catch (e) {
+      console.error("[loadOlder] error", e);
+    } finally {
+      setMsgLoadingMore(false);
+    }
+  };
+
+  // const handleScroll = () => {
+  //   const el = messagesContainerRef.current;
+  //   if (!el) return;
+  //   const threshold = 80;
+  //   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  //   const atBottomNow = distanceFromBottom <= threshold;
+  //   setIsAtBottom(atBottomNow);
+  //   if (atBottomNow) setHasNewMessages(false);
+  // };
+
   const handleScroll = () => {
     const el = messagesContainerRef.current;
     if (!el) return;
-    const threshold = 80;
+
+    // 🔹 detect bottom (เหมือนเดิม)
+    const bottomThreshold = 80;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const atBottomNow = distanceFromBottom <= threshold;
+    const atBottomNow = distanceFromBottom <= bottomThreshold;
     setIsAtBottom(atBottomNow);
     if (atBottomNow) setHasNewMessages(false);
-  };
 
+    // 🔹 detect top → load older
+    const topThreshold = 80;
+    if (el.scrollTop <= topThreshold && msgHasMore && !msgLoadingMore) {
+      loadOlder();
+    }
+  };
+  
   // auto-scroll
   useEffect(() => {
 
@@ -1355,7 +1460,8 @@ function ChatUI() {
                       clearUnread(c.id);      // เคลียร์ unread ของห้องนี้
                       lastMsgCountRef.current = 0;
                       setReplyTarget(null);
-                      refetchMsgs({ chat_id: c.id });
+                      setMsgHasMore(true);
+                      refetchMsgs({ chat_id: c.id, limit: PAGE_SIZE, offset: 0 });
                     }}
                     style={{
                       cursor: "pointer",
@@ -1581,6 +1687,11 @@ function ChatUI() {
                   </div>
                 ) : (
                   <>
+                    {msgLoadingMore && (
+                      <div style={{ textAlign: "center", padding: 8 }}>
+                        <Spin size="small" /> Loading older messages...
+                      </div>
+                    )}
                     {messagesList.map((m: any, idx: number) => {
                       const isMine = meId && m.sender?.id === meId;
                       const createdAt = new Date(m.created_at);

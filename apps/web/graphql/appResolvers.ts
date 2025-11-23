@@ -597,7 +597,7 @@ export const resolvers = {
         FROM messages m
         LEFT JOIN users u ON u.id = m.sender_id
         WHERE m.chat_id = $1 ${filter}
-        ORDER BY m.created_at ASC
+        ORDER BY m.created_at DESC
         LIMIT $3 OFFSET $4
         `,
         [chat_id, author_id, limit, offset]
