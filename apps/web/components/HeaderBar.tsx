@@ -35,6 +35,13 @@ const Q_ME = gql`
   }
 `;
 
+const Q_UNREAD_NOTIFICATION_COUNT = gql`
+  query MyUnreadNotificationCount {
+    myUnreadNotificationCount
+  }
+`;
+
+
 export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }) {
   const router = useRouter();
   const { user: userSession, refreshSession } = useSession();
@@ -45,6 +52,16 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
   const totalUnread = useGlobalChatStore((s: any) =>
     Object.values(s.unreadByChat || {}).reduce((sum: number, n: any) => sum + (n || 0), 0)
   );
+
+  // ✅ unread notification จาก backend
+  const { data: notifData } = useQuery(Q_UNREAD_NOTIFICATION_COUNT, {
+    skip: !userSession,
+    fetchPolicy: "cache-and-network",
+    // ถ้าอยากให้มัน auto refresh ทุก X ms ใส่ pollInterval ได้ เช่น 30 วิ
+    // pollInterval: 30000,
+  });
+
+  const notifUnreadCount = notifData?.myUnreadNotificationCount ?? 0;
 
   // ✅ ให้ SSR == Client: เริ่มจาก initialLang เสมอ
   const [currentLang, setCurrentLang] = useState<Lang>(initialLang);
@@ -173,9 +190,38 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
               <Button
                 type="text"
                 onClick={() => router.push("/notification")}
-                icon={<BellOutlined style={{ fontSize: 18, color: "#000" }} />}
+                icon={
+                  <span style={{ position: "relative", display: "inline-block" }}>
+                    <BellOutlined style={{ fontSize: 18, color: "#000" }} />
+
+                    {notifUnreadCount > 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          right: -10,
+                          minWidth: 18,
+                          height: 18,
+                          padding: "0 5px",
+                          background: "#ff4d4f",
+                          borderRadius: 999,
+                          color: "#fff",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 0 4px rgba(0,0,0,0.3)",
+                        }}
+                      >
+                        {notifUnreadCount > 99 ? "99+" : notifUnreadCount}
+                      </span>
+                    )}
+                  </span>
+                }
               />
             </Tooltip>
+
           </>
         )}
 
