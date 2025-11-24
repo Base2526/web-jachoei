@@ -9,11 +9,13 @@ import { useSession } from "@/lib/useSession";
 import { gql, useQuery } from "@apollo/client";
 
 import { useGlobalChatStore } from "@/store/globalChatStore"; 
+import { useI18n } from "@/lib/i18nContext";
+import type { Lang } from "@/i18n";
 
 const { Header } = Layout;
 const { Text } = Typography;
 
-type Lang = "th" | "en";
+// type Lang = "th" | "en";
 const labelOf: Record<Lang, string> = { th: "ไทย", en: "English" };
 // ✅ ธงต่อภาษา (อยากเปลี่ยนเป็น 🇬🇧 ก็ได้)
 const flagOf: Record<Lang, string> = { th: "🇹🇭", en: "🇺🇸" };
@@ -45,6 +47,7 @@ const Q_UNREAD_NOTIFICATION_COUNT = gql`
 export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }) {
   const router = useRouter();
   const { user: userSession, refreshSession } = useSession();
+  
 
   const { data: meData } = useQuery(Q_ME, { skip: !userSession, fetchPolicy: "cache-first" });
   const me = meData?.me;
@@ -65,6 +68,22 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
 
   // ✅ ให้ SSR == Client: เริ่มจาก initialLang เสมอ
   const [currentLang, setCurrentLang] = useState<Lang>(initialLang);
+  const { t, lang, setLang } = useI18n();
+
+  // ภาษาใน dropdown ยังใช้ currentLang ก็ได้ แต่ควร sync กับ lang จาก context
+  // const [currentLang, setCurrentLang] = useState<Lang>(lang);
+
+  useEffect(() => {
+    setCurrentLang(lang);
+  }, [lang]);
+
+  const changeLang = (lang: Lang) => {
+    if (lang === currentLang) return;
+    document.cookie = `lang=${lang}; path=/; samesite=lax`;
+    setCurrentLang(lang);
+    setLang?.(lang);      // แจ้ง context ด้วย
+    router.refresh();     // reload data ถ้ามี
+  };
 
   useEffect(() => {
 
@@ -92,12 +111,12 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
     }
   }
 
-  const changeLang = (lang: Lang) => {
-    if (lang === currentLang) return;
-    document.cookie = `lang=${lang}; path=/; samesite=lax`;
-    setCurrentLang(lang);
-    router.refresh();
-  };
+  // const changeLang = (lang: Lang) => {
+  //   if (lang === currentLang) return;
+  //   document.cookie = `lang=${lang}; path=/; samesite=lax`;
+  //   setCurrentLang(lang);
+  //   router.refresh();
+  // };
 
   const languageMenu: MenuProps["items"] = (["th", "en"] as Lang[]).map((lang) => ({
     key: lang,
@@ -141,7 +160,7 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
     >
       <Link href="/" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Text style={{ color: "#000", fontSize: 18, letterSpacing: 1, fontWeight: 600, whiteSpace: "nowrap" }}>
-          PROTECT SCAMMER
+          {t("header.title")}
         </Text>
       </Link>
 
@@ -158,7 +177,6 @@ export default function HeaderBar({ initialLang = "th" }: { initialLang?: Lang }
                   <span style={{ position: "relative", display: "inline-block" }}>
                     <MessageOutlined style={{ fontSize: 18, color: "#000" }} />
 
-                    {/* 🔴 Badge แสดงจำนวน unread */}
                     {totalUnread > 0 && (
                       <span
                         style={{
