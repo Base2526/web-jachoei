@@ -10,19 +10,30 @@ export const coreTypeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  type MessageImage {
+    id: ID!
+    file_id: ID!    # ← ใช้ bind กับ files.id
+    url: String!
+    mime: String
+    width: Int
+    height: Int
+  }
+
   type MessageReceipt {
     deliveredAt: String!
     readAt: String
     isRead: Boolean!
   }
 
-  type Message { 
-    id: ID!, 
-    chat_id: ID!,
-    sender: User,
-    text: String!, 
-    created_at: String! 
-    to_user_ids: [ID!]! 
+  type Message {
+    id: ID!
+    chat_id: ID!
+    sender: User
+    text: String!
+    created_at: String!
+    to_user_ids: [ID!]!
+
+    images: [MessageImage!]! 
 
     is_deleted: Boolean!
     deleted_at: String
@@ -30,6 +41,9 @@ export const coreTypeDefs = /* GraphQL */ `
     myReceipt: MessageReceipt!
     readers: [User!]!
     readersCount: Int!
+
+    reply_to_id: ID
+    reply_to: Message
   }
 
   type Notification {
@@ -75,5 +89,9 @@ export const coreTypeDefs = /* GraphQL */ `
     commentAdded(post_id: ID!): Comment!
     commentUpdated(post_id: ID!): Comment!
     commentDeleted(post_id: ID!): ID!          # ส่ง id ที่ลบ
+
+
+
+    incomingMessage(user_id: ID!): Message!
   }
 `;

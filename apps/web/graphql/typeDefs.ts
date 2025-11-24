@@ -22,6 +22,9 @@ export const typeDefs = /* GraphQL */ `
     created_by: User
     created_at: String!
     members: [User!]!
+
+    last_message: Message
+    last_message_at: String
   }
   
   type MessageReceipt {
@@ -38,12 +41,26 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     to_user_ids: [ID!]!
 
+    images: [MessageImage!]! 
+
     is_deleted: Boolean!
     deleted_at: String
 
     myReceipt: MessageReceipt!
     readers: [User!]!
     readersCount: Int!
+
+    reply_to_id: ID
+    reply_to: Message
+  }
+
+  type MessageImage {
+    id: ID!
+    file_id: ID!    # ← ใช้ bind กับ files.id
+    url: String!
+    mime: String
+    width: Int
+    height: Int
   }
 
   input UserInput {
@@ -330,7 +347,7 @@ export const typeDefs = /* GraphQL */ `
 
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
     addMember(chat_id: ID!, user_id: ID!): Boolean!
-    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!): Message!
+    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!, images: [Upload!], reply_to_id: ID): Message!
 
     updateMyProfile(data: MyProfileInput!): User!
 

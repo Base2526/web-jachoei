@@ -14,6 +14,8 @@ export const COMMENT_UPDATED = 'COMMENT_UPDATED';
 export const COMMENT_DELETED = 'COMMENT_DELETED';
 export const NOTI_CREATED   = 'NOTI_CREATED';
 
+export const INCOMING_MESSAGE = 'INCOMING_MESSAGE';
+
 export const coreResolvers = {
   Query: { _ok: () => "ok" },
   Mutation: {
@@ -51,9 +53,13 @@ export const coreResolvers = {
     },
     messageAdded: {
       subscribe: withFilter(
-        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),
-        (payload, variables) => {
-          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id);
+        (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
+          const topic = topicChat(chat_id);
+          // console.log("[SUB INIT] subscribe chat_id=", chat_id, "topic=", topic, "ctx=", ctx);
+          return pubsub.asyncIterator(topic);
+        },
+        (payload, variables, ctx: any) => {
+          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id, ctx);
           return payload?.messageAdded?.chat_id === variables?.chat_id;
         }
       )
@@ -113,6 +119,21 @@ export const coreResolvers = {
         (payload, variables) => {
           // ตอนนี้ไม่มี post_id ใน payload ถ้าอยาก filter เพิ่ม
           return true;
+        }
+      ),
+    },
+
+    incomingMessage: {
+      subscribe: withFilter(
+        () => pubsub.asyncIterator(INCOMING_MESSAGE),
+        (payload, vars, ctx) => {
+          // ให้เฉพาะคนที่เป็น member หรือ to_user_ids มี user นี้
+
+          console.log("[INCOMING_MESSAGE] =", vars, payload);
+          
+          const uId = vars.user_id;
+          const msg = payload.incomingMessage;
+          return msg.to_user_ids.includes(uId) || msg.sender_id === uId;
         }
       ),
     },

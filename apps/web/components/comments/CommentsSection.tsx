@@ -110,11 +110,10 @@ function renderCommentContent(content: string) {
   );
 }
 
-
 function CommentItem({
   comment,
   currentUserId,
-  onReply,   // (rootId, content, tagUser?) => void
+  onReply,
   onUpdate,
   onDelete,
   rootId,
@@ -125,29 +124,62 @@ function CommentItem({
   const [text, setText] = useState(comment.content);
   const [replyText, setReplyText] = useState('');
 
-  // NEW: toggle แสดง/ซ่อน replies (เฉพาะ parent)
   const [showReplies, setShowReplies] = useState(false);
 
   const isLoggedIn = !!currentUserId;
   const canEdit = isLoggedIn && currentUserId === comment.user_id;
 
   const rootCommentId = rootId ?? comment.id;
-
   const replyCount = comment.replies?.length ?? 0;
+
+  const user = comment.user;
+  const userId = user?.id;
+  const userName = user?.name || "";
+  const userInitial = userName?.[0] || "?";
+  const profileHref = userId
+    ? `/profile/${encodeURIComponent(userId)}`
+    : undefined;
 
   return (
     <div style={{ marginBottom: 12 }}>
       <Space align="start">
-        <Avatar src={comment.user?.avatar}>{comment.user?.name?.[0]}</Avatar>
-        <div style={{ width: '100%' }}>
-          {/* <div style={{ fontWeight: 600 }}>{comment.user?.name}</div> */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontWeight: 600 }}>{comment.user?.name}</span>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatTimeAgo(comment.created_at)}
-                </Text>
-            </div>
+        {/* ✅ Avatar + ตัวอักษรแรก คลิกไปหน้าโปรไฟล์ */}
+        {profileHref ? (
+          <Link
+            href={profileHref}
+            style={{ display: 'inline-block' }}
+          >
+            <Avatar src={user?.avatar}>
+              {userInitial}
+            </Avatar>
+          </Link>
+        ) : (
+          <Avatar src={user?.avatar}>
+            {userInitial}
+          </Avatar>
+        )}
 
+        <div style={{ width: '100%' }}>
+          {/* ชื่อ + เวลา */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {profileHref ? (
+              <Link href={profileHref}>
+                <span style={{ fontWeight: 600 }}>
+                  {userName}
+                </span>
+              </Link>
+            ) : (
+              <span style={{ fontWeight: 600 }}>
+                {userName}
+              </span>
+            )}
+
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {formatTimeAgo(comment.created_at)}
+            </Text>
+          </div>
+
+          {/* เนื้อหาคอมเมนต์ (รองรับ mention) */}
           {!editing ? (
             renderCommentContent(comment.content)
           ) : (
@@ -220,7 +252,7 @@ function CommentItem({
                 type="primary"
                 style={{ marginTop: 4 }}
                 onClick={() => {
-                  onReply(rootCommentId, replyText, comment.user); // ส่ง user ไป tag
+                  onReply(rootCommentId, replyText, comment.user);
                   setReplyText('');
                   setReplying(false);
                 }}
@@ -230,7 +262,7 @@ function CommentItem({
             </div>
           )}
 
-          {/* NEW: ปุ่ม "n replies" แบบ YouTube สำหรับ parent (level 1) */}
+          {/* ปุ่ม show/hide replies (level 1 เท่านั้น) */}
           {level === 1 && replyCount > 0 && (
             <div style={{ marginTop: 8 }}>
               <Button
@@ -245,13 +277,13 @@ function CommentItem({
             </div>
           )}
 
-          {/* replies: แสดงเฉพาะเมื่อ showReplies = true / level 1 */}
+          {/* replies level 2 */}
           {level === 1 && replyCount > 0 && showReplies && (
             <div
               style={{
                 marginTop: 4,
                 paddingLeft: 24,
-                borderLeft: '1px solid #333', // ปรับสีได้ให้เหมือน YouTube
+                borderLeft: '1px solid #333',
               }}
             >
               {comment.replies.map((r: any) => (
@@ -269,8 +301,6 @@ function CommentItem({
               ))}
             </div>
           )}
-
-          {/* level 2 จะไม่ render replies ต่อ → จำกัดที่ 2 ชั้นเหมือน YouTube */}
         </div>
       </Space>
     </div>
