@@ -93,9 +93,9 @@ function PostsList() {
 
   const [deletePost, { loading: deleting }] = useMutation(DELETE_POST);
 
-  useEffect(()=>{
-    console.log("[data]", data);
-  }, [data])
+  // useEffect(()=>{
+  //   console.log("[data]", data);
+  // }, [data])
 
   const handleDelete = async (id: string) => {
     try {
@@ -207,7 +207,7 @@ function PostsList() {
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
+      {/* <Space style={{ marginBottom: 16 }}>
         <Input
           placeholder="Search title/phone"
           allowClear
@@ -216,7 +216,7 @@ function PostsList() {
           onPressEnter={() => refetch({ q, limit: pageSize, offset: 0 })}
         />
         <Button onClick={() => refetch({ q, limit: pageSize, offset: 0 })}>Search</Button>
-      </Space>
+      </Space> */}
 
       <Table
         rowKey="id"

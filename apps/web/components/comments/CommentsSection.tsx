@@ -329,9 +329,9 @@ export function CommentsSection({
 
   const isLoggedIn = !!currentUserId;
 
-  useEffect(() => {
-    console.log('[CommentsSection] = ', data);
-  }, [data]);
+  // useEffect(() => {
+  //   console.log('[CommentsSection] = ', data);
+  // }, [data]);
 
   useSubscription(SUB_ADDED, {
     variables: { post_id: postId },

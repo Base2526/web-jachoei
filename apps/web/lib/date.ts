@@ -8,7 +8,5 @@ dayjs.extend(timezone);
 export function formatDate(timestamp: number, format = 'DD/MM/YYYY') {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const formatted = dayjs.unix(timestamp / 1000).tz(tz).format(format);
-
-    console.log("[formatDate]", tz, formatted);
     return formatted
 }

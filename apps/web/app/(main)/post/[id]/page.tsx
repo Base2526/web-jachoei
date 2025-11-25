@@ -108,7 +108,7 @@ export default function Page(){
   const post = data?.post;
   if (!post) return <div>Not found</div>;
 
-  console.log("[view]" , post);
+  // console.log("[view]" , post);
   return <PostView 
           post={post} 
           loading={loading}

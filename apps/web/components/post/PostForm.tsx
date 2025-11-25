@@ -475,7 +475,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         {/* Tel Numbers */}
         <div style={{ borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
           {telNumbers.map((number, index) => (
-            <div key={number.id} style={{ marginBottom: 20, borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px' }}>
+            <div key={`${number.id}-${index}`} style={{ marginBottom: 20, borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px' }}>
               <Form.Item
                 label={`เบอร์โทรศัพท์ หรือ ไอดีไลน์ ${index + 1}`}
                 name={['tel_numbers', index, 'tel']}
@@ -502,7 +502,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         {/* Seller Accounts */}
         <div style={{ borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
           {sellerAccounts.map((account, index) => (
-            <div key={account.id} style={{ marginBottom: 20, borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px' }}>
+            <div key={`${account.id}-${index}`} style={{ marginBottom: 20, borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px' }}>
               <Form.Item
                 label={`ชื่อบัญชีคนขาย ${index + 1}`}
                 name={['seller_accounts', index, 'bank_name']}
@@ -525,8 +525,8 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
                 rules={[{ required: true, message: 'กรุณาเลือกธนาคาร' }]}
               >
                 <Select placeholder="กรุณาเลือกธนาคาร" onChange={(value) => handleSellerAccountChange(index, 'bank_id', value)}>
-                  {banks.map((bank) => (
-                    <Select.Option key={bank.id} value={bank.id}>
+                  {banks.map((bank, index) => (
+                    <Select.Option key={`${bank.id}-${index}`} value={bank.id}>
                       {bank.name_th}
                     </Select.Option>
                   ))}

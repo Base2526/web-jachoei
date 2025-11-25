@@ -221,6 +221,50 @@ export const typeDefs = /* GraphQL */ `
     replies: [Comment!]!
   }
 
+  # ==== Types แยกตาม entity ====
+  type SearchPostResult {
+    id: ID!
+    entity_id: ID!        # = post id
+    title: String!
+    snippet: String
+    created_at: String
+  }
+
+  type SearchUserResult {
+    id: ID!
+    entity_id: ID!        # = user id
+    name: String!
+    email: String
+    phone: String
+    avatar: String
+  }
+
+  type SearchPhoneReportResult {
+    id: ID!
+    entity_id: String!    # = หมายเลขโทรตรง ๆ ไว้ /phone/[number]
+    ids: [ID!]! 
+    phone: String!
+    report_count: Int!
+    last_report_at: String
+  }
+
+  type SearchBankAccountResult {
+    id: ID!
+    entity_id: ID!        # เอาไว้ /bank/[id] หรือ /account/[id]
+    ids: [ID!]! 
+    bank_name: String!
+    account_no_masked: String!
+    report_count: Int!
+    last_report_at: String
+  }
+
+  type GlobalSearchResult {
+    posts: [SearchPostResult!]!
+    users: [SearchUserResult!]!
+    phones: [SearchPhoneReportResult!]!
+    bank_accounts: [SearchBankAccountResult!]!
+  }
+
   type Query {
     _health: String!
     meRole: String!
@@ -260,6 +304,8 @@ export const typeDefs = /* GraphQL */ `
     myUnreadNotificationCount: Int!
 
     comments(post_id: ID!): [Comment!]!
+
+    globalSearch(q: String!): GlobalSearchResult!
   }
 
   input TelNumberInput {
