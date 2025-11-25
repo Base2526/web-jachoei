@@ -66,6 +66,26 @@ async function getUserById(id: string) {
   return rows[0] || null;
 }
 
+function buildLike(term: string) {
+  // escape % และ _ กัน LIKE แตก
+  return `%${term.replace(/[%_]/g, (m) => "\\" + m)}%`;
+}
+
+// ป้องกัน tsquery ระเบิดถ้ามี symbol แปลก
+function buildTsQuery(term: string) {
+  // ถ้าอยากโหดกว่านี้ แยกเป็น token & join ด้วย AND ก็ได้
+  return term
+    .trim()
+    .replace(/[':]/g, " ") // เอา symbol ที่ tsquery ไม่ชอบออก
+    .replace(/\s+/g, " ");
+}
+
+// helper
+function maskAccount(account: any) {
+  if (!account) return "";
+  return account.replace(/.(?=.{4})/g, "x");
+}
+
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
@@ -1077,6 +1097,224 @@ export const resolvers = {
       }
 
       return roots;
+    },
+    globalSearch: async (_: any, { q }: { q: string }, ctx: any) => {
+      const author_id = requireAuth(ctx);
+      console.log("[Query] globalSearch (pro) :", author_id, q);
+
+      const term = (q || "").trim();
+      if (!term) {
+        return { posts: [], users: [], phones: [], bank_accounts: [] };
+      }
+
+      const like = buildLike(term);
+      const useTrgm = term.length >= 3;
+
+      // ============================
+      // 1) POSTS (posts + title/detail_unaccent)
+      // ============================
+      const postsPromise = query(
+        `
+        SELECT
+          s.id,
+          s.title,
+          s.snippet,
+          s.created_at
+        FROM (
+          SELECT
+            p.id,
+            p.title,
+            p.detail AS snippet,
+            p.created_at,
+
+            -- full-text rank (title A, detail C)
+            ts_rank(
+              tsvector_concat(
+                setweight(to_tsvector('simple', coalesce(p.title_unaccent,  '')), 'A'),
+                setweight(to_tsvector('simple', coalesce(p.detail_unaccent, '')), 'C')
+              ),
+              plainto_tsquery('simple', unaccent($1))
+            ) AS ft_rank,
+
+            -- trigram similarity
+            GREATEST(
+              similarity(coalesce(p.title_unaccent,  ''), unaccent($1)),
+              similarity(coalesce(p.detail_unaccent, ''), unaccent($1))
+            ) AS sim
+          FROM posts p
+          WHERE
+                tsvector_concat(
+                  setweight(to_tsvector('simple', coalesce(p.title_unaccent,  '')), 'A'),
+                  setweight(to_tsvector('simple', coalesce(p.detail_unaccent, '')), 'C')
+                ) @@ plainto_tsquery('simple', unaccent($1))
+             OR p.title_unaccent  ILIKE unaccent($2)
+             OR p.detail_unaccent ILIKE unaccent($2)
+             -- เผื่อ row เก่าที่ยังไม่ได้ backfill
+             OR p.title  ILIKE $2
+             OR p.detail ILIKE $2
+        ) AS s
+        ORDER BY
+          (s.ft_rank * 2.0 + s.sim * 5.0) DESC,
+          s.created_at DESC
+        LIMIT 20
+        `,
+        [term, like]
+      );
+
+      // ============================
+      // 2) USERS (users + name/email_unaccent)
+      // ============================
+      const usersPromise = query(
+        `
+        SELECT
+          s.id,
+          s.name,
+          s.email,
+          s.phone,
+          s.avatar
+        FROM (
+          SELECT
+            u.id,
+            u.name,
+            u.email,
+            u.phone,
+            u.avatar,
+
+            ts_rank(
+              tsvector_concat(
+                setweight(to_tsvector('simple', coalesce(u.name_unaccent,  '')), 'A'),
+                setweight(to_tsvector('simple', coalesce(u.email_unaccent, '')), 'B')
+              ),
+              plainto_tsquery('simple', unaccent($1))
+            ) AS ft_rank,
+
+            GREATEST(
+              similarity(coalesce(u.email_unaccent, ''), unaccent($1)),
+              similarity(coalesce(u.phone,          ''), $1)
+            ) AS sim
+          FROM users u
+          WHERE
+                tsvector_concat(
+                  setweight(to_tsvector('simple', coalesce(u.name_unaccent,  '')), 'A'),
+                  setweight(to_tsvector('simple', coalesce(u.email_unaccent, '')), 'B')
+                ) @@ plainto_tsquery('simple', unaccent($1))
+             OR u.name_unaccent  ILIKE unaccent($2)
+             OR u.email_unaccent ILIKE unaccent($2)
+             OR u.phone ILIKE $2
+        ) AS s
+        ORDER BY
+          (s.ft_rank * 2.5 + s.sim * 4.0) DESC
+        LIMIT 20
+        `,
+        [term, like]
+      );
+
+      // ============================
+      // 3) PHONES = post_tel_numbers
+      // ============================
+
+      const phonesSql = `
+        SELECT
+          array_agg(DISTINCT post_id::text) AS ids,
+          tel                               AS phone,
+          COUNT(*)                          AS report_count,
+          MAX(created_at)                   AS last_report_at
+        FROM post_tel_numbers
+        WHERE
+          ${useTrgm ? "tel % $1" : "tel ILIKE $1"}
+        GROUP BY tel
+        ORDER BY
+          report_count   DESC,
+          last_report_at DESC
+        LIMIT 20
+      `;
+
+      const phonesParams = [useTrgm ? term : like];
+
+      const phonesPromise = query(phonesSql, phonesParams);
+
+      // ============================
+      // 4) BANK ACCOUNTS = post_seller_accounts
+      // ============================
+
+      const banksSql = `
+        SELECT
+          array_agg(DISTINCT post_id::text) AS ids,
+          bank_name,
+          seller_account,
+          COUNT(*)            AS report_count,
+          MAX(created_at)     AS last_report_at
+        FROM post_seller_accounts
+        WHERE
+          ${
+            useTrgm
+              ? "(account_unaccent % $1 OR bank_unaccent % $1)"
+              : "(account_unaccent ILIKE $1 OR bank_unaccent ILIKE $1)"
+          }
+        GROUP BY bank_name, seller_account
+        ORDER BY
+          report_count   DESC,
+          last_report_at DESC
+        LIMIT 20
+      `;
+
+      const banksParams = [useTrgm ? term : like];
+
+      const banksPromise = query(banksSql, banksParams);
+
+
+      // run พร้อมกัน
+      const [postsRes, usersRes, phonesRes, banksRes] = await Promise.all([
+        postsPromise,
+        usersPromise,
+        phonesPromise,
+        banksPromise,
+      ]);
+
+      const posts = postsRes.rows.map((row: any) => ({
+        id: row.id,
+        entity_id: row.id,
+        title: row.title,
+        snippet: row.snippet,
+        created_at: row.created_at,
+      }));
+
+      const users = usersRes.rows.map((row: any) => ({
+        id: row.id,
+        entity_id: row.id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
+        avatar: row.avatar,
+      }));
+
+      const phones = phonesRes.rows.map((row: any) => ({
+        // id: row.id,
+        // entity_id: row.id,
+
+        id: row.ids?.[0] ?? row.phone,
+        entity_id: row.ids?.[0] ?? row.phone,
+
+        // รวม post_id ทั้งหมดที่มีเบอร์นี้
+        ids: row.ids ?? [],
+        phone: row.phone,
+        report_count: row.report_count,
+        last_report_at: row.last_report_at,
+      }));
+
+      const bank_accounts = banksRes.rows.map((row: any) => ({
+        // id: row.id,
+        // entity_id: row.id,
+        id: row.ids?.[0] ?? row.bank_name,
+        entity_id: row.ids?.[0] ?? row.bank_name,
+        ids: row.ids ?? [],     
+        bank_name: row.bank_name,
+        account_no_masked: row.seller_account,
+        report_count: row.report_count,
+        last_report_at: row.last_report_at,
+      }));
+
+      return { posts, users, phones, bank_accounts };
     },
   },
   Mutation: {

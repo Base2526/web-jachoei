@@ -13,7 +13,7 @@ export default function Page(){
 
         // router.push(`/post/${id}`)
 
-        console.log("[onSaved] :", id)
+        // console.log("[onSaved] :", id)
       } }
       title="New Post"
     />

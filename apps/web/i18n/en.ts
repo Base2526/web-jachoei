@@ -1,13 +1,15 @@
+// i18n/en.ts
 const en = {
   header: {
-    title: "PROTECT SCAMMER[EN]",
-    notifications: "Notifications",
-    messages: "Messages",
-    helpCenter: "Help Center",
-    login: "Login",
-    logout: "Logout",
-    settings: "Settings",
+    title: "PROTECT SCAMMER",
+
+    // 🔍 search-related
+    searchPlaceholder: "Search posts, users, phone numbers...",
+    searchClearHistory: "Clear search history",
+    searchHintPrefix: "Press",
+    searchHintSuffix: "to search quickly",
   },
+
   notificationPage: {
     title: "Notifications",
     tabAll: "All",
@@ -19,7 +21,16 @@ const en = {
     settings: "Settings",
     empty: "No notifications.",
   },
-  // ...
-} as const;
+
+  searchPage: {
+    title: "Search",
+    inputPlaceholder: "Type a keyword and press Enter...",
+    noQuery: "Please type your search term in the box above.",
+    loading: "Searching...",
+    errorTitle: "An error occurred while searching",
+    noResults: "No results found for your query.",
+    resultsFor: "Search results for",
+  },
+};
 
 export default en;
