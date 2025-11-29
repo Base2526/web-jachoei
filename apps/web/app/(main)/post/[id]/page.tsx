@@ -1,9 +1,8 @@
 'use client';
-import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import PostView from '@/components/post/PostView';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { message } from 'antd';
+import { message, Result, Button } from 'antd';
 
 const Q_POST = gql`
   query($id: ID!) {
@@ -61,21 +60,23 @@ const CLONE_POST = gql`
   }
 `;
 
-export default function Page(){
-  const { id } = useParams<{id:string}>();
+export default function Page() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const { data, loading, error } = useQuery(Q_POST, { variables: { id } });
+  const { data, loading, error, refetch } = useQuery(Q_POST, {
+    variables: { id },
+  });
 
   const [deletePost, { loading: deleting }] = useMutation(DELETE_POST);
-  const [clonePost, { loading: cloning }]   = useMutation(CLONE_POST);
+  const [clonePost, { loading: cloning }] = useMutation(CLONE_POST);
 
   const handleDelete = async (id: string) => {
     try {
       const { data: res } = await deletePost({ variables: { id } });
       if (res?.deletePost) {
         message.success("Deleted successfully");
-        router.push('/admin/posts'); // กลับหน้ารายการ
+        router.push('/admin/posts');
       } else {
         message.warning("Delete failed");
       }
@@ -92,7 +93,6 @@ export default function Page(){
       const newId = res?.clonePost;
       if (newId) {
         message.success("Cloned successfully");
-        // สมมติว่าหน้า view ใช้ path /admin/posts/[id]
         router.push(`/post/${newId}`);
       } else {
         message.warning("Clone failed");
@@ -102,20 +102,37 @@ export default function Page(){
     }
   };
 
-  if (loading) return <div>Loading...</div>;
-  if (error)   return <div>Error: {String(error.message)}</div>;
+  // ❌ Error state – แสดง Result สวย ๆ
+  if (error) {
+    return (
+      <Result
+        status="error"
+        title="โหลดข้อมูลโพสต์ไม่สำเร็จ"
+        subTitle={String(error.message || "Unknown error")}
+        extra={[
+          <Button key="retry" onClick={() => refetch()}>
+            ลองใหม่อีกครั้ง
+          </Button>,
+          <Button key="back" type="primary" onClick={() => router.push('/admin/posts')}>
+            กลับหน้ารายการ
+          </Button>,
+        ]}
+      />
+    );
+  }
 
-  const post = data?.post;
-  if (!post) return <div>Not found</div>;
+  const post = data?.post ?? null;
 
-  // console.log("[view]" , post);
-  return <PostView 
-          post={post} 
-          loading={loading}
-          onDelete={handleDelete} 
-          deleting={deleting}
-          
-          onClone={handleClone}
-          cloning={cloning}/>;
+  // ❗ ตรงนี้คือ key: ให้ PostView handle loading/skeleton
+  return (
+    <PostView
+      post={post}
+      loading={loading}
+      onDelete={handleDelete}
+      deleting={deleting}
+      onClone={handleClone}
+      cloning={cloning}
+      title={post?.title || "รายละเอียดโพสต์"}
+    />
+  );
 }
-

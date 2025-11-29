@@ -1,11 +1,10 @@
 'use client';
-import React, {useEffect} from "react";
 import { Card, Row, Col, Statistic, Space, Button, Badge, Typography, Table, Tag, Image } from 'antd';
 import { UserOutlined, FileTextOutlined, FileImageOutlined, DatabaseOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
 
-import { useSession } from '@/lib/useSession'
+// import { useSession } from '@/lib/useSession'
 
 import ThumbGrid from '@/components/ThumbGrid';
 
@@ -33,7 +32,7 @@ export default function AdminDashboard() {
   const { data, loading, refetch } = useQuery(Q_DASH);
   const s = data?.stats ?? { users:0, posts:0, files:0, logs:0 };
   const p = data?.pending ?? { posts_awaiting_approval:0, users_pending_invite:0, files_unclassified:0, errors_last24h:0 };
-  const { admin: adminSession, isAuthenticated, loading: sessionLoading } = useSession()
+  // const { admin: adminSession, isAuthenticated, loading: sessionLoading } = useSession()
   const quick = [
     { href:'/admin/posts',  text:'Posts', icon:<FileTextOutlined/>, badge: 2/*p.posts_awaiting_approval*/  },
     { href:'/admin/users',  text:'Users', icon:<UserOutlined/>,  badge: 1/*p.users_pending_invite */ },

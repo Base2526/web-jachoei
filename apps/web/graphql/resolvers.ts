@@ -28,6 +28,8 @@ export const NOTI_CREATED   = 'NOTI_CREATED';
 
 export const INCOMING_MESSAGE  = 'INCOMING_MESSAGE';
 
+const isDev = process.env.NODE_ENV !== "production";
+
 type GraphQLUploadFile = {
   filename: string;
   mimetype?: string | null;
@@ -86,12 +88,20 @@ function maskAccount(account: any) {
   return account.replace(/.(?=.{4})/g, "x");
 }
 
+function calcRisk(reportCount: number): number {
+  if (reportCount >= 20) return 90;
+  if (reportCount >= 10) return 60;
+  if (reportCount >= 5)  return 40;
+  return 10;
+}
+
+
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
     _health: () => "ok",
     me: async (_: any, {  }: { }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optional: true });
       console.log("[Query] me :", author_id);
 
       const { rows } = await query(`SELECT * FROM users WHERE id=$1 LIMIT 1`, [author_id]);
@@ -100,7 +110,7 @@ export const resolvers = {
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
     // resolver: posts
     posts: async (_: any, { search }: { search?: string }, ctx: any) => {
-      const author_id = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] posts :", author_id);
 
       const params: any[] = [];
@@ -153,7 +163,7 @@ export const resolvers = {
       }));
     },
     postsPaged: async (_: any, { search, limit, offset }: { search?: string; limit: number; offset: number }, ctx: any) => {
-      const author_id = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] postsPaged :", author_id);
 
       const params: any[] = [];
@@ -300,7 +310,7 @@ export const resolvers = {
       return { items, total };
     },
     post: async (_: any, { id }: { id: string }, ctx: any) => {
-      const author_id = requireAuth(ctx, { optionalWeb: true }); // อนุญาตไม่ล็อกอินได้
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true }); // อนุญาตไม่ล็อกอินได้
       console.log("[Query] post :", author_id);
 
       // ใช้ $2 เป็น user id (อาจเป็น null)
@@ -373,7 +383,7 @@ export const resolvers = {
       };
     },
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] myPosts :", ctx, author_id);
 
       if (search) {
@@ -394,7 +404,7 @@ export const resolvers = {
       return rows.map((r :any)=>({ ...r, author: r.author_json }));
     },
     getOrCreateDm: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] getOrCreateDm :", ctx, author_id);
 
       if (!author_id) throw new Error("No demo user found");
@@ -415,7 +425,7 @@ export const resolvers = {
       return chat;
     },
     myChats: async (_: any, { }: {}, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
 
       const { rows } = await query(
         `
@@ -523,7 +533,7 @@ export const resolvers = {
       return out;
     },
     myBookmarks: async (_: any, { limit = 20, offset = 0 }: any, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] myBookmarks :", ctx, author_id);
 
       const { rows } = await query(
@@ -570,7 +580,7 @@ export const resolvers = {
       },
       ctx: any
     ) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
 
       console.log("[Query] messages :", author_id, limit, offset);
 
@@ -715,7 +725,7 @@ export const resolvers = {
       return results;
     },
     users: async (_: any, { search }: { search?: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] users :", author_id);
 
       if (search) {
@@ -730,13 +740,13 @@ export const resolvers = {
       return rows;
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
-      const author_id = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] user", id, author_id);
 
       return await getUserById(id);
     },
     postsByUserId: async (_: any, { user_id }: { user_id: string }, ctx: any) => {
-      const author_id = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] postsByUserId :", author_id, "target:", user_id);
 
       const params: any[] = [user_id];
@@ -836,7 +846,7 @@ export const resolvers = {
       }));
     },
     unreadCount: async (_:any, { chatId }:{ chatId: string }, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] unreadCount :", author_id);
 
       const { rows } = await query(
@@ -858,7 +868,7 @@ export const resolvers = {
       return Number(rows2[0]?.unread_count || 0);
     },
     whoRead: async (_:any, { messageId }:{messageId:string}, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] whoRead :", author_id);
 
       const { rows } = await query(
@@ -871,7 +881,7 @@ export const resolvers = {
       return rows;
     },
     stats: async (_:any, __:any, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] stats :", author_id);
 
       const results = await Promise.all([
@@ -886,7 +896,7 @@ export const resolvers = {
       return { users, posts, files, logs };
     },
     latestUsers: async (_: any, { limit = 5 }: any, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] latestUsers :", author_id);
 
       const { rows } = await query(
@@ -903,7 +913,7 @@ export const resolvers = {
       }));
     },
     latestPosts: async (_: any, { limit = 5 }: any, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] latestPosts :", author_id);
 
       const { rows } = await query(
@@ -935,7 +945,7 @@ export const resolvers = {
       }));
     },
     pending: async (_:any, __:any, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] pending :", author_id);
 
       const [posts, users, files, logs] = await Promise.all([
@@ -953,7 +963,7 @@ export const resolvers = {
       };
     },
     filesPaged: async (_: any, { search, limit, offset }: any, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] pending :", author_id);
 
       const params: any[] = [];
@@ -1099,7 +1109,7 @@ export const resolvers = {
       return roots;
     },
     globalSearch: async (_: any, { q }: { q: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] globalSearch (pro) :", author_id, q);
 
       const term = (q || "").trim();
@@ -1316,6 +1326,162 @@ export const resolvers = {
 
       return { posts, users, phones, bank_accounts };
     },
+    scamPhonesSnapshot: async (
+      _: any,
+      { cursor, limit }: { cursor?: string | null; limit: number },
+      ctx: any
+    ) => {
+
+      console.log("[Query] scamPhonesSnapshot");
+
+      // เอาแบบง่าย ๆ ก่อน: ใช้ ISO string อย่างเดียว
+      const since = cursor || "1970-01-01T00:00:00Z";
+
+      const { rows } = await query(
+        `
+        SELECT
+          tel,
+          COUNT(*) AS report_count,
+          MAX(created_at) AS last_report_at,
+          MAX(created_at) AS updated_at,
+          ARRAY_AGG(DISTINCT post_id) AS post_ids
+        FROM post_tel_numbers
+        WHERE created_at > $1
+        GROUP BY tel
+        ORDER BY updated_at ASC
+        LIMIT $2
+        `,
+        [since, limit]
+      );
+
+      const items = rows.map((r: any) => ({
+        phone: r.tel,
+        report_count: Number(r.report_count),
+        last_report_at: r.last_report_at,
+        risk_level: calcRisk(Number(r.report_count)),
+        tags: [],
+        updated_at: r.updated_at,
+        is_deleted: false,
+        post_ids: r.post_ids,
+      }));
+
+      // 👇 ถ้าจำนวน row น้อยกว่า limit แปลว่า "หน้าสุดท้าย" → cursor = null
+      const nextCursor =
+        rows.length === limit ? rows[rows.length - 1].updated_at : null;
+
+      return {
+        cursor: nextCursor,
+        items,
+      };
+    },
+    scamPhonesDelta: async (
+      _: any,
+      {
+        cursor,
+        limit,
+        sinceVersion,
+      }: { cursor?: string | null; limit: number; sinceVersion: string },
+      ctx: any
+    ) => {
+      console.log("[Query] scamPhonesDelta", { cursor, sinceVersion, limit });
+
+      // เลือก source ก่อน: cursor > sinceVersion
+      const rawSince = cursor || sinceVersion;
+
+      // รองรับ 2 แบบ:
+      // 1) ISO string เช่น "2025-11-28T03:20:00.000Z"
+      // 2) epoch milliseconds เช่น "1763734660728"
+      let sinceParam: string;
+
+      if (/^\d+$/.test(rawSince)) {
+        // เป็นตัวเลขล้วน → แปลว่า epoch (ms หรือ s)
+        const num = Number(rawSince);
+        // ถ้าใหญ่กว่า 1e12 นิด ๆ ส่วนใหญ่คือ ms → แปลงเป็นวินาทีให้ JS
+        const ms = num > 1e12 ? num : num * 1000;
+        sinceParam = new Date(ms).toISOString();
+      } else {
+        // สมมติว่าเป็น ISO อยู่แล้ว
+        sinceParam = rawSince;
+      }
+
+      const { rows } = await query(
+        `
+        SELECT
+          tel,
+          COUNT(*)               AS report_count,
+          MAX(created_at)        AS last_report_at,
+          MAX(created_at)        AS updated_at,
+          ARRAY_AGG(DISTINCT post_id) AS post_ids
+        FROM post_tel_numbers
+        WHERE created_at > $1
+        GROUP BY tel
+        ORDER BY updated_at ASC
+        LIMIT $2
+        `,
+        [sinceParam, limit]
+      );
+
+      const items = rows.map((r: any) => ({
+        phone: r.tel,
+        report_count: Number(r.report_count),
+        last_report_at: r.last_report_at,
+        risk_level: calcRisk(Number(r.report_count)),
+        tags: [],
+        updated_at: r.updated_at,
+        is_deleted: false,
+        post_ids: r.post_ids,
+      }));
+
+      // cursor หน้าใหม่ ส่งกลับเป็น ISO (string)
+      const nextCursor =
+        rows.length === limit && rows.length > 0
+          ? rows[rows.length - 1].updated_at
+          : null;
+
+      return {
+        cursor: nextCursor,
+        items,
+      };
+    },
+    searchScamPhones: async (
+      _: any,
+      { q, limit }: { q: string; limit: number },
+      ctx : any
+    ) => {
+
+      console.log("[Query] searchScamPhones", { q, limit });
+      // อยาก strict ตรงตัว: ใช้ = หรือ LIKE
+      // ถ้าอยากให้พิมพ์บางส่วนก็เจอ → ใช้ LIKE '%q%'
+      const like = `%${q}%`;
+
+      const { rows } = await query(
+        `
+        SELECT
+          tel,
+          COUNT(*)               AS report_count,
+          MAX(created_at)        AS last_report_at,
+          MAX(created_at)        AS updated_at,
+          ARRAY_AGG(DISTINCT post_id) AS post_ids
+        FROM post_tel_numbers
+        WHERE tel LIKE $1
+        GROUP BY tel
+        ORDER BY report_count DESC, updated_at DESC
+        LIMIT $2
+        `,
+        [like, limit]
+      );
+
+      return rows.map((r:any) => ({
+        phone: r.tel,
+        report_count: Number(r.report_count),
+        last_report_at: r.last_report_at,
+        risk_level: calcRisk(Number(r.report_count)),
+        tags: [],                 // อนาคตค่อย map จาก table/tag อื่น
+        updated_at: r.updated_at, // = MAX(created_at)
+        is_deleted: false,        // ตอนนี้ table ไม่มี field นี้
+        post_ids: r.post_ids,
+      }));
+    },
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -1411,7 +1577,7 @@ export const resolvers = {
         { expiresIn: "7d" }
       );
 
-      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: !isDev ? true : false, sameSite: "lax", path: "/" });
       return {
         ok: true,
         message: "Login success",
@@ -1524,7 +1690,7 @@ export const resolvers = {
         { expiresIn: "7d" }
       );
 
-      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: !isDev ? true : false, sameSite: "lax", path: "/" });
 
       // แนะนำ: set cookie httpOnly ใน production
       // ctx.res.cookie("token", token, {
@@ -1561,7 +1727,7 @@ export const resolvers = {
         { expiresIn: "1d" }
       );
 
-      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: !isDev ? true : false, sameSite: "lax", path: "/" });
       return {
         ok: true,
         message: "Login success",
@@ -1583,7 +1749,7 @@ export const resolvers = {
       );
 
       const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
-      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: true, path: '/' });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: !isDev ? true : false, path: '/' });
 
       return true;
     },
@@ -1665,7 +1831,7 @@ export const resolvers = {
       },
       ctx: any
     ) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] upsertPost :", author_id, data, image_ids_delete);
 
       return runInTransaction(author_id, async (client) => {
@@ -1834,7 +2000,7 @@ export const resolvers = {
       });
     },
     deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deletePost :", ctx, author_id);
 
       // ✅ ใช้ helper transaction function
@@ -1853,7 +2019,7 @@ export const resolvers = {
       });
     },
     deletePosts: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deletePosts :", ctx, author_id);
 
       // ✅ validate input
@@ -1900,7 +2066,7 @@ export const resolvers = {
       { id }: { id: string },
       ctx: any
     ) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] clonePost :", author_id, id);
 
       return runInTransaction(author_id, async (client) => {
@@ -2036,7 +2202,7 @@ export const resolvers = {
       });
     },
     // createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
-    //   const author_id = requireAuth(ctx);
+    //   const { author_id, scope, isAuthenticated } = requireAuth(ctx);
     //   console.log("[Mutation] createChat :", ctx, author_id);
 
     //   // ✅ ใช้ transaction ครอบทุกขั้นตอน
@@ -2092,7 +2258,7 @@ export const resolvers = {
       { name, isGroup, memberIds }: { name?: string; isGroup: boolean; memberIds: string[] },
       ctx: any
     ) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] createChat :", author_id);
 
       // ✅ 1) รันทุกอย่างใน transaction (สร้าง chat + members + log)
@@ -2181,7 +2347,7 @@ export const resolvers = {
       return chat;
     },
     addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] addMember :", ctx, author_id);
 
       return await runInTransaction(author_id, async (client) => {
@@ -2214,7 +2380,7 @@ export const resolvers = {
       },
       ctx: any
     ) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
 
       console.info("[sendMessage] =", author_id, chat_id, to_user_ids);
 
@@ -2410,7 +2576,7 @@ export const resolvers = {
       return fullMessage;
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] upsertUser :", ctx, author_id);
 
       // 2️⃣ ทำความสะอาดข้อมูล
@@ -2481,7 +2647,7 @@ export const resolvers = {
       });
     },
     uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<GraphQLUploadFile> }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] uploadAvatar :", author_id);
 
       const result = await runInTransaction(author_id, async (client) => {
@@ -2511,7 +2677,7 @@ export const resolvers = {
       return result;
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteUser:", id, author_id);
 
       const success = await runInTransaction(author_id, async (client) => {
@@ -2531,7 +2697,7 @@ export const resolvers = {
       return success;
     },
     deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteUsers :", ctx, author_id);
 
       if (!ids || ids.length === 0) return false;
@@ -2558,7 +2724,7 @@ export const resolvers = {
       });
     },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] updateMyProfile :", author_id, data);
 
       const result = await runInTransaction(author_id, async (client) => {
@@ -2587,7 +2753,7 @@ export const resolvers = {
       return result;
     },
     renameChat: async (_:any, { chat_id, name }:{chat_id:string, name?:string}, ctx:any) => {
-      const author_id = requireAuth(ctx); // ✅ ตรวจสิทธิ์
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์
       console.log('[Mutation] renameChat :', chat_id, name, author_id);
 
       const result = await runInTransaction(author_id, async (client) => {
@@ -2608,7 +2774,7 @@ export const resolvers = {
       return result;
     },
     deleteChat: async (_:any, { chat_id }:{chat_id:string}, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       const result = await runInTransaction(author_id, async (client) => {
         await client.query(`DELETE FROM chats WHERE id = $1`, [chat_id]);
 
@@ -2625,7 +2791,7 @@ export const resolvers = {
       return result;
     },
     markMessageRead: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] markMessageRead :", message_id, "by", author_id);
 
       const result = await runInTransaction(author_id, async (client) => {
@@ -2650,7 +2816,7 @@ export const resolvers = {
     },
     markChatReadUpTo: async (_:any, { chat_id, cursor }:{ chat_id:string, cursor:string }, ctx:any) => {
       // 1️⃣ ตรวจสอบสิทธิ์ผู้ใช้
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log('[Mutation] markChatReadUpTo :', author_id, chat_id, cursor);
 
       // 2️⃣ ทำงานใน transaction
@@ -2682,7 +2848,7 @@ export const resolvers = {
       return result;
     },
     deleteMessage: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteMessage :", ctx, author_id);
 
       return await runInTransaction(author_id, async (client) => {
@@ -2723,7 +2889,7 @@ export const resolvers = {
       });
     },
     deleteFile: async (_: any, { id }: { id: string }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteFile :", { id, author_id });
 
       const result = await runInTransaction(author_id, async (client) => {
@@ -2745,7 +2911,7 @@ export const resolvers = {
       return result;
     },
     deleteFiles: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteFiles :", ids, "by", author_id);
 
       if (!ids?.length) return false;
@@ -2774,7 +2940,7 @@ export const resolvers = {
       });
     },
     renameFile: async (_: any, { id, name }: { id: string, name: string }, ctx: any) => {
-      const author_id = requireAuth(ctx); // ✅ ตรวจสิทธิ์ก่อน
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์ก่อน
       console.log("[Mutation] renameFile by:", author_id);
 
       // ✅ ใช้ transaction helper
@@ -2802,17 +2968,17 @@ export const resolvers = {
       return success;
     },
     toggleBookmark: async (_: any, { postId }: { postId: string }, ctx: any) => {
-      const userId = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       const start = Date.now();
 
-      console.log("[toggleBookmark]", userId, postId);
+      console.log("[toggleBookmark]", author_id, postId);
 
       // ✅ ทำงานใน transaction
-      const result = await runInTransaction(userId, async (client) => {
+      const result = await runInTransaction(author_id, async (client) => {
         // ตรวจว่ามี bookmark อยู่แล้วไหม
         const { rowCount: exists } = await client.query(
           `SELECT 1 FROM bookmarks WHERE post_id = $1 AND user_id = $2`,
-          [postId, userId]
+          [postId, author_id]
         );
 
         let isBookmarked: boolean;
@@ -2821,7 +2987,7 @@ export const resolvers = {
           // ถ้ามี → ลบออก
           await client.query(
             `DELETE FROM bookmarks WHERE post_id = $1 AND user_id = $2`,
-            [postId, userId]
+            [postId, author_id]
           );
           isBookmarked = false;
         } else {
@@ -2830,7 +2996,7 @@ export const resolvers = {
             `INSERT INTO bookmarks (post_id, user_id)
              VALUES ($1, $2)
              ON CONFLICT (post_id, user_id) DO NOTHING`,
-            [postId, userId]
+            [postId, author_id]
           );
           isBookmarked = true;
         }
@@ -2843,7 +3009,7 @@ export const resolvers = {
         'info',
         'bookmark',
         'User toggled bookmark',
-        { userId, postId, isBookmarked: result.isBookmarked }
+        { author_id, postId, isBookmarked: result.isBookmarked }
       );
 
       return {
@@ -2885,7 +3051,7 @@ export const resolvers = {
       return true;
     },
     addComment: async (_: any, { post_id, content }: any, ctx: any) => {
-      const author_id = requireAuth(ctx); 
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx); 
       
       const user = await getUserById(author_id); // { id, name, avatar, ... }
 
@@ -2951,7 +3117,7 @@ export const resolvers = {
       return gqlComment;
     },
     replyComment: async (_: any, { comment_id, content }: any, ctx: any) => {
-      const author_id = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       const user = await getUserById(author_id);
 
       console.log("[replyComment]", author_id, user);

@@ -1,44 +1,67 @@
 "use client";
 
-import React from "react";
-import { Layout, theme } from "antd";
+import { Layout, theme, Grid } from "antd";
 import Breadcrumbs from "./Breadcrumbs";
-import HeaderBar from "./HeaderBar"; // ← เพิ่มบรรทัดนี้
+import HeaderBar from "./HeaderBar";
 
 const { Content, Footer } = Layout;
+const { useBreakpoint } = Grid;
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
 
-  return (
-    <Layout style={{ minHeight: "100vh", background: "#ffffffff" }}>
-      {/* ใช้ HeaderBar ที่ทำให้เหมือนภาพ */}
-      <HeaderBar />
+  const screens = useBreakpoint();
+  const isMobile = !screens.md; // md breakpoint = ~768px
 
+  return (
+    <Layout
+      style={{
+        minHeight: "100vh",
+        background: "#ffffffff",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* Header responsive */}
+      <HeaderBar isMobile={isMobile} />
+
+      {/* Main content */}
       <Content
         style={{
-          margin: "16px auto",
+          margin: isMobile ? "0px auto" : "16px auto",
           width: "100%",
-          maxWidth: 1400,
-          padding: "0 16px",
+          maxWidth: isMobile ? "100%" : 1400,
+          padding: isMobile ? "0 0px" : "0 16px",
         }}
       >
-        <Breadcrumbs />
+        {/* Breadcrumb: ซ่อนบนมือถือ */}
+        {!isMobile && <Breadcrumbs />}
+
         <div
           style={{
-            padding: 16,
+            padding: isMobile ? 0 : 16,
             background: colorBgContainer,
             borderRadius: borderRadiusLG,
-            minHeight: 360,
+            minHeight: isMobile ? "auto" : 360,
+            boxShadow: isMobile ? "0 0 4px rgba(0,0,0,0.06)" : "none",
           }}
         >
           {children}
         </div>
       </Content>
 
-      <Footer style={{ textAlign: "center", color: "rgba(255,255,255,0.6)", background: "#ffffffff" }}>
+      {/* Footer compact บน mobile */}
+      <Footer
+        style={{
+          textAlign: "center",
+          color: "rgba(0,0,0,0.45)",
+          background: "#ffffffff",
+          fontSize: isMobile ? 12 : 14,
+          padding: isMobile ? "8px 0" : "16px 0",
+        }}
+      >
         © {new Date().getFullYear()} BEST MALL U
       </Footer>
     </Layout>

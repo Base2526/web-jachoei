@@ -265,6 +265,27 @@ export const typeDefs = /* GraphQL */ `
     bank_accounts: [SearchBankAccountResult!]!
   }
 
+  type ScamPhone {
+    phone: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!        # 0-100, คำนวณจาก report_count / weight อื่น ๆ
+    tags: [String!]!
+    updated_at: String!     # iso time, ใช้สำหรับ sync
+    is_deleted: Boolean!
+    post_ids: [ID!]!        # post ที่เกี่ยวข้องกับเบอร์นี้
+  }
+
+  type ScamPhoneSnapshotPage {
+    cursor: String
+    items: [ScamPhone!]!
+  }
+
+  type ScamPhoneDeltaPage {
+    cursor: String
+    items: [ScamPhone!]!
+  }
+
   type Query {
     _health: String!
     meRole: String!
@@ -306,6 +327,14 @@ export const typeDefs = /* GraphQL */ `
     comments(post_id: ID!): [Comment!]!
 
     globalSearch(q: String!): GlobalSearchResult!
+
+
+    # ใช้ initial sync
+    scamPhonesSnapshot(cursor: String, limit: Int! = 1000): ScamPhoneSnapshotPage!
+    # ใช้ delta sync
+    scamPhonesDelta(sinceVersion: String!, cursor: String, limit: Int! = 1000): ScamPhoneDeltaPage!
+    # ใช้ manual search (เหมือน globalSearch แต่เฉพาะเบอร์)
+    searchScamPhones(q: String!, limit: Int! = 20): [ScamPhone!]!
   }
 
   input TelNumberInput {

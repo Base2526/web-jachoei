@@ -18,7 +18,9 @@ import {
   Avatar,
   Image,
   Spin,
-  type MenuProps,   
+  Drawer,
+  Grid,
+  type MenuProps,
 } from "antd";
 import {
   MoreOutlined,
@@ -26,18 +28,17 @@ import {
   MenuUnfoldOutlined,
   UserOutlined,
   TeamOutlined,
-  SmileOutlined,         
-  RollbackOutlined,  
+  RollbackOutlined,
 } from "@ant-design/icons";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 import SendMessageSection from "@/components/chat/SendMessageSection";
-import { formatTimeAgo } from "@/components/comments/Helper"
+import { formatTimeAgo } from "@/components/comments/Helper";
 import { useGlobalChatStore } from "@/store/globalChatStore";
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const MESSAGE_FIELDS = gql`
   fragment MessageFields on Message {
@@ -50,7 +51,10 @@ const MESSAGE_FIELDS = gql`
       id
       text
       images {
+        id
         url
+        file_id
+        mime
       }
       sender {
         id
@@ -62,13 +66,6 @@ const MESSAGE_FIELDS = gql`
     sender {
       id
       name
-      # avatar
-      # phone
-      # email
-      # role
-      # created_at
-      # username
-      # language
     }
 
     myReceipt {
@@ -155,7 +152,6 @@ const Q_MSGS = gql`
   ${MESSAGE_FIELDS}
 `;
 
-
 const Q_USERS = gql`
   query ($q: String) {
     users(search: $q) {
@@ -198,28 +194,11 @@ const MUT_SEND = gql`
       images: $images
       reply_to_id: $reply_to_id
     ) {
-      id
-      chat_id
-      text
-      created_at
-      reply_to_id
-
-      sender {
-        id
-        name
-        avatar
-      }
-
-      images {
-        id
-        url
-        file_id
-        mime
-      }
+      ...MessageFields
     }
   }
+  ${MESSAGE_FIELDS}
 `;
-
 
 const MUT_CREATE = gql`
   mutation ($name: String, $isGroup: Boolean!, $memberIds: [ID!]!) {
@@ -603,8 +582,11 @@ function renderDeliveryTicks(receipt: any) {
 const PAGE_SIZE = 40;
 
 function ChatUI() {
-  const router = useRouter();  
-  const client = useApolloClient();  
+  const router = useRouter();
+  const client = useApolloClient();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
+
   const [sel, setSel] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [openCreate, setOpenCreate] = useState(false);
@@ -617,7 +599,9 @@ function ChatUI() {
   const [replyTarget, setReplyTarget] = useState<any | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(true);
 
-  // 🔹 pagination state
+  const [mobileChatsOpen, setMobileChatsOpen] = useState(false);
+
+  // pagination state
   const [msgHasMore, setMsgHasMore] = useState(true);
   const [msgLoadingMore, setMsgLoadingMore] = useState(false);
 
@@ -630,7 +614,7 @@ function ChatUI() {
       const newMsg = data?.sendMessage;
       if (!newMsg) return;
 
-      // 1) อัปเดต messages ของห้องนั้นใน Q_MSGS
+      // ⬇️ สำคัญ: อย่าทับ reply_to ที่ server ส่งมา
       cache.updateQuery<{ messages: any[] }>({
         query: Q_MSGS,
         variables: { chat_id: newMsg.chat_id },
@@ -638,27 +622,27 @@ function ChatUI() {
         if (!old) {
           return { messages: [newMsg] };
         }
-        // กันกรณี duplicated จาก SUB
         const exists = old.messages.some((m) => m.id === newMsg.id);
         if (exists) return old;
 
         return {
           ...old,
-          messages: [...old.messages, {
-            ...newMsg,
-            // เติม field ที่ Q_MSGS ต้องใช้แต่ MUT_SEND ไม่คืนให้
-            reply_to_id: newMsg.reply_to_id ?? null,
-            reply_to: null,
-            myReceipt: null,
-            readers: [],
-            readersCount: 0,
-            deleted_at: null,
-            is_deleted: false,
-          }],
+          messages: [
+            ...old.messages,
+            {
+              ...newMsg,
+              reply_to_id: newMsg.reply_to_id ?? null,
+              reply_to: newMsg.reply_to ?? null,
+              myReceipt: newMsg.myReceipt ?? null,
+              readers: newMsg.readers ?? [],
+              readersCount: newMsg.readersCount ?? 0,
+              deleted_at: newMsg.deleted_at ?? null,
+              is_deleted: newMsg.is_deleted ?? false,
+            },
+          ],
         };
       });
 
-      // 2) อัปเดต list ซ้ายมือ (Q_CHATS) เหมือนเดิม
       cache.updateQuery<{ myChats: any[] }>({ query: Q_CHATS }, (old) => {
         if (!old) return old;
         return {
@@ -709,11 +693,9 @@ function ChatUI() {
   const meId = me?.me?.id;
   const meName = me?.me?.name as string | undefined;
 
-  // ด้านบนใน ChatUI()
-  const setCurrentChat = useGlobalChatStore((s:any) => s.setCurrentChat);
-  const clearUnread = useGlobalChatStore((s:any) => s.clearUnread);
-  const unreadByChat = useGlobalChatStore((s:any) => s.unreadByChat);
-  
+  const setCurrentChat = useGlobalChatStore((s: any) => s.setCurrentChat);
+  const clearUnread = useGlobalChatStore((s: any) => s.clearUnread);
+  const unreadByChat = useGlobalChatStore((s: any) => s.unreadByChat);
 
   const {
     data: chats,
@@ -757,9 +739,8 @@ function ChatUI() {
 
   // subscriptions
   useEffect(() => {
-    if (!sel) {
-      return;
-    }
+    if (!sel) return;
+
     const unsubAdded = subscribeToMoreMsgs({
       document: SUB,
       variables: { chat_id: sel },
@@ -767,14 +748,12 @@ function ChatUI() {
         const m = subscriptionData.data?.messageAdded;
         if (!m) return prev;
 
-        // กัน duplicated message ในห้อง
         const exists = prev.messages?.some((x: any) => x.id === m.id);
         if (exists) {
           console.log("⚠ skip duplicate messageFromSub:", m.id);
           return prev;
         }
 
-        // ⭐ อัปเดต list ซ้าย (Q_CHATS) ให้ last_message_at เป็นของ message นี้
         client.cache.updateQuery<{ myChats: any[] }>({
           query: Q_CHATS,
         }, (old) => {
@@ -800,7 +779,6 @@ function ChatUI() {
           };
         });
 
-        // ⭐ เพิ่ม message ใหม่เข้า messages ของห้องนี้
         return {
           ...prev,
           messages: [...(prev.messages || []), m],
@@ -827,7 +805,19 @@ function ChatUI() {
       if (typeof unsubAdded === "function") unsubAdded();
       if (typeof unsubDeleted === "function") unsubDeleted();
     };
-  }, [sel, subscribeToMoreMsgs]);
+  }, [sel, subscribeToMoreMsgs, client.cache]);
+
+  // ฟังก์ชันเปิดห้อง
+  const openChatById = async (id: string) => {
+    setSel(id);
+    setCurrentChat(id);
+    clearUnread(id);
+    lastMsgCountRef.current = 0;
+    setReplyTarget(null);
+    setMsgHasMore(true);
+    await refetchMsgs({ chat_id: id, limit: PAGE_SIZE, offset: 0 });
+    if (isMobile) setMobileChatsOpen(false);
+  };
 
   // auto select first chat
   useEffect(() => {
@@ -835,16 +825,10 @@ function ChatUI() {
     if (loadingChats) return;
     const list = chats?.myChats || [];
     if (!sel && list.length > 0) {
-      // const firstId = list[0].id;
-      // setSel(firstId);
-      // refetchMsgs({ chat_id: firstId });
-
       const firstId = list[0].id;
-      setSel(firstId);
-      setMsgHasMore(true);
-      refetchMsgs({ chat_id: firstId, limit: PAGE_SIZE, offset: 0 });
+      openChatById(firstId);
     }
-  }, [toParam, chats, loadingChats, sel, refetchMsgs]);
+  }, [toParam, chats, loadingChats, sel]); // eslint-disable-line
 
   // handle ?to=
   useEffect(() => {
@@ -856,28 +840,26 @@ function ChatUI() {
     if (loadingChats) return;
     if (handledToRef.current) return;
 
+    const createOneToOne = async () => {
+      try {
+        const { data } = await createChat({
+          variables: { name: null, isGroup: false, memberIds: [to] },
+        });
+        const newId = data?.createChat?.id;
+        if (newId) {
+          await refetchChats();
+          await openChatById(newId);
+        } else {
+          message.error("Cannot create chat");
+        }
+      } catch (e: any) {
+        message.error(e?.message || "Cannot create chat");
+      }
+    };
+
     if (list.length === 0) {
       handledToRef.current = true;
-      (async () => {
-        try {
-          const { data } = await createChat({
-            variables: { name: null, isGroup: false, memberIds: [to] },
-          });
-          const newId = data?.createChat?.id;
-          if (newId) {
-            // await refetchChats();
-            // setSel(newId);
-            // refetchMsgs({ chat_id: newId });
-
-            await refetchChats();
-            await openChatById(newId);
-          } else {
-            message.error("Cannot create chat");
-          }
-        } catch (e: any) {
-          message.error(e?.message || "Cannot create chat");
-        }
-      })();
+      createOneToOne();
       return;
     }
 
@@ -891,45 +873,13 @@ function ChatUI() {
       return (hasMe && hasTo) || (creatorMatch && hasTo);
     });
 
-    if (existing) {
-      handledToRef.current = true;
-      // setSel(existing.id);
-      // refetchMsgs({ chat_id: existing.id });
-
-      setSel(existing.id);
-      setMsgHasMore(true);
-      refetchMsgs({ chat_id: existing.id, limit: PAGE_SIZE, offset: 0 });
-      return;
-    }
-
     handledToRef.current = true;
-    (async () => {
-      try {
-        const { data } = await createChat({
-          variables: { name: null, isGroup: false, memberIds: [to] },
-        });
-        const newId = data?.createChat?.id;
-        if (newId) {
-          // await refetchChats();
-          // setSel(newId);
-          // refetchMsgs({ chat_id: newId });
-
-          await refetchChats();
-          await openChatById(newId);
-        } else {
-          message.error("Cannot create chat");
-        }
-      } catch (e: any) {
-        message.error(e?.message || "Cannot create chat");
-      }
-    })();
-  }, [toParam, me, chats, loadingChats, createChat, refetchChats, refetchMsgs]);
-
-  const openChatById = async (id: string) => {
-    setSel(id);
-    setMsgHasMore(true);
-    await refetchMsgs({ chat_id: id, limit: PAGE_SIZE, offset: 0 });
-  };
+    if (existing) {
+      openChatById(existing.id);
+    } else {
+      createOneToOne();
+    }
+  }, [toParam, me, chats, loadingChats, createChat, refetchChats]); // eslint-disable-line
 
   // existing 1:1
   const existingOneToOnePartnerIds = useMemo(() => {
@@ -953,14 +903,15 @@ function ChatUI() {
     return arr;
   }, [users, meId, mode, existingOneToOnePartnerIds]);
 
-  // chat actions
   const onEdit = (c: any) => {
+    if (!c) return;
     setEditTarget({ id: c.id, name: c.name });
     setEditName(c.name || "");
     setOpenEdit(true);
   };
 
   const onDelete = (c: any) => {
+    if (!c) return;
     Modal.confirm({
       title: `Delete chat`,
       content: (
@@ -984,6 +935,7 @@ function ChatUI() {
   };
 
   const onAddMember = async (c: any) => {
+    if (!c) return;
     const pick = await new Promise<string | undefined>((resolve) => {
       let localSel: string[] = [];
       Modal.confirm({
@@ -1061,7 +1013,6 @@ function ChatUI() {
     [chats, sel]
   );
 
-  // const messagesList = msgs?.messages || [];
   const rawMsgs = msgs?.messages || [];
   const messagesList = useMemo(
     () =>
@@ -1072,7 +1023,6 @@ function ChatUI() {
     [rawMsgs]
   );
 
-
   const initialLoading = !msgs && loadingMsgs;
   const isEmpty = messagesList.length === 0;
 
@@ -1082,7 +1032,6 @@ function ChatUI() {
     }
   };
 
-  // 🔹 load older messages when scroll to top
   const loadOlder = async () => {
     if (!sel || msgLoadingMore || !msgHasMore) return;
 
@@ -1104,7 +1053,6 @@ function ChatUI() {
           const older = fetchMoreResult.messages || [];
           if (!older.length) return prev;
 
-          // รวม page เดิม + page ใหม่
           return {
             ...prev,
             messages: [...prev.messages, ...older],
@@ -1114,10 +1062,9 @@ function ChatUI() {
 
       const loaded = res?.data?.messages ?? [];
       if (loaded.length < PAGE_SIZE) {
-        setMsgHasMore(false); // ไม่มีให้โหลดเพิ่มแล้ว
+        setMsgHasMore(false);
       }
 
-      // รักษา scroll position ไว้ (content ยาวขึ้นด้านบน)
       requestAnimationFrame(() => {
         if (!el) return;
         const newScrollHeight = el.scrollHeight;
@@ -1130,38 +1077,24 @@ function ChatUI() {
     }
   };
 
-  // const handleScroll = () => {
-  //   const el = messagesContainerRef.current;
-  //   if (!el) return;
-  //   const threshold = 80;
-  //   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-  //   const atBottomNow = distanceFromBottom <= threshold;
-  //   setIsAtBottom(atBottomNow);
-  //   if (atBottomNow) setHasNewMessages(false);
-  // };
-
   const handleScroll = () => {
     const el = messagesContainerRef.current;
     if (!el) return;
 
-    // 🔹 detect bottom (เหมือนเดิม)
     const bottomThreshold = 80;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const atBottomNow = distanceFromBottom <= bottomThreshold;
     setIsAtBottom(atBottomNow);
     if (atBottomNow) setHasNewMessages(false);
 
-    // 🔹 detect top → load older
     const topThreshold = 80;
     if (el.scrollTop <= topThreshold && msgHasMore && !msgLoadingMore) {
       loadOlder();
     }
   };
-  
+
   // auto-scroll
   useEffect(() => {
-
-    // console.log("[messagesList] =", messagesList);
     const list = messagesList;
     const currentCount = list.length;
     const prevCount = lastMsgCountRef.current;
@@ -1201,15 +1134,16 @@ function ChatUI() {
       return "Select a chat";
     }
 
-    // ====== Group Chat ======
     if (chat.is_group) {
       const title = chat.name?.trim() || "Group Chat";
 
       const others = (chat.members || []).filter((m: any) => m.id !== meId);
       const total = others.length;
 
-      // เอาไว้โชว์แค่ 3 คนแรก + นับต่อท้าย
-      const previewNames = others.slice(0, 3).map((m: any) => m.name).join(", ");
+      const previewNames = others
+        .slice(0, 3)
+        .map((m: any) => m.name)
+        .join(", ");
       const extra = total > 3 ? ` +${total - 3} more` : "";
       const membersText = previewNames + extra;
 
@@ -1226,7 +1160,6 @@ function ChatUI() {
             <Avatar size={32} style={{ background: "#1677ff" }}>
               {initial}
             </Avatar>
-            {/* badge bottom-right */}
             <div
               style={{
                 position: "absolute",
@@ -1252,12 +1185,10 @@ function ChatUI() {
               <div style={{ fontSize: 12, color: "#999" }}>{membersText}</div>
             )}
           </div>
-
         </Space>
       );
     }
 
-    // ====== 1:1 Chat ======
     const partner = (chat.members || []).find((m: any) => m.id !== meId);
     const partnerName = partner?.name || "Chat";
     const avatarSrc = (partner as any)?.avatar;
@@ -1315,11 +1246,237 @@ function ChatUI() {
         ? new Date(b.last_message_at).getTime()
         : 0;
 
-      // เรียงจากใหม่ → เก่า
       return bTime - aTime;
     });
   }, [chats]);
 
+  // ใช้ renderItem ร่วมกันทั้ง sidebar / drawer
+  const renderChatListItem = (c: any, compact: boolean) => {
+    const partnerUser = !c.is_group
+      ? (c.members || []).find((m: any) => m.id !== meId) || null
+      : null;
+
+    const partnerName = partnerUser?.name || "User";
+
+    const titleText = (
+      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {!compact && (c.is_group ? c.name || "Group" : partnerName)}
+      </span>
+    );
+
+    const last = c.last_message;
+    const images = Array.isArray(last?.images) ? last.images : [];
+
+    let lastText = "";
+
+    if (last?.text && last.text.trim()) {
+      const t = last.text.trim();
+      lastText = t.length > 60 ? t.slice(0, 57) + "…" : t;
+    } else if (images.length > 0) {
+      lastText =
+        images.length === 1 ? "📷 Photo" : `📷 ${images.length} photos`;
+    }
+
+    const fallbackDesc = c.is_group
+      ? (c.members || [])
+          .filter((m: any) => m.id !== meId)
+          .map((m: any) => m.name)
+          .join(", ")
+      : "";
+
+    const lastAtRaw = c.last_message_at || last?.created_at;
+    const timeAgo = lastAtRaw ? formatTimeAgo(lastAtRaw) : "";
+
+    const descCore = lastText || fallbackDesc || "";
+    const combinedDesc =
+      descCore && timeAgo
+        ? `${descCore} · ${timeAgo}`
+        : descCore || timeAgo;
+
+    const initial = getInitial(c.is_group ? c.name || "G" : partnerName);
+    const avatarSrc = c.is_group ? undefined : partnerUser?.avatar || undefined;
+
+    const unread = unreadByChat[c.id] ?? 0;
+
+    return (
+      <List.Item
+        onClick={() => openChatById(c.id)}
+        style={{
+          cursor: "pointer",
+          background: sel === c.id ? "rgba(22,119,255,0.08)" : "transparent",
+          borderRadius: 8,
+          marginBottom: 4,
+          padding: compact ? "6px 4px" : undefined,
+          justifyContent: compact ? "center" : "flex-start",
+        }}
+        actions={
+          compact
+            ? undefined
+            : [
+                <Dropdown key="more" menu={menuFor(c)} trigger={["click"]}>
+                  <Button
+                    type="text"
+                    icon={<MoreOutlined />}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Dropdown>,
+              ]
+        }
+      >
+        {!compact ? (
+          <List.Item.Meta
+            avatar={
+              <div
+                style={{
+                  position: "relative",
+                  display: "inline-block",
+                }}
+              >
+                <Avatar
+                  src={avatarSrc}
+                  size={42}
+                  style={{ background: "#1677ff" }}
+                >
+                  {!avatarSrc && initial}
+                </Avatar>
+
+                {unread > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: -4,
+                      right: -4,
+                      minWidth: 18,
+                      height: 18,
+                      padding: "0 4px",
+                      background: "#ff4d4f",
+                      borderRadius: 999,
+                      color: "#fff",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: "0 0 4px rgba(0,0,0,0.25)",
+                      zIndex: 10,
+                    }}
+                  >
+                    {unread > 99 ? "99+" : unread}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: -2,
+                    right: -2,
+                    width: 18,
+                    height: 18,
+                    background: "#fff",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+                  }}
+                >
+                  {c.is_group ? (
+                    <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                  ) : (
+                    <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                  )}
+                </div>
+              </div>
+            }
+            title={titleText}
+            description={
+              combinedDesc ? (
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "#888",
+                    display: "inline-block",
+                    maxWidth: "100%",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {combinedDesc}
+                </span>
+              ) : null
+            }
+          />
+        ) : (
+          <div
+            style={{
+              position: "relative",
+              display: "inline-block",
+            }}
+          >
+            <Avatar
+              src={avatarSrc}
+              size={40}
+              style={{
+                background: sel === c.id ? "#1677ff" : "rgba(0,0,0,0.25)",
+              }}
+            >
+              {!avatarSrc && initial}
+            </Avatar>
+
+            {unread > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: -4,
+                  right: -4,
+                  minWidth: 18,
+                  height: 18,
+                  padding: "0 4px",
+                  background: "#ff4d4f",
+                  borderRadius: 999,
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 0 4px rgba(0,0,0,0.25)",
+                  zIndex: 10,
+                }}
+              >
+                {unread > 99 ? "99+" : unread}
+              </div>
+            )}
+
+            <div
+              style={{
+                position: "absolute",
+                bottom: -2,
+                right: -2,
+                width: 18,
+                height: 18,
+                background: "#fff",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+              }}
+            >
+              {c.is_group ? (
+                <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+              ) : (
+                <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+              )}
+            </div>
+          </div>
+        )}
+      </List.Item>
+    );
+  };
+
+  // ========================= RENDER =========================
   return (
     <div
       style={{
@@ -1327,366 +1484,128 @@ function ChatUI() {
         gap: 16,
         alignItems: "stretch",
         width: "100%",
-        height: "80vh", // ความสูงเดียวกันทั้งซ้าย-ขวา
+        height: "80vh",
+        flexDirection: isMobile ? "column" : "row",
+        position: "relative",
       }}
     >
-      {/* LEFT */}
-      <div
-        style={{
-          width: leftCollapsed ? 56 : 320,
-          transition: "width 0.25s ease",
-          flexShrink: 0,
-          height: "100%",
-        }}
-      >
+      {/* LEFT (desktop only) */}
+      {!isMobile && (
+        <div
+          style={{
+            width: leftCollapsed ? 56 : 320,
+            transition: "width 0.25s ease",
+            flexShrink: 0,
+            height: "100%",
+          }}
+        >
+          <Card
+            size="small"
+            style={{ height: "100%" }}
+            bodyStyle={{
+              padding: leftCollapsed ? "8px 4px" : 12,
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              overflow: "hidden",
+            }}
+            title={
+              <Space>
+                <Button
+                  type="text"
+                  shape="circle"
+                  onClick={() => setLeftCollapsed((v) => !v)}
+                  icon={
+                    leftCollapsed ? (
+                      <MenuUnfoldOutlined />
+                    ) : (
+                      <MenuFoldOutlined />
+                    )
+                  }
+                />
+                {!leftCollapsed && <span>Chats</span>}
+              </Space>
+            }
+            extra={
+              !leftCollapsed && (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setOpenCreate(true);
+                    refetchUsers({ q: "" });
+                  }}
+                >
+                  +
+                </Button>
+              )
+            }
+          >
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                paddingRight: leftCollapsed ? 0 : 4,
+              }}
+            >
+              <List
+                size="small"
+                dataSource={sortedChats}
+                renderItem={(c: any) => renderChatListItem(c, leftCollapsed)}
+              />
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* RIGHT (messages) */}
+      <div style={{ flex: 1, minWidth: 0, height: "100%" }}>
         <Card
-          size="small"
+          title={nameGroup()}
+          extra={
+            <Dropdown
+              trigger={["click"]}
+              placement="bottomRight"
+              menu={{
+                items: [
+                  {
+                    key: "members",
+                    label: "View Members",
+                    onClick: () => setOpenMembers(true),
+                  },
+                  {
+                    key: "add",
+                    label: "Add Member",
+                    onClick: () => onAddMember(chat),
+                    disabled: !chat?.is_group,
+                  },
+                  {
+                    key: "rename",
+                    label: "Rename Group",
+                    onClick: () => onEdit(chat),
+                    disabled: !chat?.is_group,
+                  },
+                  {
+                    type: "divider",
+                  },
+                  {
+                    key: "delete",
+                    label: "Delete Chat",
+                    danger: true,
+                    onClick: () => onDelete(chat),
+                  },
+                ],
+              }}
+            >
+              <Button type="text" icon={<MoreOutlined />} />
+            </Dropdown>
+          }
           style={{ height: "100%" }}
           bodyStyle={{
-            padding: leftCollapsed ? "8px 4px" : 12,
             display: "flex",
             flexDirection: "column",
             height: "100%",
-            overflow: "hidden",
           }}
-          title={
-            <Space>
-              <Button
-                type="text"
-                shape="circle"
-                onClick={() => setLeftCollapsed((v) => !v)}
-                icon={
-                  leftCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />
-                }
-              />
-              {!leftCollapsed && <span>Chats</span>}
-            </Space>
-          }
-          extra={
-            !leftCollapsed && (
-              <Button
-                size="small"
-                onClick={() => {
-                  setOpenCreate(true);
-                  refetchUsers({ q: "" });
-                }}
-              >
-                +
-              </Button>
-            )
-          }
         >
-          <div
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              paddingRight: leftCollapsed ? 0 : 4,
-            }}
-          >
-            <List
-              size="small"
-              // dataSource={chats?.myChats || []}
-              dataSource={sortedChats}
-              renderItem={(c: any) => {
-
-                // console.log("[page] = ", c);
-                const partnerUser = !c.is_group
-                  ? (c.members || []).find((m: any) => m.id !== meId) || null
-                  : null;
-
-                const partnerName = partnerUser?.name || "User";
-
-                const titleText = (
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {!leftCollapsed &&
-                      (c.is_group ? c.name || "Group" : partnerName)}
-                  </span>
-                );
-
-                // ===== safe last_message + images =====
-                const last = c.last_message;
-                const images = Array.isArray(last?.images) ? last.images : [];
-
-                let lastText = "";
-
-                if (last?.text && last.text.trim()) {
-                  const t = last.text.trim();
-                  lastText = t.length > 60 ? t.slice(0, 57) + "…" : t;
-                } else if (images.length > 0) {
-                  lastText =
-                    images.length === 1
-                      ? "📷 Photo"
-                      : `📷 ${images.length} photos`;
-                }
-
-                const fallbackDesc = c.is_group
-                  ? (c.members || [])
-                      .filter((m: any) => m.id !== meId)
-                      .map((m: any) => m.name)
-                      .join(", ")
-                  : "";
-
-                // === time ago จาก last_message_at หรือ created_at ของ last
-                const lastAtRaw = c.last_message_at || last?.created_at;
-                const timeAgo = lastAtRaw ? formatTimeAgo(lastAtRaw) : "";
-
-                // === รวมข้อความ + timeAgo
-                const descCore = lastText || fallbackDesc || "";
-                const combinedDesc =
-                  descCore && timeAgo
-                    ? `${descCore} · ${timeAgo}`
-                    : descCore || timeAgo; // ถ้าไม่มี text ให้แสดงเวลาอย่างเดียว
-
-                const initial = getInitial(
-                  c.is_group ? c.name || "G" : partnerName
-                );
-                const avatarSrc = c.is_group
-                  ? undefined
-                  : partnerUser?.avatar || undefined;
-
-                const unread = unreadByChat[c.id] ?? 0;
-
-                return (
-                  <List.Item
-                    onClick={() => {
-                      setSel(c.id);
-                      setCurrentChat(c.id);   // แจ้ง global ว่าเปิดห้องนี้อยู่
-                      clearUnread(c.id);      // เคลียร์ unread ของห้องนี้
-                      lastMsgCountRef.current = 0;
-                      setReplyTarget(null);
-                      setMsgHasMore(true);
-                      refetchMsgs({ chat_id: c.id, limit: PAGE_SIZE, offset: 0 });
-                    }}
-                    style={{
-                      cursor: "pointer",
-                      background:
-                        sel === c.id ? "rgba(22,119,255,0.08)" : "transparent",
-                      borderRadius: 8,
-                      marginBottom: 4,
-                      padding: leftCollapsed ? "6px 4px" : undefined,
-                      justifyContent: leftCollapsed ? "center" : "flex-start",
-                    }}
-                    actions={
-                      leftCollapsed
-                        ? undefined
-                        : [
-                            <Dropdown
-                              key="more"
-                              menu={menuFor(c)}
-                              trigger={["click"]}
-                            >
-                              <Button
-                                type="text"
-                                icon={<MoreOutlined />}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </Dropdown>,
-                          ]
-                    }>
-                    {!leftCollapsed ? (
-                      <List.Item.Meta
-                        avatar={
-                          <div
-                            style={{
-                              position: "relative",
-                              display: "inline-block",
-                            }}>
-                            <Avatar
-                              src={avatarSrc}
-                              size={42}
-                              style={{ background: "#1677ff" }}>
-                              {!avatarSrc && initial}
-                            </Avatar>
-
-                            {unread > 0 && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: -4,
-                                  right: -4,
-                                  minWidth: 18,
-                                  height: 18,
-                                  padding: "0 4px",
-                                  background: "#ff4d4f",
-                                  borderRadius: 999,
-                                  color: "#fff",
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  boxShadow: "0 0 4px rgba(0,0,0,0.25)",
-                                  zIndex: 10,
-                                }}
-                              >
-                                {unread > 99 ? "99+" : unread}
-                              </div>
-                            )}
-
-                            {/* badge bottom-right */}
-                            <div
-                              style={{
-                                position: "absolute",
-                                bottom: -2,
-                                right: -2,
-                                width: 18,
-                                height: 18,
-                                background: "#fff",
-                                borderRadius: "50%",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
-                              }}
-                            >
-                              {c.is_group ? (
-                                <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
-                              ) : (
-                                <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
-                              )}
-                            </div>
-                          </div>
-                        }
-                        title={titleText}
-                        description={
-                          combinedDesc ? (
-                            <span
-                              style={{
-                                fontSize: 12,
-                                color: "#888",
-                                display: "inline-block",
-                                maxWidth: "100%",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {combinedDesc}
-                            </span>
-                          ) : null
-                        }
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          position: "relative",
-                          display: "inline-block",
-                        }}>
-                        <Avatar
-                          src={avatarSrc}
-                          size={40}
-                          style={{
-                            background:
-                              sel === c.id ? "#1677ff" : "rgba(0,0,0,0.25)",
-                          }}
-                        >
-                          {!avatarSrc && initial}
-                        </Avatar>
-
-                        {unread > 0 && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: -4,
-                                  right: -4,
-                                  minWidth: 18,
-                                  height: 18,
-                                  padding: "0 4px",
-                                  background: "#ff4d4f",
-                                  borderRadius: 999,
-                                  color: "#fff",
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  boxShadow: "0 0 4px rgba(0,0,0,0.25)",
-                                  zIndex: 10,
-                                }}
-                              >
-                                {unread > 99 ? "99+" : unread}
-                              </div>
-                            )}
-                        {/* badge bottom-right */}
-                        <div
-                          style={{
-                            position: "absolute",
-                            bottom: -2,
-                            right: -2,
-                            width: 18,
-                            height: 18,
-                            background: "#fff",
-                            borderRadius: "50%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            boxShadow: "0 0 4px rgba(0,0,0,0.2)",
-                          }}
-                        >
-                          {c.is_group ? (
-                            <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
-                          ) : (
-                            <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </List.Item>
-                );
-              }}
-            />
-          </div>
-        </Card>
-      </div>
-
-      {/* RIGHT */}
-      <div style={{ flex: 1, minWidth: 0, height: "100%" }}>
-      <Card
-        title={nameGroup()}
-        extra={
-          <Dropdown
-            trigger={["click"]}
-            placement="bottomRight"
-            menu={{
-              items: [
-                {
-                  key: "members",
-                  label: "View Members",
-                  onClick: () => setOpenMembers(true),
-                },
-                {
-                  key: "add",
-                  label: "Add Member",
-                  onClick: () => onAddMember(chat),
-                  disabled: !chat?.is_group,
-                },
-                {
-                  key: "rename",
-                  label: "Rename Group",
-                  onClick: () => onEdit(chat),
-                  disabled: !chat?.is_group,
-                },
-                {
-                  type: "divider",
-                },
-                {
-                  key: "delete",
-                  label: "Delete Chat",
-                  danger: true,
-                  onClick: () => onDelete(chat),
-                },
-              ],
-            }}
-          >
-            <Button type="text" icon={<MoreOutlined />} />
-          </Dropdown>
-        }
-        style={{ height: "100%" }}
-        bodyStyle={{
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-        }}>
           {sel && (
             <>
               <div
@@ -1700,22 +1619,19 @@ function ChatUI() {
                   position: "relative",
                   background: "#fafafa",
                 }}
-              >  
-              {/* 1) กำลังโหลด Messages */}
-              {initialLoading ? (
-                // ✅ spinner เฉพาะช่วงโหลดครั้งแรกจริง ๆ
-                <div
-                  style={{
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Spin tip="Loading messages..." size="large" />
-                </div>
-              ) : 
-                isEmpty ? (
+              >
+                {initialLoading ? (
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Spin tip="Loading messages..." size="large" />
+                  </div>
+                ) : isEmpty ? (
                   <div
                     style={{
                       height: "100%",
@@ -1737,6 +1653,7 @@ function ChatUI() {
                         <Spin size="small" /> Loading older messages...
                       </div>
                     )}
+
                     {messagesList.map((m: any, idx: number) => {
                       const isMine = meId && m.sender?.id === meId;
                       const createdAt = new Date(m.created_at);
@@ -1754,7 +1671,8 @@ function ChatUI() {
                         prev &&
                         prev.sender?.id === m.sender?.id &&
                         prevDate &&
-                        createdAt.getTime() - prevDate.getTime() < 5 * 60 * 1000;
+                        createdAt.getTime() - prevDate.getTime() <
+                          5 * 60 * 1000;
 
                       const isGroupTop = !prevSameSender;
                       const senderName = isMine
@@ -1780,7 +1698,8 @@ function ChatUI() {
                       const wrapperMarginTop = isGroupTop ? 10 : 2;
 
                       const hasText =
-                        typeof m.text === "string" && m.text.trim().length > 0;
+                        typeof m.text === "string" &&
+                        m.text.trim().length > 0;
                       const hasImages =
                         Array.isArray(m.images) && m.images.length > 0;
 
@@ -1789,7 +1708,6 @@ function ChatUI() {
                         minute: "2-digit",
                       });
 
-                      // --------- reply object ----------
                       const reply = m.reply_to;
                       const hasReply = !!reply;
                       const replyText =
@@ -1804,7 +1722,9 @@ function ChatUI() {
                           : reply?.sender?.name || "User";
 
                       const getReplyImgSrc = (img: any) =>
-                        img?.file_id ? `/api/files/${img.file_id}` : img?.url || "";
+                        img?.file_id
+                          ? `/api/files/${img.file_id}`
+                          : img?.url || "";
 
                       return (
                         <div key={m.id} id={`msg-${m.id}`}>
@@ -1884,11 +1804,12 @@ function ChatUI() {
                                   </div>
                                 )}
 
-                                {/* ====== REPLY BLOCK (อยู่บน bubble) ====== */}
+                                {/* Reply block */}
                                 {hasReply && (
                                   <div
                                     style={{
-                                      marginBottom: hasText || hasImages ? 6 : 4,
+                                      marginBottom:
+                                        hasText || hasImages ? 6 : 4,
                                       padding: "6px 8px",
                                       borderLeft: `3px solid ${
                                         isMine ? "#ffffff" : "#1677ff"
@@ -1917,7 +1838,9 @@ function ChatUI() {
                                         fontSize: 11,
                                         fontWeight: 500,
                                         marginBottom: 2,
-                                        color: isMine ? "#ffffff" : "#1677ff",
+                                        color: isMine
+                                          ? "#ffffff"
+                                          : "#1677ff",
                                       }}
                                     >
                                       {replySenderLabel}
@@ -1927,7 +1850,9 @@ function ChatUI() {
                                       <div
                                         style={{
                                           fontSize: 12,
-                                          color: isMine ? "#f5f5f5" : "#555",
+                                          color: isMine
+                                            ? "#f5f5f5"
+                                            : "#555",
                                           whiteSpace: "pre-wrap",
                                           wordBreak: "break-word",
                                           overflow: "hidden",
@@ -1948,70 +1873,77 @@ function ChatUI() {
                                           gap: 4,
                                         }}
                                       >
-                                        {replyImages.slice(0, 3).map((img, i) => {
-                                          const extra = replyImages.length - 3;
-                                          const isLast = i === 2 && extra > 0;
-                                          return (
-                                            <div
-                                              key={img.id ?? i}
-                                              style={{
-                                                position: "relative",
-                                                width: 36,
-                                                height: 36,
-                                                borderRadius: 6,
-                                                overflow: "hidden",
-                                                background: "#ddd",
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              <Image
-                                                src={getReplyImgSrc(img)}
-                                                alt=""
-                                                preview={false}
+                                        {replyImages
+                                          .slice(0, 3)
+                                          .map((img, i) => {
+                                            const extra =
+                                              replyImages.length - 3;
+                                            const isLast =
+                                              i === 2 && extra > 0;
+                                            return (
+                                              <div
+                                                key={img.id ?? i}
                                                 style={{
-                                                  width: "100%",
-                                                  height: "100%",
-                                                  objectFit: "cover",
-                                                  filter:
-                                                    isLast && extra > 0
-                                                      ? "brightness(0.65)"
-                                                      : "none",
+                                                  position: "relative",
+                                                  width: 36,
+                                                  height: 36,
+                                                  borderRadius: 6,
+                                                  overflow: "hidden",
+                                                  background: "#ddd",
+                                                  flexShrink: 0,
                                                 }}
-                                              />
-                                              {isLast && extra > 0 && (
-                                                <div
+                                              >
+                                                <Image
+                                                  src={getReplyImgSrc(img)}
+                                                  alt=""
+                                                  preview={false}
                                                   style={{
-                                                    position: "absolute",
-                                                    inset: 0,
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    justifyContent: "center",
-                                                    background:
-                                                      "rgba(0,0,0,0.35)",
-                                                    color: "#fff",
-                                                    fontSize: 11,
-                                                    fontWeight: 600,
+                                                    width: "100%",
+                                                    height: "100%",
+                                                    objectFit: "cover",
+                                                    filter:
+                                                      isLast && extra > 0
+                                                        ? "brightness(0.65)"
+                                                        : "none",
                                                   }}
-                                                >
-                                                  +{extra}
-                                                </div>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
+                                                />
+                                                {isLast && extra > 0 && (
+                                                  <div
+                                                    style={{
+                                                      position: "absolute",
+                                                      inset: 0,
+                                                      display: "flex",
+                                                      alignItems: "center",
+                                                      justifyContent:
+                                                        "center",
+                                                      background:
+                                                        "rgba(0,0,0,0.35)",
+                                                      color: "#fff",
+                                                      fontSize: 11,
+                                                      fontWeight: 600,
+                                                    }}
+                                                  >
+                                                    +{extra}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
                                       </div>
                                     )}
                                   </div>
                                 )}
-                                {/* ====== END REPLY BLOCK ====== */}
 
                                 {hasText && (
                                   <div
                                     style={{
                                       padding: "8px 12px",
-                                      background: isMine ? "#1677ff" : "#f5f5f5",
+                                      background: isMine
+                                        ? "#1677ff"
+                                        : "#f5f5f5",
                                       color: isMine ? "#fff" : "#000",
-                                      boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                                      boxShadow:
+                                        "0 2px 6px rgba(0,0,0,0.06)",
                                       wordBreak: "break-word",
                                       whiteSpace: "pre-wrap",
                                       ...bubbleRadius,
@@ -2021,13 +1953,16 @@ function ChatUI() {
                                   </div>
                                 )}
 
-                                {hasImages && renderMessageImages(m, !!isMine)}
+                                {hasImages &&
+                                  renderMessageImages(m, !!isMine)}
 
                                 <div
                                   style={{
                                     marginTop: 4,
                                     display: "flex",
-                                    justifyContent: isMine ? "flex-end" : "flex-start",
+                                    justifyContent: isMine
+                                      ? "flex-end"
+                                      : "flex-start",
                                   }}
                                 >
                                   <div
@@ -2038,7 +1973,9 @@ function ChatUI() {
                                       fontSize: 11,
                                     }}
                                   >
-                                    <span style={{ color: "#999" }}>{timeLabel}</span>
+                                    <span style={{ color: "#999" }}>
+                                      {timeLabel}
+                                    </span>
 
                                     {isMine ? (
                                       <>
@@ -2076,7 +2013,9 @@ function ChatUI() {
 
                                     <Dropdown
                                       trigger={["click"]}
-                                      placement={isMine ? "topRight" : "topLeft"}
+                                      placement={
+                                        isMine ? "topRight" : "topLeft"
+                                      }
                                       arrow={{ pointAtCenter: true }}
                                       menu={{
                                         items: ([
@@ -2110,36 +2049,40 @@ function ChatUI() {
                                                 danger: true,
                                                 onClick: () => {
                                                   Modal.confirm({
-                                                    title: "Delete this message?",
+                                                    title:
+                                                      "Delete this message?",
                                                     okType: "danger",
                                                     onOk: async () => {
                                                       try {
-                                                        // await deleteMessageMut({
-                                                        //   variables: {
-                                                        //     message_id: m.id,
-                                                        //   },
-                                                        // });
-                                                        // await refetchMsgs({
-                                                        //   chat_id: sel,
-                                                        // });
-                                                        await deleteMessageMut({
-                                                          variables: {
-                                                            message_id: m.id,
-                                                          },
-                                                          // optional: optimistic ลบจาก cache ทันที
-                                                          update(cache) {
-                                                            cache.updateQuery<{ messages: any[] }>({
-                                                              query: Q_MSGS,
-                                                              variables: { chat_id: sel },
-                                                            }, (old) => {
-                                                              if (!old) return old;
-                                                              return {
-                                                                ...old,
-                                                                messages: old.messages.filter((msg) => msg.id !== m.id),
-                                                              };
-                                                            });
-                                                          },
-                                                        });
+                                                        await deleteMessageMut(
+                                                          {
+                                                            variables: {
+                                                              message_id: m.id,
+                                                            },
+                                                            update(cache) {
+                                                              cache.updateQuery<{
+                                                                messages: any[];
+                                                              }>({
+                                                                query: Q_MSGS,
+                                                                variables: {
+                                                                  chat_id: sel,
+                                                                },
+                                                              }, (old) => {
+                                                                if (!old)
+                                                                  return old;
+                                                                return {
+                                                                  ...old,
+                                                                  messages:
+                                                                    old.messages.filter(
+                                                                      (mm) =>
+                                                                        mm.id !==
+                                                                        m.id
+                                                                    ),
+                                                                };
+                                                              });
+                                                            },
+                                                          }
+                                                        );
                                                       } catch (err: any) {
                                                         message.error(
                                                           err?.message ||
@@ -2151,7 +2094,9 @@ function ChatUI() {
                                                 },
                                               }
                                             : null,
-                                        ].filter(Boolean) as MenuProps["items"]),
+                                        ].filter(
+                                          Boolean
+                                        ) as MenuProps["items"]),
                                       }}
                                     >
                                       <Button
@@ -2170,6 +2115,7 @@ function ChatUI() {
                         </div>
                       );
                     })}
+
                     {isTyping && (
                       <div
                         style={{
@@ -2191,7 +2137,9 @@ function ChatUI() {
                           }}
                         >
                           <span>กำลังพิมพ์…</span>
-                          <span style={{ display: "inline-flex", gap: 2 }}>
+                          <span
+                            style={{ display: "inline-flex", gap: 2 }}
+                          >
                             <span
                               style={{
                                 width: 4,
@@ -2241,7 +2189,8 @@ function ChatUI() {
                           color: "#fff",
                           borderRadius: 999,
                           padding: "4px 12px",
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                          boxShadow:
+                            "0 2px 8px rgba(0,0,0,0.2)",
                           cursor: "pointer",
                           fontSize: 12,
                           display: "flex",
@@ -2249,7 +2198,9 @@ function ChatUI() {
                           gap: 6,
                         }}
                       >
-                        <span style={{ fontWeight: 500 }}>New messages</span>
+                        <span style={{ fontWeight: 500 }}>
+                          New messages
+                        </span>
                         <span style={{ fontSize: 10 }}>▼</span>
                       </div>
                     )}
@@ -2257,8 +2208,6 @@ function ChatUI() {
                 )}
               </div>
 
-              {/* <Divider style={{ margin: "8px 0" }} /> */}
-              
               <SendMessageSection
                 chats={chats}
                 sel={sel}
@@ -2276,7 +2225,6 @@ function ChatUI() {
                 }}
                 send={send}
                 me={me?.me ?? null}
-
                 replyTarget={replyTarget}
                 setReplyTarget={setReplyTarget}
               />
@@ -2284,6 +2232,62 @@ function ChatUI() {
           )}
         </Card>
       </div>
+
+      {/* FLOATING BUTTON + DRAWER: mobile only */}
+      {isMobile && (
+        <>
+          <Button
+            type="primary"
+            shape="circle"
+            icon={<TeamOutlined />}
+            onClick={() => setMobileChatsOpen(true)}
+            style={{
+              position: "fixed",
+              bottom: 80,
+              left: 16,
+              zIndex: 1100,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            }}
+          />
+          <Drawer
+            title={
+              <Space>
+                <TeamOutlined />
+                <span>Chats</span>
+              </Space>
+            }
+            placement="left"
+            onClose={() => setMobileChatsOpen(false)}
+            open={mobileChatsOpen}
+            width={320}
+          >
+            <div
+              style={{
+                marginBottom: 12,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Text strong>Recent Chats</Text>
+              <Button
+                size="small"
+                onClick={() => {
+                  setOpenCreate(true);
+                  refetchUsers({ q: "" });
+                }}
+              >
+                + New
+              </Button>
+            </div>
+            <List
+              size="small"
+              dataSource={sortedChats}
+              renderItem={(c: any) => renderChatListItem(c, false)}
+            />
+          </Drawer>
+        </>
+      )}
 
       {/* MODALS */}
       <Modal
@@ -2317,9 +2321,7 @@ function ChatUI() {
           <Select
             mode={mode === "group" ? "multiple" : undefined}
             style={{ width: "100%" }}
-            placeholder={
-              mode === "group" ? "Select members" : "Select one user"
-            }
+            placeholder={mode === "group" ? "Select members" : "Select one user"}
             options={availableUsers.map((u: any) => ({
               value: u.id,
               label: u.name,
@@ -2364,9 +2366,7 @@ function ChatUI() {
       <Modal
         open={openMembers && !!chat}
         title={
-          chat
-            ? `Members (${(chat.members || []).length})`
-            : "Members"
+          chat ? `Members (${(chat.members || []).length})` : "Members"
         }
         footer={null}
         onCancel={() => setOpenMembers(false)}
@@ -2381,20 +2381,21 @@ function ChatUI() {
             return (
               <List.Item
                 onClick={() => {
-                  setOpenMembers(false);         // ปิด modal ก่อน
-                  router.push(`/profile/${m.id}`); // ไปหน้าโปรไฟล์
+                  setOpenMembers(false);
+                  router.push(`/profile/${m.id}`);
                 }}
                 style={{
                   cursor: "pointer",
                   borderRadius: 6,
-                  transition: "background 0.15s",
                   padding: "6px 8px",
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.background = "#f5f5f5";
+                  (e.currentTarget as HTMLDivElement).style.background =
+                    "#f5f5f5";
                 }}
                 onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                  (e.currentTarget as HTMLDivElement).style.background =
+                    "transparent";
                 }}
               >
                 <List.Item.Meta
@@ -2407,7 +2408,11 @@ function ChatUI() {
                     <span>
                       {m.name}{" "}
                       {isMe && (
-                        <span style={{ color: "#999", fontSize: 12 }}>(You)</span>
+                        <span
+                          style={{ color: "#999", fontSize: 12 }}
+                        >
+                          (You)
+                        </span>
                       )}
                     </span>
                   }

@@ -7,7 +7,7 @@ import { parse as parseCookie } from "cookie";
 import jwt from "jsonwebtoken";
 
 import { typeDefs, resolvers } from "./shared.js";
-import { query } from "./db/src/index.js";
+// import { query } from "./db/src/index.js";
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 const PORT = 8080;// Number(process.env.WS_PORT || 8080);

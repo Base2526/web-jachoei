@@ -1,5 +1,4 @@
 'use client';
-import React from 'react';
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Card,
@@ -12,9 +11,9 @@ import {
   Space,
   Tooltip,
   Popconfirm,
-  message,
   Row,
   Col,
+  Grid,
 } from 'antd';
 import type { PostRecord } from './PostForm';
 import Link from 'next/link';
@@ -23,9 +22,10 @@ import { MessageOutlined, DeleteOutlined, EditOutlined, CopyOutlined } from '@an
 import { useSessionCtx } from '@/lib/session-context';
 import BookmarkButton from '@/components/BookmarkButton';
 import { formatDate } from "@/lib/date";
-import { CommentsSection } from '@/components/comments/CommentsSection'; // 👈 ปรับ path ให้ตรงโปรเจกต์
+import { CommentsSection } from '@/components/comments/CommentsSection';
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 type Props = {
   post: PostRecord | null;
@@ -48,6 +48,8 @@ export default function PostView({
   cloning,
 }: Props) {
   const { user } = useSessionCtx();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md; // < md = mobile / small tablet
 
   if (!post) {
     return (
@@ -64,8 +66,14 @@ export default function PostView({
     <Card
       title={title ?? 'รายละเอียดโพสต์'}
       loading={loading}
+      headStyle={{
+        padding: isMobile ? '8px 12px' : '12px 16px',
+      }}
+      bodyStyle={{
+        padding: isMobile ? 12 : 16,
+      }}
       extra={
-        <Space>
+        <Space size={isMobile ? 4 : 8} wrap>
           {user?.id !== (post as any)?.author?.id && (
             <BookmarkButton
               postId={String((post as any).id)}
@@ -77,7 +85,7 @@ export default function PostView({
             <Link href={`/chat?to=${(post as any)?.author.id}`} prefetch={false}>
               <Button
                 type="text"
-                size="small"
+                size={isMobile ? "small" : "middle"}
                 icon={<MessageOutlined />}
                 title={`Chat with`}
               />
@@ -89,7 +97,7 @@ export default function PostView({
               <Tooltip title="Clone">
                 <Button
                   type="text"
-                  size="small"
+                  size={isMobile ? "small" : "middle"}
                   onClick={() => onClone?.((post as any)?.id)}
                   loading={cloning}
                   icon={<CopyOutlined />}
@@ -97,7 +105,11 @@ export default function PostView({
               </Tooltip>
               <Tooltip title="Edit">
                 <Link href={`/post/${(post as any)?.id}/edit`} prefetch={false}>
-                  <Button type="text" size="small" icon={<EditOutlined />} />
+                  <Button
+                    type="text"
+                    size={isMobile ? "small" : "middle"}
+                    icon={<EditOutlined />}
+                  />
                 </Link>
               </Tooltip>
 
@@ -110,7 +122,7 @@ export default function PostView({
                 <Tooltip title="Delete">
                   <Button
                     type="text"
-                    size="small"
+                    size={isMobile ? "small" : "middle"}
                     danger
                     loading={deleting}
                     icon={<DeleteOutlined />}
@@ -122,11 +134,27 @@ export default function PostView({
         </Space>
       }
     >
-      {/* 🧱 Layout หลัก: ซ้าย = รายละเอียด, ขวา = Comments */}
-      <Row gutter={24} align="top">
+      {/* 🧱 Layout หลัก: ซ้าย = รายละเอียด, ขวา = Comments (stack บน mobile) */}
+      <Row
+        gutter={isMobile ? 12 : 24}
+        align="top"
+      >
         {/* LEFT: รายละเอียดโพสต์ทั้งหมด */}
         <Col xs={24} md={14}>
-          <Descriptions column={1} bordered size="small">
+          <Descriptions
+            column={1}
+            bordered={!isMobile}
+            size={isMobile ? "small" : "middle"}
+            labelStyle={{
+              width: isMobile ? 130 : 200,
+              fontSize: isMobile ? 12 : 14,
+              padding: isMobile ? '6px 8px' : undefined,
+            }}
+            contentStyle={{
+              fontSize: isMobile ? 13 : 14,
+              padding: isMobile ? '6px 8px' : undefined,
+            }}
+          >
             <Descriptions.Item label="สินค้า/บริการ ที่สั่งซื้อ">
               {(post as any).title || '-'}
             </Descriptions.Item>
@@ -174,22 +202,32 @@ export default function PostView({
           {/* เบอร์โทร/ไอดีไลน์ */}
           {telNumbers.length > 0 && (
             <>
-              <Divider orientation="left">เบอร์โทรศัพท์ / ไอดีไลน์</Divider>
+              <Divider
+                orientation="left"
+                style={{ margin: isMobile ? '12px 0' : '16px 0' }}
+              >
+                เบอร์โทรศัพท์ / ไอดีไลน์
+              </Divider>
               <Table
                 dataSource={telNumbers}
                 pagination={false}
                 rowKey={(r: any) => r.id}
                 size="small"
+                scroll={isMobile ? { x: 320 } : undefined}
+                style={{ fontSize: isMobile ? 12 : 14 }}
                 columns={[
                   {
                     title: 'ลำดับ',
+                    width: 60,
                     render: (_: any, __: any, i: number) => i + 1,
                   },
                   {
                     title: 'เบอร์โทร / ไอดีไลน์',
                     dataIndex: 'tel',
                     render: (s: string) => (
-                      <Typography.Text copyable>{s}</Typography.Text>
+                      <Typography.Text copyable style={{ fontSize: isMobile ? 12 : 14 }}>
+                        {s}
+                      </Typography.Text>
                     ),
                   },
                 ]}
@@ -200,23 +238,41 @@ export default function PostView({
           {/* บัญชีคนขาย */}
           {sellerAccounts.length > 0 && (
             <>
-              <Divider orientation="left">บัญชีคนขาย</Divider>
+              <Divider
+                orientation="left"
+                style={{ margin: isMobile ? '12px 0' : '16px 0' }}
+              >
+                บัญชีคนขาย
+              </Divider>
               <Table
                 dataSource={sellerAccounts}
                 pagination={false}
                 rowKey={(r: any) => r.id}
                 size="small"
+                scroll={isMobile ? { x: 360 } : undefined}
+                style={{ fontSize: isMobile ? 12 : 14 }}
                 columns={[
                   {
                     title: 'ลำดับ',
+                    width: 60,
                     render: (_: any, __: any, i: number) => i + 1,
                   },
-                  { title: 'ชื่อบัญชีคนขาย', dataIndex: 'bank_name' },
+                  {
+                    title: 'ชื่อบัญชีคนขาย',
+                    dataIndex: 'bank_name',
+                    render: (s: string) => (
+                      <Typography.Text style={{ fontSize: isMobile ? 12 : 14 }}>
+                        {s}
+                      </Typography.Text>
+                    ),
+                  },
                   {
                     title: 'เลขที่บัญชี',
                     dataIndex: 'seller_account',
                     render: (s: string) => (
-                      <Typography.Text copyable>{s}</Typography.Text>
+                      <Typography.Text copyable style={{ fontSize: isMobile ? 12 : 14 }}>
+                        {s}
+                      </Typography.Text>
                     ),
                   },
                 ]}
@@ -227,23 +283,27 @@ export default function PostView({
           {/* รูปภาพแนบ */}
           {(post.images || []).length > 0 && (
             <>
-              <Divider orientation="left">ไฟล์แนบ / รูปภาพ</Divider>
+              <Divider
+                orientation="left"
+                style={{ margin: isMobile ? '12px 0' : '16px 0' }}
+              >
+                ไฟล์แนบ / รูปภาพ
+              </Divider>
               <div
                 style={{
-                  marginTop: 16,
+                  marginTop: 8,
                   display: 'grid',
-                  gridTemplateColumns:
-                    'repeat(auto-fill, minmax(160px, 1fr))',
-                  gap: 12,
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 110 : 160}px, 1fr))`,
+                  gap: isMobile ? 8 : 12,
                 }}
               >
                 {(post.images || []).map((img) => (
                   <Image
                     key={String(img.id)}
                     src={img.url}
-                    width={160}
-                    height={160}
-                    style={{ objectFit: 'cover' }}
+                    width={isMobile ? 110 : 160}
+                    height={isMobile ? 110 : 160}
+                    style={{ objectFit: 'cover', borderRadius: 4 }}
                   />
                 ))}
               </div>
@@ -251,9 +311,14 @@ export default function PostView({
           )}
         </Col>
 
-        {/* RIGHT: Comments Section */}
-        <Col xs={24} md={10}>
-          <Divider orientation="left">ความคิดเห็น</Divider>
+        {/* RIGHT: Comments Section (จะลงมาด้านล่างเมื่อ xs=24) */}
+        <Col xs={24} md={10} style={{ marginTop: isMobile ? 16 : 0 }}>
+          <Divider
+            orientation="left"
+            style={{ margin: isMobile ? '0 0 8px' : '0 0 12px' }}
+          >
+            ความคิดเห็น
+          </Divider>
           <CommentsSection
             postId={String((post as any).id)}
             currentUserId={user?.id}

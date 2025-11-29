@@ -8,7 +8,15 @@ import React, {
   useRef,
   useEffect,
 } from "react";
-import { Input, Button, Upload, Image, Typography, message } from "antd"; // ★ เพิ่ม message
+import {
+  Input,
+  Button,
+  Upload,
+  Image,
+  Typography,
+  message,
+  Grid,
+} from "antd";
 import {
   SendOutlined,
   SmileOutlined,
@@ -18,6 +26,7 @@ import {
 } from "@ant-design/icons";
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 // ★ กำหนดจำนวนรูปสูงสุดต่อหนึ่งข้อความ
 const MAX_IMAGES = 4;
@@ -53,6 +62,9 @@ export default function SendMessageSection({
   replyTarget: any | null;
   setReplyTarget: (t: any | null) => void;
 }) {
+  const screens = useBreakpoint();
+  const isMobile = !screens.md; // md ขึ้นไปถือว่า desktop
+
   const [showEmoji, setShowEmoji] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
   const textAreaRef = useRef<any>(null);
@@ -69,7 +81,10 @@ export default function SendMessageSection({
     return chat.members.filter((m) => m.id !== me?.id);
   }, [chat?.members, me?.id]);
 
-  const toUserIds = useMemo(() => otherMembers.map((m) => m.id), [otherMembers]);
+  const toUserIds = useMemo(
+    () => otherMembers.map((m) => m.id),
+    [otherMembers]
+  );
 
   const trimmed = text.trim();
   const canSend =
@@ -113,7 +128,6 @@ export default function SendMessageSection({
               avatar: null,
             },
 
-            // ให้ตรงกับ Q_MSGS
             myReceipt: {
               __typename: "MessageReceipt",
               deliveredAt: nowIso,
@@ -133,7 +147,7 @@ export default function SendMessageSection({
               mime: file.type,
             })),
           },
-        }
+        },
       } as any);
 
       setText("");
@@ -166,8 +180,23 @@ export default function SendMessageSection({
 
   // Emoji Picker
   const emojis = [
-    "😀","😁","😂","🤣","😊","😍","😎","🤔","😢","🙏",
-    "👍","🔥","💯","🎉","✨","❤️","😡"
+    "😀",
+    "😁",
+    "😂",
+    "🤣",
+    "😊",
+    "😍",
+    "😎",
+    "🤔",
+    "😢",
+    "🙏",
+    "👍",
+    "🔥",
+    "💯",
+    "🎉",
+    "✨",
+    "❤️",
+    "😡",
   ];
 
   const appendEmoji = (emoji: string) => {
@@ -206,12 +235,10 @@ export default function SendMessageSection({
 
       const next = [...prev, file].slice(0, MAX_IMAGES);
       if (next.length >= MAX_IMAGES && prev.length < MAX_IMAGES) {
-        // เตือนตอนที่กำลังจะครบ 4
         message.warning(`You can upload up to ${MAX_IMAGES} images per message.`);
       }
       return next;
     });
-    // ป้องกันไม่ให้ Upload อัปโหลดจริง (เราเก็บไฟล์ใน state แล้ว)
     return false;
   };
 
@@ -244,11 +271,11 @@ export default function SendMessageSection({
       <div
         style={{
           marginBottom: 10,
-          padding: "6px 10px",
+          padding: isMobile ? "5px 8px" : "6px 10px",
           borderRadius: 10,
           background: "#f0f5ff",
           borderLeft: "3px solid #1677ff",
-          fontSize: 12,
+          fontSize: isMobile ? 11 : 12,
           display: "flex",
           justifyContent: "space-between",
           gap: 8,
@@ -292,8 +319,8 @@ export default function SendMessageSection({
                   <div
                     key={i}
                     style={{
-                      width: 45,
-                      height: 45,
+                      width: isMobile ? 40 : 45,
+                      height: isMobile ? 40 : 45,
                       borderRadius: 6,
                       overflow: "hidden",
                       position: "relative",
@@ -339,6 +366,7 @@ export default function SendMessageSection({
           icon={<CloseOutlined />}
           onClick={() => setReplyTarget(null)}
           style={{ padding: 0, color: "#666" }}
+          size={isMobile ? "small" : "middle"}
         />
       </div>
     );
@@ -349,10 +377,10 @@ export default function SendMessageSection({
     <div
       style={{
         width: "100%",
-        padding: 12,
+        padding: isMobile ? 8 : 12,
         background: "#fff",
         borderTop: "1px solid #eee",
-        position: "relative", // ⭐ เพื่อให้ absolute emoji ผูกกับ container นี้
+        position: "relative",
       }}
     >
       {/* ===== Reply Preview ===== */}
@@ -375,18 +403,19 @@ export default function SendMessageSection({
                 key={index}
                 style={{
                   position: "relative",
-                  width: 80,
-                  height: 80,
+                  width: isMobile ? 70 : 80,
+                  height: isMobile ? 70 : 80,
                   borderRadius: 10,
                   overflow: "hidden",
                   border: "1px solid #ddd",
+                  flexShrink: 0,
                 }}
               >
                 <Image
                   src={URL.createObjectURL(img)}
                   alt="preview"
-                  width={80}
-                  height={80}
+                  width={isMobile ? 70 : 80}
+                  height={isMobile ? 70 : 80}
                   style={{ objectFit: "cover" }}
                   preview={false}
                 />
@@ -407,8 +436,14 @@ export default function SendMessageSection({
               </div>
             ))}
           </div>
-          {/* ★ counter แสดงจำนวนรูป */}
-          <Text type="secondary" style={{ fontSize: 12, marginBottom: 6, display: "block" }}>
+          <Text
+            type="secondary"
+            style={{
+              fontSize: 12,
+              marginBottom: 6,
+              display: "block",
+            }}
+          >
             {uploadedImages.length}/{MAX_IMAGES} images
           </Text>
         </>
@@ -421,10 +456,10 @@ export default function SendMessageSection({
           alignItems: "center",
           background: "#fff",
           borderRadius: 24,
-          padding: "6px 12px",
+          padding: isMobile ? "4px 8px" : "6px 12px",
           border: "1px solid #eee",
           boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-          gap: 10,
+          gap: isMobile ? 6 : 10,
         }}
       >
         {/* Upload */}
@@ -433,28 +468,38 @@ export default function SendMessageSection({
           multiple
           showUploadList={false}
           accept="image/*"
-          disabled={disabled || uploadedImages.length >= MAX_IMAGES} // ★ ปิดปุ่มเมื่อครบ 4
+          disabled={disabled || uploadedImages.length >= MAX_IMAGES}
         >
           <Button
             type="text"
-            icon={<PictureOutlined style={{ fontSize: 20, color: "#888" }} />}
+            icon={
+              <PictureOutlined
+                style={{ fontSize: isMobile ? 18 : 20, color: "#888" }}
+              />
+            }
             style={{ border: "none" }}
+            size={isMobile ? "small" : "middle"}
           />
         </Upload>
 
         {/* Emoji */}
         <Button
           type="text"
-          icon={<SmileOutlined style={{ fontSize: 20, color: "#888" }} />}
+          icon={
+            <SmileOutlined
+              style={{ fontSize: isMobile ? 18 : 20, color: "#888" }}
+            />
+          }
           onClick={() => setShowEmoji((s) => !s)}
           disabled={disabled}
           style={{ border: "none" }}
+          size={isMobile ? "small" : "middle"}
         />
 
         {/* Text Area */}
         <Input.TextArea
           ref={textAreaRef}
-          autoSize={{ minRows: 1, maxRows: 4 }}
+          autoSize={{ minRows: 1, maxRows: isMobile ? 3 : 4 }}
           placeholder="Type a message..."
           value={text}
           disabled={disabled}
@@ -464,9 +509,9 @@ export default function SendMessageSection({
             border: "none",
             boxShadow: "none",
             resize: "none",
-            fontSize: 16,
-            lineHeight: "22px",
-            paddingTop: 8,
+            fontSize: isMobile ? 14 : 16,
+            lineHeight: "20px",
+            paddingTop: isMobile ? 4 : 8,
             flex: 1,
           }}
         />
@@ -478,11 +523,15 @@ export default function SendMessageSection({
           icon={<SendOutlined />}
           disabled={!canSend}
           onClick={handleSend}
+          size={isMobile ? "middle" : "large"}
           style={{
-            width: 42,
-            height: 42,
-            fontSize: 18,
-            boxShadow: canSend ? "0 4px 10px rgba(0,0,0,0.15)" : "none",
+            width: isMobile ? 36 : 42,
+            height: isMobile ? 36 : 42,
+            fontSize: isMobile ? 16 : 18,
+            boxShadow: canSend
+              ? "0 4px 10px rgba(0,0,0,0.15)"
+              : "none",
+            flexShrink: 0,
           }}
         />
       </div>
@@ -493,18 +542,18 @@ export default function SendMessageSection({
           ref={emojiPickerRef}
           style={{
             position: "absolute",
-            bottom: 70,
-            left: 20,
+            bottom: isMobile ? 60 : 70,
+            left: isMobile ? 8 : 20,
             background: "#fff",
             border: "1px solid #eee",
             borderRadius: 12,
             padding: 10,
             boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
             display: "grid",
-            gridTemplateColumns: "repeat(8, 1fr)",
+            gridTemplateColumns: `repeat(${isMobile ? 6 : 8}, 1fr)`,
             gap: 6,
             zIndex: 20,
-            maxWidth: 300,
+            maxWidth: isMobile ? 260 : 300,
           }}
         >
           {emojis.map((em) => (
@@ -512,7 +561,7 @@ export default function SendMessageSection({
               key={em}
               onClick={() => appendEmoji(em)}
               style={{
-                fontSize: 22,
+                fontSize: isMobile ? 20 : 22,
                 background: "transparent",
                 border: "none",
                 cursor: "pointer",

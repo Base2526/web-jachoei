@@ -1,126 +1,86 @@
-// import * as jwt from "jsonwebtoken";
-// import { cookies } from "next/headers";
-
-// // ชื่อ cookie แยกกันระหว่าง user และ admin
-// export const USER_COOKIE = "USER_COOKIE";
-// export const ADMIN_COOKIE = "ADMIN_COOKIE";
-// export const JWT_SECRET = process.env.JWT_SECRET || "changeme_secret";
-
-// // payload ที่เซ็นใน JWT
-// export interface JWTPayload {
-//   id: number;
-//   email: string;
-//   role: string;        // เช่น "Subscriber" | "Author" | "Administrator"
-//   exp?: number;
-//   iat?: number;
-// }
-
-// /**
-//  * ✅ ตรวจ token ของ User ทั่วไป
-//  * - อ่าน cookie user_token
-//  * - verify JWT ด้วย secret เดียวกัน
-//  * - คืนค่า payload หรือ null ถ้าไม่ผ่าน
-//  */
-// export function verifyUserSession(): JWTPayload | null {
-//   try {
-//     const cookieStore = cookies();
-//     const token = cookieStore.get(USER_COOKIE)?.value;
-//     if (!token) return null;
-
-//     const payload = jwt.verify(token, JWT_SECRET) as JWTPayload;
-
-//     console.log("[verifyUserSession]", payload);
-
-//     // ถ้า role เป็น Administrator ก็ถือว่าใช้ user ได้เช่นกัน
-//     if (!payload.role) return null;
-//     return payload;
-//   } catch (err) {
-//     console.error("[verifyUserSession] invalid:", err);
-//     return null;
-//   }
-// }
-
-// /**
-//  * ✅ ตรวจ token ของ Admin โดยเฉพาะ
-//  * - อ่าน cookie admin_token
-//  * - ต้องมี role === 'Administrator'. const ADMIN_COOKIE = "ADMIN_SESSION";
-//  */
-// export function verifyAdminSession(): JWTPayload | null {
-//   try {
-//     const cookieStore = cookies();
-//     const token = cookieStore.get(ADMIN_COOKIE)?.value;
-//     if (!token) return null;
-
-//     const payload = jwt.verify(token, JWT_SECRET) as JWTPayload;
-
-//     console.log("[verifyAdminSession]", payload);
-
-//     if (payload.role !== "Administrator") return null;
-//     return payload;
-//   } catch (err) {
-//     console.error("[verifyAdminSession] invalid:", err);
-//     return null;
-//   }
-// }
 import { GraphQLError } from "graphql/error";
 import { createHash } from "crypto";
 
 interface RequireAuthOptions {
-  optionalWeb?: boolean;   // ถ้า true → web ไม่มี uid ก็ไม่ throw error
-  optionalAdmin?: boolean; // เผื่อใช้กรณี admin public
+  optional?: boolean;      // soft mode → ไม่ throw
+  optionalWeb?: boolean;   // soft เฉพาะเว็บ
+  optionalAdmin?: boolean; // soft เฉพาะ admin
 }
 
-export function requireAuth(ctx: any, opts: RequireAuthOptions = {}): string {
+export function requireAuth(ctx: any, opts: RequireAuthOptions = {}) {
   const scope = ctx?.scope;
 
-  // ✅ ตรวจว่า scope ถูกต้องหรือไม่
+  // กรณีไม่มี scope เลย (มาจาก client ไม่ถูกต้อง)
   if (!scope || !['web', 'admin'].includes(scope)) {
+    if (opts.optional || opts.optionalWeb || opts.optionalAdmin) {
+      return { scope: null, author_id: null, isAuthenticated: false };
+    }
     throw new GraphQLError("Unauthorized scope", {
-      extensions: { 
-        code: "UNAUTHENTICATED", 
-        reason: "frontend_user",
-        http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+      extensions: {
+        code: "UNAUTHENTICATED",
+        reason: "invalid_scope",
+        http: { status: 401 },
       },
     });
   }
 
-  // ✅ แยกตรวจตาม scope
-  if (scope === 'admin') {
-    const uid = ctx?.admin?.id;
-    if (!uid && !opts.optionalAdmin) {
-      console.log("[requireAuth - admin] :", ctx);
+  let author_id = null;
+
+  if (scope === "admin") {
+    author_id = ctx?.admin?.id ?? null;
+
+    // ถ้าไม่มี author_id และ optionalAdmin → กลับแบบ soft
+    if (!author_id && (opts.optional || opts.optionalAdmin)) {
+      return { scope: "admin", author_id: null, isAuthenticated: false };
+    }
+
+    if (!author_id) {
       throw new GraphQLError("Admin not authenticated", {
-        extensions: { 
+        extensions: {
           code: "UNAUTHENTICATED",
           reason: "backend_admin",
-          http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+          http: { status: 401 },
         },
       });
     }
-    return uid ?? null;
+
+    return { scope, author_id, isAuthenticated: true };
   }
 
-  if (scope === 'web') {
-    const uid = ctx?.user?.id;
-    if (!uid && !opts.optionalWeb) {
+  if (scope === "web") {
+    author_id = ctx?.user?.id ?? null;
+
+    // soft mode ของ web
+    if (!author_id && (opts.optional || opts.optionalWeb)) {
+      return { scope: "web", author_id: null, isAuthenticated: false };
+    }
+
+    if (!author_id) {
       throw new GraphQLError("User not authenticated", {
-        extensions: { 
+        extensions: {
           code: "UNAUTHENTICATED",
           reason: "frontend_user",
-          http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+          http: { status: 401 },
         },
       });
     }
-    return uid ?? null; // คืน null ได้ถ้า optionalWeb
+
+    return { scope, author_id, isAuthenticated: true };
+  }
+
+  // fallback ปลอดภัย
+  if (opts.optional) {
+    return { scope: null, author_id: null, isAuthenticated: false };
   }
 
   throw new GraphQLError("Invalid authentication context", {
-    extensions: { 
+    extensions: {
       code: "UNAUTHENTICATED",
-      http: { status: 401 }, // <-- สำคัญ ช่วยให้ฝั่ง client จับผ่าน networkError ได้ด้วย
+      http: { status: 401 },
     },
   });
 }
+
 
 export function sha256Hex(input: string) {
   return createHash("sha256").update(input).digest("hex");
