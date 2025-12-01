@@ -400,6 +400,16 @@ export const typeDefs = /* GraphQL */ `
     language: String
   }
 
+  input ReportScamPhoneInput {
+    phone: String!
+    note: String
+    local_blocked: Boolean!
+    client_id: String!         # UUID v4
+    device_model: String       # เช่น Pixel 7
+    os_version: String         # Android 14
+    app_version: String        # 1.0.3
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -452,5 +462,7 @@ export const typeDefs = /* GraphQL */ `
     replyComment(comment_id: ID!, content: String!): Comment!
     updateComment(id: ID!, content: String!): Comment!
     deleteComment(id: ID!): Boolean!
+
+    reportScamPhone(input: ReportScamPhoneInput!): ScamPhone!
   }
 `;

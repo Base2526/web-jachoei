@@ -1331,23 +1331,15 @@ export const resolvers = {
       { cursor, limit }: { cursor?: string | null; limit: number },
       ctx: any
     ) => {
-
       console.log("[Query] scamPhonesSnapshot");
 
-      // เอาแบบง่าย ๆ ก่อน: ใช้ ISO string อย่างเดียว
       const since = cursor || "1970-01-01T00:00:00Z";
 
-      const { rows } = await query(
+      const { rows } = await ctx.pg.query(
         `
-        SELECT
-          tel,
-          COUNT(*) AS report_count,
-          MAX(created_at) AS last_report_at,
-          MAX(created_at) AS updated_at,
-          ARRAY_AGG(DISTINCT post_id) AS post_ids
-        FROM post_tel_numbers
-        WHERE created_at > $1
-        GROUP BY tel
+        SELECT *
+        FROM scam_phones_summary
+        WHERE updated_at > $1
         ORDER BY updated_at ASC
         LIMIT $2
         `,
@@ -1355,24 +1347,20 @@ export const resolvers = {
       );
 
       const items = rows.map((r: any) => ({
-        phone: r.tel,
-        report_count: Number(r.report_count),
+        phone: r.phone,
+        report_count: r.report_count,
         last_report_at: r.last_report_at,
-        risk_level: calcRisk(Number(r.report_count)),
+        risk_level: r.risk_level,
         tags: [],
         updated_at: r.updated_at,
-        is_deleted: false,
+        is_deleted: r.is_deleted,   // 👈 ใช้จาก DB เลย
         post_ids: r.post_ids,
       }));
 
-      // 👇 ถ้าจำนวน row น้อยกว่า limit แปลว่า "หน้าสุดท้าย" → cursor = null
       const nextCursor =
         rows.length === limit ? rows[rows.length - 1].updated_at : null;
 
-      return {
-        cursor: nextCursor,
-        items,
-      };
+      return { cursor: nextCursor, items };
     },
     scamPhonesDelta: async (
       _: any,
@@ -3229,5 +3217,59 @@ export const resolvers = {
 
       return true;
     },
+    reportScamPhone: async (_: any, { input }: any, ctx: any) => {
+      const {
+        phone,
+        note,
+        local_blocked,
+        client_id,
+        device_model,
+        os_version,
+        app_version,
+      } = input;
+
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const normalized = phone;
+
+      await runInTransaction(author_id, async (client) => {
+        // 1) Insert report -> scam_phone_reports
+        await client.query(
+          `
+          INSERT INTO scam_phone_reports
+            (phone, note, local_blocked, client_id, device_model, os_version, app_version)
+          VALUES ($1,$2,$3,$4,$5,$6,$7)
+          `,
+          [
+            normalized,
+            note,
+            local_blocked,
+            client_id,
+            device_model,
+            os_version,
+            app_version,
+          ]
+        );
+
+        // 2) Insert/update -> scam_phones_summary
+        const { rows } = await client.query(
+          `
+          INSERT INTO scam_phones_summary
+            (phone, report_count, last_report_at, source_reports, risk_level, updated_at)
+          VALUES ($1, 1, now(), 1, 10, now())
+          ON CONFLICT (phone)
+          DO UPDATE SET
+              report_count   = scam_phones_summary.report_count + 1,
+              source_reports = scam_phones_summary.source_reports + 1,
+              last_report_at = now(),
+              risk_level     = GREATEST(scam_phones_summary.risk_level, 10),
+              updated_at     = now()
+          RETURNING *;
+          `,
+          [normalized]
+        );
+
+        return rows[0];
+      });
+    }
   },
 };
