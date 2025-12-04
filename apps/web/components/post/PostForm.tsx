@@ -54,12 +54,14 @@ enum TelNumberMode {
   New = 'new',
   Edited = 'edited',
   Deleted = 'deleted',
+  Unchanged = 'unchanged',
 }
 
 enum SellerAccountMode {
   New = 'new',
   Edited = 'edited',
   Deleted = 'deleted',
+  Unchanged = 'unchanged',
 }
 
 interface BankItem{
@@ -76,13 +78,13 @@ interface ProvinceItem {
 }
 
 type ITelNumber = {
-  id: number;
+  id: string;          // เก็บเป็น string (UUID หรือ local-xxx)
   tel: string;
   mode: TelNumberMode; 
 };
 
 type ISellerAccount = {
-  id: number;
+  id: string;          // เก็บเป็น string เช่นกัน
   bank_id: string;
   bank_name: string;
   mode: SellerAccountMode; 
@@ -91,12 +93,16 @@ type ISellerAccount = {
 type ITelNumberDTO = { id?: string|number; tel: string };
 type ISellerAccountDTO = { id?: string|number; bank_id: string; bank_name: string; seller_account?: string };
 
+// helper สำหรับ gen id ฝั่ง client
+const makeLocalId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 export default function PostForm({ apiBase = '', initialData, onSaved, title }: Props){
   const [form] = Form.useForm();
   const [files, setFiles] = useState<FileValue[]>([]);
   const isEdit = !!initialData?.id;
 
-  console.log("[PostForm]", initialData);
+  // console.log("[PostForm]", initialData);
 
   const [onPost, { loading }] = useMutation(UPSERT);
 
@@ -115,22 +121,25 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
     { id: "bay",  name_th: "ธนาคารกรุงศรีอยุธยา", name_en: "Bank of Ayudhya",  description: "" },
     { id: "ktb",  name_th: "ธนาคารกรุงไทย",    name_en: "Krung Thai Bank",      description: "" },
   ]);
-  const [telNumbers, setTelNumbers] = useState<ITelNumber[]>([{ id: Date.now(), tel: '', mode: TelNumberMode.New }]);
-  const [sellerAccounts, setSellerAccounts] = useState<ISellerAccount[]>([{ id: Date.now(), bank_id: "", bank_name: "", mode: SellerAccountMode.New }]);
+
+  const [telNumbers, setTelNumbers] = useState<ITelNumber[]>([
+    { id: makeLocalId("tel"), tel: '', mode: TelNumberMode.New }
+  ]);
+  const [sellerAccounts, setSellerAccounts] = useState<ISellerAccount[]>([
+    { id: makeLocalId("seller"), bank_id: "", bank_name: "", mode: SellerAccountMode.New }
+  ]);
 
   // ------------------- DIRTY CHECK -------------------
   const initialSnapshotRef = useRef<any>(null);
   const [dirty, setDirty] = useState<boolean>(false);
 
-  // normalize สร้าง object ที่พร้อมสำหรับเทียบ deep-equal
+  // normalize สำหรับเทียบ deep-equal
   const normalizeComparable = (values: any, f: FileValue[], tels: ITelNumber[], sellers: ISellerAccount[]) => {
-    // ไฟล์: แยก existing และ new
     const existing = f.filter((x:any)=> 'url' in x) as ExistingFile[];
     const keepExistingIds = existing.filter(x=> !x.delete).map(x=> String(x._id)).sort();
     const deleteExistingIds = existing.filter(x=> !!x.delete).map(x=> String(x._id)).sort();
     const newFilesCount = f.filter((x)=> x instanceof File).length;
 
-    // ฟิลด์วันที่ normalize เป็น ISO (หรือ null)
     const transferDateIso = values.transfer_date
       ? (values.transfer_date?.toISOString?.() ?? dayjs(values.transfer_date).toISOString())
       : null;
@@ -149,10 +158,14 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         detail: values.detail ?? "",
         status: values.status || "public",
       },
-      tel_numbers: (tels||[]).filter(t=> t.mode !== TelNumberMode.Deleted).map(t=> ({ tel: t.tel.trim() })).sort((a,b)=>a.tel.localeCompare(b.tel)),
-      seller_accounts: (sellers||[]).filter(s=> s.mode !== SellerAccountMode.Deleted)
+      // เปรียบเทียบเฉพาะเบอร์ (ไม่ต้องสน id/mode)
+      tel_numbers: (tels||[])
+        .filter(t=> t.mode !== TelNumberMode.Deleted)
+        .map(t=> ({ tel: t.tel.trim() }))
+        .sort((a,b)=>a.tel.localeCompare(b.tel)),
+      seller_accounts: (sellers||[])
+        .filter(s=> s.mode !== SellerAccountMode.Deleted)
         .map(s=>{
-          // ค่าจริงอยู่ใน form
           const sfList = values.seller_accounts || [];
           const idx = sellers.findIndex(x=> x.id===s.id);
           const row = sfList[idx] || {};
@@ -166,7 +179,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
       files: {
         keepExistingIds,
         deleteExistingIds,
-        newFilesCount, // ถ้ามีไฟล์ใหม่เพิ่ม ถือว่าเปลี่ยน
+        newFilesCount,
       }
     };
   };
@@ -175,29 +188,23 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
   useEffect(() => {
     if (!initialData) return;
 
-    // console.log("transfer_date :", formatDate(Number(initialData.transfer_date)));
-
-    // ✅ handle transfer_date
     let parsedTransferDate: dayjs.Dayjs | undefined;
     if (initialData.transfer_date) {
       if (!isNaN(Number(initialData.transfer_date))) {
-        // timestamp → แปลงจาก number ด้วย formatDate()
         const formatted = formatDate(Number(initialData.transfer_date));
-        console.log("Parsed transfer_date (timestamp):", formatted);
+        // console.log("Parsed transfer_date (timestamp):", formatted);
         parsedTransferDate = dayjs(Number(initialData.transfer_date));
       } else {
-        // ISO string → dayjs ปกติ
         parsedTransferDate = dayjs(initialData.transfer_date);
       }
     }
-
 
     form.setFieldsValue({
       first_last_name: initialData.first_last_name ?? "",
       id_card: initialData.id_card ?? "",
       title: initialData.title ?? "",
       transfer_amount: initialData.transfer_amount ?? undefined,
-      transfer_date: parsedTransferDate, // initialData.transfer_date ? dayjs(initialData.transfer_date) : undefined,
+      transfer_date: parsedTransferDate,
       website: initialData.website ?? "",
       province_id: initialData.province_id ?? undefined,
       detail: (initialData as any).detail ?? "",
@@ -210,35 +217,54 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
       status: initialData.status,
     });
 
-    const telInit: ITelNumber[] = (initialData.tel_numbers ?? []).map((t: ITelNumberDTO, idx: number) => ({
-      id: (typeof t.id !== 'undefined' ? Number(t.id) : Date.now() + idx),
-      tel: t.tel,
-      mode: TelNumberMode.Edited,
-    }));
-    setTelNumbers(telInit.length ? telInit : [{ id: Date.now(), tel: '', mode: TelNumberMode.New }]);
+    // ใช้ id เดิมจาก server (UUID string) ถ้ามี, ถ้าไม่มี gen local-*
+    const telInit: ITelNumber[] = (initialData.tel_numbers ?? []).map(
+      (t: ITelNumberDTO, idx: number) => ({
+        id: typeof t.id !== 'undefined'
+          ? String(t.id)
+          : makeLocalId(`tel-${idx}`),
+        tel: t.tel,
+        mode: TelNumberMode.Unchanged,   // ⭐ เริ่มต้นเป็น unchanged
+      })
+    );
 
-    const sellerInit: ISellerAccount[] = (initialData.seller_accounts ?? []).map((s: ISellerAccountDTO, idx: number) => ({
-      id: (typeof s.id !== 'undefined' ? Number(s.id) : Date.now() + idx),
-      bank_id: s.bank_id,
-      bank_name: s.bank_name,
-      mode: SellerAccountMode.Edited,
-    }));
-    setSellerAccounts(sellerInit.length ? sellerInit : [{ id: Date.now(), bank_id: "", bank_name: "", mode: SellerAccountMode.New }]);
+    // console.log("[useEffect telInit] =", initialData.tel_numbers, telInit);
+    setTelNumbers(
+      telInit.length
+        ? telInit
+        : [{ id: makeLocalId("tel"), tel: '', mode: TelNumberMode.New }]
+    );
+
+    const sellerInit: ISellerAccount[] = (initialData.seller_accounts ?? []).map(
+      (s: ISellerAccountDTO, idx: number) => ({
+        id: typeof s.id !== 'undefined'
+          ? String(s.id)
+          : makeLocalId(`seller-${idx}`),
+        bank_id: s.bank_id,
+        bank_name: s.bank_name,
+        mode: SellerAccountMode.Unchanged,  // ⭐ เริ่มต้นเป็น unchanged
+      })
+    );
+
+    setSellerAccounts(
+      sellerInit.length
+        ? sellerInit
+        : [{ id: makeLocalId("seller"), bank_id: "", bank_name: "", mode: SellerAccountMode.New }]
+    );
 
     const ex: ExistingFile[] = (initialData.images || []).map(img => ({ _id: img.id, url: img.url }));
     setFiles(ex);
 
-    // ตั้ง snapshot เริ่มต้น
     const initValues = form.getFieldsValue(true);
     initialSnapshotRef.current = normalizeComparable(initValues, ex, telInit, sellerInit);
     setDirty(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, form]);
 
-  // ฟัง Form change เพื่อตรวจ dirty
+  // ฟัง Form change เพื่อตรวจ dirty (fallback ใช้ onValuesChange อยู่แล้ว)
   useEffect(() => {
-    const unSub = form.subscribe?.(({ values }: any) => {
-      // บางเวอร์ชัน antd ไม่มี subscribe → เราจะใช้ onValuesChange ด้านล่างแทน
+    const unSub = (form as any).subscribe?.(({ values }: any) => {
+      // noop
     });
     return () => { if (typeof unSub === 'function') unSub(); };
   }, [form]);
@@ -250,9 +276,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
     const currentValues = form.getFieldsValue(true);
     const current = normalizeComparable(currentValues, files, telNumbers, sellerAccounts);
 
-    // ไฟล์ใหม่เพิ่ม → ถือว่าเปลี่ยน
     const newFilesChanged = current.files.newFilesCount > 0;
-    // ลบ/คงไฟล์เดิมเปลี่ยน?
     const filesChanged = newFilesChanged
       || !_.isEqual(snap.files.keepExistingIds, current.files.keepExistingIds)
       || !_.isEqual(snap.files.deleteExistingIds, current.files.deleteExistingIds);
@@ -264,11 +288,11 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
     setDirty(formChanged || telChanged || sellerChanged || filesChanged);
   }, [form, files, telNumbers, sellerAccounts]);
 
-  // onValuesChange → recalculates dirty
   const handleValuesChange = () => { recomputeDirty(); };
 
-  // เมื่อ files/tel/seller เปลี่ยน → recalculates dirty
-  useEffect(() => { if (initialSnapshotRef.current) recomputeDirty(); }, [files, telNumbers, sellerAccounts, recomputeDirty]);
+  useEffect(() => {
+    if (initialSnapshotRef.current) recomputeDirty();
+  }, [files, telNumbers, sellerAccounts, recomputeDirty]);
 
   // ------------------- SUBMIT -------------------
   async function onFinish(values: any){
@@ -278,8 +302,13 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
     const newFiles = files.filter((f): f is File => f instanceof File);
 
     const tel_numbers_payload = telNumbers
-      .filter(t => t.mode !== TelNumberMode.Deleted)
-      .map(t => ({ id: t.id, tel: t.tel, mode: t.mode }));
+      // ส่งเฉพาะที่มีการเปลี่ยนแปลง (new/edited/deleted) ไม่ส่ง unchanged
+      .filter(t => t.mode !== TelNumberMode.Unchanged)
+      .map(t => ({
+        id: t.id,
+        tel: t.tel,
+        mode: t.mode
+      }));
 
     const seller_accounts_form = (form.getFieldValue('seller_accounts') || []) as Array<any>;
     const seller_accounts_payload = sellerAccounts
@@ -293,7 +322,8 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           mode: s.mode,
         };
       })
-      .filter(s => s.mode !== SellerAccountMode.Deleted);
+      // เช่นเดียวกัน: ไม่ส่ง unchanged ไป
+      .filter(s => s.mode !== SellerAccountMode.Unchanged);
 
     const variables: any = {
       id: isEdit ? String(initialData!.id) : null,
@@ -305,8 +335,8 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           ? values.transfer_amount
           : Number(values.transfer_amount || 0),
         transfer_date: values.transfer_date
-        ? (values.transfer_date.toISOString?.() ?? dayjs(values.transfer_date).toISOString())
-        : null,
+          ? (values.transfer_date.toISOString?.() ?? dayjs(values.transfer_date).toISOString())
+          : null,
         website: values.website?.trim() ?? "",
         province_id: values.province_id ?? null,
         detail: values.detail ?? "",
@@ -319,18 +349,43 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
 
     if (newFiles.length > 0) variables.images = newFiles;
 
+    console.log("[variables] =", variables, telNumbers);
+
     const { data } = await onPost({ variables });
 
     if (data?.upsertPost?.id) {
       message.success(isEdit ? 'Saved' : 'Created');
 
-      // sync รูปภาพหลังบันทึก
       const savedImgs = (data.upsertPost.images || []).map((img: any) => ({ _id: img.id, url: img.url }));
       setFiles(savedImgs);
 
-      // อัปเดต snapshot ใหม่เป็นค่าปัจจุบัน (เพื่อ reset dirty)
+      // หลัง save สำเร็จ:
+      // 1) เคลียร์รายการที่ถูก mark Deleted ออกจาก state
+      // 2) reset mode ที่เหลือให้เป็น Unchanged
+      const nextTel = telNumbers
+        .filter(t => t.mode !== TelNumberMode.Deleted)
+        .map(t => ({ ...t, mode: TelNumberMode.Unchanged }));
+      const nextSeller = sellerAccounts
+        .filter(s => s.mode !== SellerAccountMode.Deleted)
+        .map(s => ({ ...s, mode: SellerAccountMode.Unchanged }));
+
+      setTelNumbers(nextTel.length
+        ? nextTel
+        : [{ id: makeLocalId("tel"), tel: '', mode: TelNumberMode.New }]
+      );
+
+      setSellerAccounts(nextSeller.length
+        ? nextSeller
+        : [{ id: makeLocalId("seller"), bank_id: "", bank_name: "", mode: SellerAccountMode.New }]
+      );
+
       const newInitValues = form.getFieldsValue(true);
-      initialSnapshotRef.current = normalizeComparable(newInitValues, savedImgs, telNumbers.filter(t=>t.mode!==TelNumberMode.Deleted).map(t=>({...t, mode: TelNumberMode.Edited})), sellerAccounts.filter(s=>s.mode!==SellerAccountMode.Deleted).map(s=>({...s, mode: SellerAccountMode.Edited})));
+      initialSnapshotRef.current = normalizeComparable(
+        newInitValues,
+        savedImgs,
+        nextTel,
+        nextSeller
+      );
       setDirty(false);
 
       onSaved?.(data.upsertPost.id);
@@ -347,28 +402,48 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
 
     setTelNumbers(prev => {
       const updated = [...prev];
-      if (!updated[index]) return prev;
-      const clone = { ...updated[index], tel: value };
-      if (clone.mode !== TelNumberMode.New) clone.mode = TelNumberMode.Edited;
-      updated[index] = clone;
+      const current = updated[index];
+      if (!current) return prev;
+
+      let mode = current.mode;
+      if (mode === TelNumberMode.Unchanged) {
+        mode = TelNumberMode.Edited;   // เปลี่ยนจาก unchanged → edited เมื่อมีการแก้ไข
+      }
+      // ถ้าเป็น New ก็ยังเป็น New, Deleted จะไม่โผล่มาใน UI อยู่แล้ว
+
+      updated[index] = { ...current, tel: value, mode };
       return updated;
     });
   };
 
   const addTelNumber = () => {
-    setTelNumbers([...telNumbers, { id: Date.now(), tel: '', mode: TelNumberMode.New }]);
+    setTelNumbers(prev => [
+      ...prev,
+      { id: makeLocalId("tel"), tel: '', mode: TelNumberMode.New }
+    ]);
   };
 
   const removeTelNumber = (index: number) => {
-    setTelNumbers(prev => prev.map((item, i) => i === index ? { ...item, mode: TelNumberMode.Deleted } : item ) );
+    setTelNumbers(prev =>
+      prev.map((item, i) =>
+        i === index ? { ...item, mode: TelNumberMode.Deleted } : item
+      )
+    );
   };
 
   const removeSellerAccount = (index: number) => {
-    setSellerAccounts(prev => prev.map((item, i) => i === index ? { ...item, mode: SellerAccountMode.Deleted } : item ) );
+    setSellerAccounts(prev =>
+      prev.map((item, i) =>
+        i === index ? { ...item, mode: SellerAccountMode.Deleted } : item
+      )
+    );
   };
 
   const addSellerAccount = () => {
-    setSellerAccounts([...sellerAccounts, { id: Date.now(),  bank_id: "", bank_name: "", mode: SellerAccountMode.New }]);
+    setSellerAccounts(prev => [
+      ...prev,
+      { id: makeLocalId("seller"), bank_id: "", bank_name: "", mode: SellerAccountMode.New }
+    ]);
   };
 
   const handleSellerAccountChange = (
@@ -383,10 +458,15 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
 
     setSellerAccounts(prev => {
       const updated = [...prev];
-      if (!updated[index]) return prev;
-      const clone = { ...updated[index], [field]: value };
-      if (clone.mode !== SellerAccountMode.New) clone.mode = SellerAccountMode.Edited;
-      updated[index] = clone;
+      const current = updated[index];
+      if (!current) return prev;
+
+      let mode = current.mode;
+      if (mode === SellerAccountMode.Unchanged) {
+        mode = SellerAccountMode.Edited;   // เปลี่ยนจาก unchanged → edited เมื่อมีการแก้ไข
+      }
+
+      updated[index] = { ...current, [field]: value, mode };
       return updated;
     });
   };
@@ -417,7 +497,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           <Input placeholder="กรุณากรอกเลขบัตรประชาชน หรือ พาสปอร์ต (passport)" maxLength={13} />
         </Form.Item>
 
-         {/* สินค้า/บริการ ที่สั่งซื้อ */}
+        {/* สินค้า/บริการ ที่สั่งซื้อ */}
         <Form.Item
           label="สินค้า/บริการ ที่สั่งซื้อ"
           name="title"
@@ -453,43 +533,43 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           <Input placeholder="กรุณากรอกเว็บประกาศขายของ" />
         </Form.Item>
 
-         {/* รายละเอียดเพิ่มเติม */}
+        {/* รายละเอียดเพิ่มเติม */}
         <Form.Item label="รายละเอียดเพิ่มเติม" name="detail">
           <Input.TextArea rows={4} placeholder="กรุณากรอกรายละเอียดเพิ่มเติม" />
-        </Form.Item>
-
-        {/* จังหวัดของคนสร้างรายงาน */}
-        <Form.Item
-          label="จังหวัดของคนสร้างรายงาน"
-          name="province_id"
-          rules={[{ required: true, message: 'กรุณาเลือกจังหวัด' }]}
-        >
-          <Select
-            placeholder="กรุณาเลือกจังหวัด"
-            showSearch
-            optionFilterProp="label"
-            options={provinces.map((p) => ({ label: p.name_th, value: p.id }))}
-          />
         </Form.Item>
 
         {/* Tel Numbers */}
         <div style={{ borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
           {telNumbers.map((number, index) => (
-            <div key={`${number.id}-${index}`} style={{ marginBottom: 20, borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px' }}>
-              <Form.Item
-                label={`เบอร์โทรศัพท์ หรือ ไอดีไลน์ ${index + 1}`}
-                name={['tel_numbers', index, 'tel']}
-                rules={[{ required: true, message: 'กรุณากรอกเบอร์โทรศัพท์ หรือ ไอดีไลน์' }]}
+            number.mode !== TelNumberMode.Deleted && (
+              <div
+                key={`${number.id}-${index}`}
+                style={{
+                  marginBottom: 20,
+                  borderColor: '#d9d9d9',
+                  padding: '10px',
+                  borderStyle: 'dashed',
+                  marginTop: '10px'
+                }}
               >
-                <Input placeholder="กรุณากรอกเบอร์โทรศัพท์ หรือ ไอดีไลน์" onChange={(e) => handleTelChange(index, e.target.value)}/>
-              </Form.Item>
+                <Form.Item
+                  label={`เบอร์โทรศัพท์ หรือ ไอดีไลน์ ${index + 1}`}
+                  name={['tel_numbers', index, 'tel']}
+                  rules={[{ required: true, message: 'กรุณากรอกเบอร์โทรศัพท์ หรือ ไอดีไลน์' }]}
+                >
+                  <Input
+                    placeholder="กรุณากรอกเบอร์โทรศัพท์ หรือ ไอดีไลน์"
+                    onChange={(e) => handleTelChange(index, e.target.value)}
+                  />
+                </Form.Item>
 
-              {telNumbers.length > 1 && (
-                <Button type="dashed" onClick={() => removeTelNumber(index)}>
-                  <MinusCircleOutlined /> ลบ
-                </Button>
-              )}
-            </div>
+                {telNumbers.filter(t => t.mode !== TelNumberMode.Deleted).length > 1 && (
+                  <Button type="dashed" onClick={() => removeTelNumber(index)}>
+                    <MinusCircleOutlined /> ลบ
+                  </Button>
+                )}
+              </div>
+            )
           ))}
 
           <Form.Item>
@@ -502,43 +582,63 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         {/* Seller Accounts */}
         <div style={{ borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
           {sellerAccounts.map((account, index) => (
-            <div key={`${account.id}-${index}`} style={{ marginBottom: 20, borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px' }}>
-              <Form.Item
-                label={`ชื่อบัญชีคนขาย ${index + 1}`}
-                name={['seller_accounts', index, 'bank_name']}
-                rules={[{ required: true, message: 'กรุณากรอกบัญชีคนขาย' }]}
+            account.mode !== SellerAccountMode.Deleted && (
+              <div
+                key={`${account.id}-${index}`}
+                style={{
+                  marginBottom: 20,
+                  borderColor: '#d9d9d9',
+                  padding: '10px',
+                  borderStyle: 'dashed',
+                  marginTop: '10px'
+                }}
               >
-                <Input placeholder="กรุณากรอกบัญชีคนขาย" onChange={(e) => handleSellerAccountChange(index, 'bank_name', e.target.value)}/>
-              </Form.Item>
+                <Form.Item
+                  label={`ชื่อบัญชีคนขาย ${index + 1}`}
+                  name={['seller_accounts', index, 'bank_name']}
+                  rules={[{ required: true, message: 'กรุณากรอกบัญชีคนขาย' }]}
+                >
+                  <Input
+                    placeholder="กรุณากรอกบัญชีคนขาย"
+                    onChange={(e) => handleSellerAccountChange(index, 'bank_name', e.target.value)}
+                  />
+                </Form.Item>
 
-              <Form.Item
-                label={`เลขที่บัญชีคนขาย ${index + 1}`}
-                name={['seller_accounts', index, 'seller_account']}
-                rules={[{ required: true, message: 'กรุณากรอกบัญชีคนขาย' }]}
-              >
-                <Input placeholder="กรุณากรอกบัญชีคนขาย" onChange={(e) => handleSellerAccountChange(index, 'seller_account', e.target.value)}/>
-              </Form.Item>
+                <Form.Item
+                  label={`เลขที่บัญชีคนขาย ${index + 1}`}
+                  name={['seller_accounts', index, 'seller_account']}
+                  rules={[{ required: true, message: 'กรุณากรอกบัญชีคนขาย' }]}
+                >
+                  <Input
+                    placeholder="กรุณากรอกบัญชีคนขาย"
+                    onChange={(e) => handleSellerAccountChange(index, 'seller_account', e.target.value)}
+                  />
+                </Form.Item>
 
-              <Form.Item
-                label="เลือกธนาคาร"
-                name={['seller_accounts', index, 'bank_id']}
-                rules={[{ required: true, message: 'กรุณาเลือกธนาคาร' }]}
-              >
-                <Select placeholder="กรุณาเลือกธนาคาร" onChange={(value) => handleSellerAccountChange(index, 'bank_id', value)}>
-                  {banks.map((bank, index) => (
-                    <Select.Option key={`${bank.id}-${index}`} value={bank.id}>
-                      {bank.name_th}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
+                <Form.Item
+                  label="เลือกธนาคาร"
+                  name={['seller_accounts', index, 'bank_id']}
+                  rules={[{ required: true, message: 'กรุณาเลือกธนาคาร' }]}
+                >
+                  <Select
+                    placeholder="กรุณาเลือกธนาคาร"
+                    onChange={(value) => handleSellerAccountChange(index, 'bank_id', value)}
+                  >
+                    {banks.map((bank, index2) => (
+                      <Select.Option key={`${bank.id}-${index2}`} value={bank.id}>
+                        {bank.name_th}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
 
-              {sellerAccounts.length > 1 && (
-                <Button type="dashed" onClick={() => removeSellerAccount(index)}>
-                  <MinusCircleOutlined /> ลบ
-                </Button>
-              )}
-            </div>
+                {sellerAccounts.filter(s => s.mode !== SellerAccountMode.Deleted).length > 1 && (
+                  <Button type="dashed" onClick={() => removeSellerAccount(index)}>
+                    <MinusCircleOutlined /> ลบ
+                  </Button>
+                )}
+              </div>
+            )
           ))}
 
           <Form.Item>
@@ -557,6 +657,20 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           onSnackbar={(s)=> s.open && message.info(s.message)}
         />
 
+        {/* จังหวัดของคนสร้างรายงาน */}
+        <Form.Item
+          label="จังหวัดของคนสร้างรายงาน"
+          name="province_id"
+          rules={[{ required: true, message: 'กรุณาเลือกจังหวัด' }]}
+        >
+          <Select
+            placeholder="กรุณาเลือกจังหวัด"
+            showSearch
+            optionFilterProp="label"
+            options={provinces.map((p) => ({ label: p.name_th, value: p.id }))}
+          />
+        </Form.Item>
+
         <Form.Item name="status" label="Status">
           <Select options={[{value:'public',label:'public'},{value:'unpublic',label:'unpublic'}]} />
         </Form.Item>
@@ -566,10 +680,11 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           htmlType="submit"
           style={{ marginTop: 16 }}
           loading={loading}
-          disabled={!dirty}  >
+          disabled={!dirty}
+        >
           {isEdit ? 'Save' : 'Create'}
         </Button>
       </Form>
     </Card>
-  )
+  );
 }

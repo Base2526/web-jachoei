@@ -1872,23 +1872,60 @@ export const resolvers = {
         // 2) TEL NUMBERS (insert/update/delete)
         // ============================================================
         if (Array.isArray(data.tel_numbers)) {
+          console.log(`[TEL_SYNC] Incoming tel_numbers count = ${data.tel_numbers.length}`);
+
           for (const tel of data.tel_numbers) {
-            if (tel.mode === "deleted") {
-              await client.query(`DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`, [tel.id, postId]);
-            } else if (tel.mode === "edited") {
+            const mode = tel.mode?.toLowerCase();
+            const telId = tel.id;
+            const phone = tel.tel;
+            const post = postId;
+
+            console.log(
+              `[TEL_SYNC] mode=${mode} | id=${telId} | tel="${phone}" | postId=${post}`
+            );
+
+            if (mode === "deleted") {
+              console.log(
+                `[TEL_DELETE] DELETE FROM post_tel_numbers WHERE id=${telId} AND post_id=${post}`
+              );
+
+              await client.query(
+                `DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`,
+                [telId, post]
+              );
+
+              console.log(`[TEL_DELETE] success id=${telId}`);
+
+            } else if (mode === "edited") {
+              console.log(
+                `[TEL_UPDATE] UPDATE post_tel_numbers SET tel="${phone}" WHERE id=${telId} AND post_id=${post}`
+              );
+
               await client.query(
                 `UPDATE post_tel_numbers SET tel=$1 WHERE id=$2 AND post_id=$3`,
-                [tel.tel, tel.id, postId]
+                [phone, telId, post]
               );
-            } else if (tel.mode === "new") {
+
+              console.log(`[TEL_UPDATE] success id=${telId}, newTel="${phone}"`);
+
+            } else if (mode === "new") {
+              console.log(
+                `[TEL_INSERT] INSERT INTO post_tel_numbers (post_id, tel) VALUES (${post}, "${phone}")`
+              );
+
               await client.query(
                 `INSERT INTO post_tel_numbers (post_id, tel)
                 VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-                [postId, tel.tel]
+                [post, phone]
               );
+
+              console.log(`[TEL_INSERT] success tel="${phone}"`);
+            } else {
+              console.warn(`[TEL_SYNC] Unknown mode="${mode}" for id=${telId}`);
             }
           }
         }
+
 
         // ============================================================
         // 3) SELLER ACCOUNTS (insert/update/delete)

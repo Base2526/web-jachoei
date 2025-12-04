@@ -18,3 +18,5 @@ packages/realtime/package-lock.json
 
 /storage/*
 !/storage/.gitkeep
+
+RN/MyApp/node_modules

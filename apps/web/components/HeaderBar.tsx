@@ -74,7 +74,7 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
   const { user: userSession, refreshSession } = useSession();
   const { t, lang, setLang } = useI18n();
 
-  console.log("[HeaderBar] isMobile =", isMobile);
+  // console.log("[HeaderBar] isMobile =", isMobile);
 
   // ===== User / unread =====
   const { data: meData } = useQuery(Q_ME, {
