@@ -10,7 +10,7 @@ import { useQuery, useMutation } from "@apollo/client";
 // graphql/files.ts
 import { gql } from '@apollo/client';
 
-export const Q_FILES_PAGED = gql`
+const Q_FILES_PAGED = gql`
   query($q:String, $limit:Int!, $offset:Int!){
     filesPaged(search:$q, limit:$limit, offset:$offset){
       total
@@ -22,9 +22,9 @@ export const Q_FILES_PAGED = gql`
   }
 `;
 
-export const M_DELETE_FILE = gql`mutation($id:ID!){ deleteFile(id:$id) }`;
-export const M_DELETE_FILES = gql`mutation($ids:[ID!]!){ deleteFiles(ids:$ids) }`;
-export const M_RENAME_FILE = gql`mutation($id:ID!,$name:String!){ renameFile(id:$id, name:$name) }`;
+const M_DELETE_FILE = gql`mutation($id:ID!){ deleteFile(id:$id) }`;
+const M_DELETE_FILES = gql`mutation($ids:[ID!]!){ deleteFiles(ids:$ids) }`;
+const M_RENAME_FILE = gql`mutation($id:ID!,$name:String!){ renameFile(id:$id, name:$name) }`;
 
 
 type FileRow = {

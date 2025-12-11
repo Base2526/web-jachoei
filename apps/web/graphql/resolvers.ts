@@ -29,6 +29,7 @@ export const NOTI_CREATED   = 'NOTI_CREATED';
 export const INCOMING_MESSAGE  = 'INCOMING_MESSAGE';
 
 const isDev = process.env.NODE_ENV !== "production";
+const useSecureCookie = process.env.COOKIE_SECURE === "true";
 
 type GraphQLUploadFile = {
   filename: string;
@@ -1555,7 +1556,7 @@ export const resolvers = {
       const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
       const user = rows[0];
 
-      console.log("[loginUser] @2 ", user)
+      console.log("[loginUser] @2 ", user, JWT_SECRET, process.env.COOKIE_SECURE);
       if (!user) throw new Error("Invalid credentials");
       // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
 
@@ -1565,7 +1566,7 @@ export const resolvers = {
         { expiresIn: "7d" }
       );
 
-      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: !isDev ? true : false, sameSite: "lax", path: "/" });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
       return {
         ok: true,
         message: "Login success",
@@ -1678,7 +1679,7 @@ export const resolvers = {
         { expiresIn: "7d" }
       );
 
-      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: !isDev ? true : false, sameSite: "lax", path: "/" });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
 
       // แนะนำ: set cookie httpOnly ใน production
       // ctx.res.cookie("token", token, {
@@ -1715,7 +1716,7 @@ export const resolvers = {
         { expiresIn: "1d" }
       );
 
-      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: !isDev ? true : false, sameSite: "lax", path: "/" });
+      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
       return {
         ok: true,
         message: "Login success",
@@ -1737,7 +1738,7 @@ export const resolvers = {
       );
 
       const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
-      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: !isDev ? true : false, path: '/' });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: useSecureCookie && !isDev, path: '/' });
 
       return true;
     },
@@ -2062,26 +2063,29 @@ export const resolvers = {
       }
 
       // ✅ ทำงานใน transaction พร้อมตั้งค่า app.editor_id
-      const result = await runInTransaction(author_id, async (client) => {
+      const result = await runInTransaction<boolean>(author_id, async (client) => {
         // 1) ลบโพสต์
         const res = await client.query(
           `DELETE FROM posts WHERE id = ANY($1::uuid[])`,
           [validIds]
         );
 
+        // rowCount อาจเป็น null/undefined → normalize เป็น number
+        const deletedCount = res.rowCount ?? 0;
+
         // 2) เพิ่ม log
         await addLog(
-          "info",                     // log level
-          "post-delete",              // action key
-          `Deleted ${res.rowCount} posts`, // message
+          "info",                        // log level
+          "post-delete",                 // action key
+          `Deleted ${deletedCount} posts`, // message
           {
             userId: author_id,
-            deletedCount: res.rowCount,
+            deletedCount,
             postIds: validIds,
           }
         );
 
-        return res.rowCount > 0;
+        return deletedCount > 0;
       });
 
       return result;
@@ -2730,22 +2734,27 @@ export const resolvers = {
       const uuidPattern =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       const uuidIds = ids.filter((i) => uuidPattern.test(i));
+
       if (uuidIds.length === 0) return false;
+
       return await runInTransaction(author_id, async (client) => {
         const res = await client.query(
           `DELETE FROM users WHERE id = ANY($1::uuid[])`,
           [uuidIds]
         );
-        if (res.rowCount > 0) {
+
+        const affected = res.rowCount ?? 0; // กัน null ที่นี่
+
+        if (affected > 0) {
           await addLog(
             "info",
             "user-delete",
-            `Deleted ${res.rowCount} user(s)`,
+            `Deleted ${affected} user(s)`,
             { userId: author_id, deletedIds: uuidIds }
           );
         }
 
-        return res.rowCount > 0;
+        return affected > 0;
       });
     },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
@@ -2941,7 +2950,10 @@ export const resolvers = {
 
       if (!ids?.length) return false;
 
-      const intIds = ids.map(n => parseInt(String(n), 10)).filter(n => !isNaN(n));
+      const intIds = ids
+        .map((n) => parseInt(String(n), 10))
+        .filter((n) => !isNaN(n));
+
       if (!intIds.length) return false;
 
       return await runInTransaction(author_id, async (client) => {
@@ -2950,13 +2962,14 @@ export const resolvers = {
           [intIds]
         );
 
-        const deleted = res.rowCount > 0;
+        // rowCount: number | null → ใช้ ?? 0 ป้องกัน null
+        const deleted = (res.rowCount ?? 0) > 0;
 
         if (deleted) {
           await addLog(
-            'info',
-            'file-delete',
-            'User deleted files',
+            "info",
+            "file-delete",
+            "User deleted files",
             { author_id, ids: intIds }
           );
         }

@@ -1,4 +1,5 @@
-import { Pool, PoolClient, QueryResult } from "pg";
+import { Pool } from "pg";
+import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || "localhost",
@@ -15,10 +16,7 @@ function formatParams(params?: any[]): string {
 }
 
 // ใช้สำหรับ query ปกติ (auto-acquire/auto-release)
-// export const query = <T = any>(text: string, params?: any[]): Promise<QueryResult<T>> =>
-//   pool.query<T>(text, params);
-
-export async function query<T = any>(
+export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: any[]
 ): Promise<QueryResult<T>> {
@@ -54,7 +52,8 @@ export async function runInTransaction<T>(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    
+
+    // NOTE: ระวัง SQL injection ถ้า userId มาจากภายนอก
     await client.query(`SET LOCAL app.editor_id = '${userId}'`);
 
     const result = await work(client);
@@ -86,12 +85,13 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-
 /*
+ตัวอย่างการใช้:
+
 import { runInTransaction } from "@/lib/db";
 
-await runInTransaction(async (client) => {
-  const { rows } = await client.query(
+await runInTransaction("123", async (client) => {
+  const { rows } = await client.query<{ id: number }>(
     "INSERT INTO posts (title, body) VALUES ($1,$2) RETURNING id",
     ["hello", "world"]
   );
@@ -106,4 +106,4 @@ await runInTransaction(async (client) => {
   return postId;
 });
 
-*/ 
+*/
