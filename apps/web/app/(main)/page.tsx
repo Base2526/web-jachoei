@@ -91,11 +91,7 @@ const statusColor = (status?: string | null) => {
 };
 
 // Tel list helper (ใช้ได้ทั้ง desktop + mobile)
-const TelList = ({
-  items,
-}: {
-  items: Array<{ id: string; tel: string }> | undefined;
-}) => {
+const TelList = ({ items }: { items: Array<{ id: string; tel: string }> | undefined; }) => {
   const list = (items || []).filter(Boolean);
   if (!list.length) return <Text type="secondary">-</Text>;
 
@@ -183,39 +179,35 @@ function PostsList() {
     {
       title: "Title",
       onCell: () => ({ style: { verticalAlign: "top" } }),
-      render: (_: any, r: any) => (
-        <div style={{ paddingRight: 12 }}>
-          <Link href={`/post/${r.id}`} prefetch={false}>
-            <Text strong style={{ fontSize: 14 }}>
-              {r.title || "-"}
-            </Text>
-          </Link>
+      render: (_: any, r: any) => {
+        const ts = String(r.created_at).trim();
+        return  <div style={{ paddingRight: 12 }}>
+                  <Link href={`/post/${r.id}`} prefetch={false}>
+                    <Text strong style={{ fontSize: 14 }}>
+                      {r.title || "-"}
+                    </Text>
+                  </Link>
 
-          <div style={{ marginTop: 4 }}>
-            {r.status && (
-              <Tag color={statusColor(r.status)} style={{ marginRight: 6 }}>
-                {r.status}
-              </Tag>
-            )}
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {r.created_at
-                ? new Date(r.created_at).toLocaleString()
-                : ""}
-            </Text>
-          </div>
-
-          {r.author && (
-            <div style={{ marginTop: 4 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                by{" "}
-                <Link href={`/profile/${r.author.id}`} prefetch={false}>
-                  {r.author.name}
-                </Link>
-              </Text>
-            </div>
-          )}
-        </div>
-      ),
+                  <div style={{ marginTop: 4 }}>
+                    {r.status && (
+                      <Tag color={statusColor(r.status)} style={{ marginRight: 6 }}>
+                        {r.status}
+                      </Tag>
+                    )}
+                    <Text type="secondary" style={{ fontSize: 12 }}> {ts ? new Date(Number(ts)).toLocaleString() : ""} </Text>
+                  </div>
+                  {r.author && (
+                    <div style={{ marginTop: 4 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        by{" "}
+                        <Link href={`/profile/${r.author.id}`} prefetch={false}>
+                          {r.author.name}
+                        </Link>
+                      </Text>
+                    </div>
+                  )}
+                </div>
+        },
     },
     {
       title: "Detail",

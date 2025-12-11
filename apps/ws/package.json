@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "tsx watch src/ws.ts",
     "build": "tsc",
-    "start": "node dist/ws.js"
+    "start_a": "node dist/ws.js",
+
+     "start": "NODE_ENV=production tsx src/ws.ts"
   },
   "dependencies": {
     "@graphql-tools/schema": "^10.0.0",

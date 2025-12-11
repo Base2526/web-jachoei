@@ -40,6 +40,8 @@ useServer(
             const token = cookies[USER_COOKIE] || "";
 
             try {
+
+                console.log("[onSubscribe] = ", token);
                 const user = jwt.verify(token, JWT_SECRET);
                 if (!user) {
                     return [

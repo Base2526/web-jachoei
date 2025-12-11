@@ -7,6 +7,9 @@ import sharp from "sharp";
 import { persistWebFile } from "@/lib/storage";
 import dayjs from "dayjs";
 
+// ดึง type return ของ persistWebFile มาใช้
+type StoredFileRow = Awaited<ReturnType<typeof persistWebFile>>;
+
 // =============================
 // Create Random Image
 // =============================
@@ -41,8 +44,11 @@ function makeWebFileFromBuffer(buf: Buffer, filename: string, mime: string) {
     type: mime,
     size: buf.length,
     async arrayBuffer(): Promise<ArrayBuffer> {
-      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-      return ab;
+      const ab = buf.buffer.slice(
+        buf.byteOffset,
+        buf.byteOffset + buf.byteLength
+      );
+      return ab as ArrayBuffer;
     },
   } as unknown as File;
 }
@@ -64,10 +70,12 @@ export async function POST(req: NextRequest) {
   // =============================
   // 🟦 NEW: Random author from users
   // =============================
-  const usersRows = await query(`SELECT id, name FROM users ORDER BY random() LIMIT 100`);
-  
+  const usersRows = await query(
+    `SELECT id, name FROM users ORDER BY random() LIMIT 100`
+  );
+
   const pickRandomUser = () => {
-    if (!usersRows.rows?.length) return guard.actor?.id ?? null;  
+    if (!usersRows.rows?.length) return guard.actor?.id ?? null;
     const randomIndex = Math.floor(Math.random() * usersRows.rows.length);
     return usersRows.rows[randomIndex].id;
   };
@@ -78,15 +86,14 @@ export async function POST(req: NextRequest) {
 
   // Province sample IDs
   const provinceIds = [
-    "a0f9a3b6-3a42-4c61-924d-14e3a9e4c2d1", 
-    "b27f6c4a-7f53-4a77-bb12-83211d9e62a3", 
-    "c913aef8-4581-4b40-90d8-5c3efde0b61a", 
-    "d57a89e3-f2e4-4fa4-a38a-14cc6bcbf879", 
+    "a0f9a3b6-3a42-4c61-924d-14e3a9e4c2d1",
+    "b27f6c4a-7f53-4a77-bb12-83211d9e62a3",
+    "c913aef8-4581-4b40-90d8-5c3efde0b61a",
+    "d57a89e3-f2e4-4fa4-a38a-14cc6bcbf879",
     "e89db1cf-9a12-4e7f-b354-67a8e1b58a50",
   ];
 
   for (let i = 0; i < count; i++) {
-    
     // 🟦 AUTHOR RANDOM
     const author_id = pickRandomUser();
     const meta = JSON.stringify({ generated_by: author_id });
@@ -121,10 +128,17 @@ export async function POST(req: NextRequest) {
     `;
 
     const { rows } = await query(insertSql, [
-      title, status, author_id, meta,
-      first_last_name, id_card,
-      transfer_amount, transfer_date, website,
-      province_id, detail,
+      title,
+      status,
+      author_id,
+      meta,
+      first_last_name,
+      id_card,
+      transfer_amount,
+      transfer_date,
+      website,
+      province_id,
+      detail,
     ]);
 
     const post = rows[0];
@@ -155,12 +169,16 @@ export async function POST(req: NextRequest) {
     );
 
     // Fake Upload Images
-    const fileRows: { id: string }[] = [];
+    const fileRows: StoredFileRow[] = [];
     for (let k = 0; k < IMAGES_PER_POST; k++) {
       const usePng = Math.random() < 0.5;
       const mime = usePng ? "image/png" : "image/jpeg";
       const ext = usePng ? "png" : "jpg";
-      const buf = await createRandomImageBuffer(800, 500, usePng ? "png" : "jpeg");
+      const buf = await createRandomImageBuffer(
+        800,
+        500,
+        usePng ? "png" : "jpeg"
+      );
       const filename = `fake_${nanoid(8)}.${ext}`;
       const webFile = makeWebFileFromBuffer(buf, filename, mime);
       const fileRow = await persistWebFile(webFile);
