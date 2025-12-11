@@ -12,6 +12,7 @@ import {
   message,
   AutoComplete,
   Input,
+  Modal
 } from "antd";
 import {
   UserOutlined,
@@ -161,7 +162,7 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
     { type: "divider" },
     {
       key: "logout",
-      label: <span onClick={onLogout}>Logout</span>,
+      label: <span onClick={showConfirmLogout}>Logout</span>,
       icon: <ReloadOutlined />,
     },
   ];
@@ -187,6 +188,18 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
       console.warn("[Search] load history error", e);
     }
   }, []);
+
+  function showConfirmLogout() {
+    Modal.confirm({
+      title: "Confirm Logout",
+      content: "Are you sure you want to logout?",
+      okText: "Logout",
+      cancelText: "Cancel",
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: onLogout,
+    });
+  }
 
   const saveHistory = (list: string[]) => {
     setSearchHistory(list);
