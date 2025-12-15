@@ -15,6 +15,11 @@ export const typeDefs = /* GraphQL */ `
     language: String!
   }
 
+  type UserConnection {
+    items: [User!]!
+    total: Int!
+  }
+
   type Chat {
     id: ID!
     name: String
@@ -296,7 +301,7 @@ export const typeDefs = /* GraphQL */ `
 
     getOrCreateDm(user_id: ID!): Chat!
 
-    users(search: String): [User!]!
+    users(search: String, limit: Int = 10, offset: Int = 0): UserConnection!
     user(id: ID!): User
 
     postsByUserId(user_id: ID!): [Post!]!

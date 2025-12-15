@@ -725,20 +725,51 @@ export const resolvers = {
       console.log("[Query] messages", chat_id, results.length);
       return results;
     },
-    users: async (_: any, { search }: { search?: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Query] users :", author_id);
+    users: async (
+      _: any,
+      { search, limit = 10, offset = 0 }: { search?: string; limit?: number; offset?: number },
+      ctx: any
+    ) => {
+      const { author_id } = requireAuth(ctx);
+      console.log("[Query] users :", author_id, { search, limit, offset });
 
-      if (search) {
-        const { rows } = await query(
-          `SELECT * FROM users
-           WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
-           ORDER BY created_at DESC`, ['%' + search + '%']
-        );
-        return rows;
-      }
-      const { rows } = await query(`SELECT * FROM users ORDER BY created_at DESC`);
-      return rows;
+      // กัน limit โหด ๆ
+      const safeLimit = Math.min(Math.max(limit || 10, 1), 100);
+      const safeOffset = Math.max(offset || 0, 0);
+
+      const where = search
+        ? `WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1`
+        : ``;
+
+      const params: any[] = [];
+      if (search) params.push(`%${search}%`);
+
+      // total
+      const totalRes = await query<{ total: string }>(
+        `SELECT COUNT(*)::text AS total FROM users ${where}`,
+        params
+      );
+      const total = Number(totalRes.rows[0]?.total || 0);
+
+      // items
+      const itemsParams = [...params, safeLimit, safeOffset];
+      const limitIdx = itemsParams.length - 1;     // not used directly
+      // ใช้ตำแหน่งจริง: (params+1)=limit, (params+2)=offset
+      const limitPos = params.length + 1;
+      const offsetPos = params.length + 2;
+
+      const itemsRes = await query(
+        `
+        SELECT *
+        FROM users
+        ${where}
+        ORDER BY created_at DESC
+        LIMIT $${limitPos} OFFSET $${offsetPos}
+        `,
+        itemsParams
+      );
+
+      return { items: itemsRes.rows, total };
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });

@@ -188,6 +188,8 @@ export default function FilesPage(){
           pageSize,
           total,
           showSizeChanger: true,
+          showTotal: (tot, range) =>
+            `${range[0]}-${range[1]} of ${tot} items`,
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);
