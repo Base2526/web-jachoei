@@ -84,7 +84,9 @@ SELECT create_revision_trigger('users');
 SELECT create_revision_trigger('post_seller_accounts');
 SELECT create_revision_trigger('post_tel_numbers');
 
+SELECT create_revision_trigger('comments');
+
 -- ✅ เพิ่มตารางอื่นได้ในอนาคต
--- SELECT create_revision_trigger('products');
+-- SELECT create_revision_trigger('comments');
 -- SELECT create_revision_trigger('drivers');
 --------------------------------------------------------------------------------
