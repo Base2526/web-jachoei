@@ -1823,7 +1823,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] upsertPost :", author_id, data, image_ids_delete);
 
-      return runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         let postId: string;
 
         // ============================================================
@@ -2021,16 +2021,16 @@ export const resolvers = {
             url: buildFileUrlById(r.id),
           })),
         };
-
-
       });
+
+      return result;
     },
     deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deletePost :", ctx, author_id);
 
       // ✅ ใช้ helper transaction function
-      return await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         // ลบโพสต์ใน transaction
         const res = await client.query(`DELETE FROM posts WHERE id = $1`, [id]);
 
@@ -2043,6 +2043,8 @@ export const resolvers = {
 
         return res.rowCount === 1;
       });
+
+      return result;
     },
     deletePosts: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -2063,7 +2065,7 @@ export const resolvers = {
       }
 
       // ✅ ทำงานใน transaction พร้อมตั้งค่า app.editor_id
-      const result = await runInTransaction<boolean>(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction<boolean>(author_id, async (client, ctx) => {
         // 1) ลบโพสต์
         const res = await client.query(
           `DELETE FROM posts WHERE id = ANY($1::uuid[])`,
@@ -2098,7 +2100,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] clonePost :", author_id, id);
 
-      return runInTransaction(author_id, async (client) => {
+      const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         // ==================================
         // 1) หา source post
         // ==================================
@@ -2229,6 +2231,8 @@ export const resolvers = {
         // ❗ สำคัญ: RETURN เป็น string ตรง ๆ ไม่ห่อ object ใด ๆ
         return newPostId;
       });
+
+      return result;
     },
     // createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
     //   const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -2291,7 +2295,7 @@ export const resolvers = {
       console.log("[Mutation] createChat :", author_id);
 
       // ✅ 1) รันทุกอย่างใน transaction (สร้าง chat + members + log)
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         // 1) สร้าง chat ใหม่
         const { rows } = await client.query(
           `INSERT INTO chats (name, is_group, created_by)
@@ -2379,7 +2383,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] addMember :", ctx, author_id);
 
-      return await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         await client.query(
           `INSERT INTO chat_members (chat_id, user_id)
            VALUES ($1, $2)
@@ -2391,6 +2395,8 @@ export const resolvers = {
 
         return true;
       });
+
+      return result;
     },
     sendMessage: async (
       _: any,
@@ -2449,7 +2455,7 @@ export const resolvers = {
       }
 
       // ===== Step 2: Use transaction for DB operations =====
-      const fullMessage = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result: fullMessage } = await runInTransaction(author_id, async (client, ctx) => {
         // 1) Insert message (เพิ่ม reply_to_id เข้าไป)
         const msgRes = await client.query(
           `
@@ -2617,7 +2623,7 @@ export const resolvers = {
       const passwordHash = data.passwordHash ?? null;
 
       // ✅ ใช้ transaction wrapper เพื่อ ensure COMMIT/ROLLBACK และ SET LOCAL app.editor_id
-      return await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         let resultUser = null;
 
         if (id) {
@@ -2674,12 +2680,14 @@ export const resolvers = {
 
         return resultUser;
       });
+
+      return result;
     },
     uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<GraphQLUploadFile> }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] uploadAvatar :", author_id);
 
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const f = await file; // { filename, mimetype, encoding, createReadStream }
 
         // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
@@ -2709,7 +2717,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteUser:", id, author_id);
 
-      const success = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const res = await client.query(`DELETE FROM users WHERE id=$1`, [id]);
         const ok = res.rowCount === 1;
 
@@ -2723,7 +2731,7 @@ export const resolvers = {
         return ok;
       });
 
-      return success;
+      return result;
     },
     deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -2737,7 +2745,7 @@ export const resolvers = {
 
       if (uuidIds.length === 0) return false;
 
-      return await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const res = await client.query(
           `DELETE FROM users WHERE id = ANY($1::uuid[])`,
           [uuidIds]
@@ -2756,12 +2764,14 @@ export const resolvers = {
 
         return affected > 0;
       });
+
+      return result;
     },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] updateMyProfile :", author_id, data);
 
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const { rows } = await client.query(
           `UPDATE users SET 
               name   = COALESCE($1, name),
@@ -2790,7 +2800,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์
       console.log('[Mutation] renameChat :', chat_id, name, author_id);
 
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         await client.query(
           `UPDATE chats SET name=$1 WHERE id=$2`,
           [name || null, chat_id]
@@ -2809,7 +2819,7 @@ export const resolvers = {
     },
     deleteChat: async (_:any, { chat_id }:{chat_id:string}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         await client.query(`DELETE FROM chats WHERE id = $1`, [chat_id]);
 
         await addLog(
@@ -2828,7 +2838,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] markMessageRead :", message_id, "by", author_id);
 
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         await client.query(
           `UPDATE message_receipts
             SET read_at = COALESCE(read_at, NOW())
@@ -2854,7 +2864,7 @@ export const resolvers = {
       console.log('[Mutation] markChatReadUpTo :', author_id, chat_id, cursor);
 
       // 2️⃣ ทำงานใน transaction
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         await client.query(
           `
           UPDATE message_receipts r
@@ -2885,7 +2895,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteMessage :", ctx, author_id);
 
-      return await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const { rows } = await client.query(
           `SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`,
           [message_id]
@@ -2921,12 +2931,15 @@ export const resolvers = {
 
         return true;
       });
+
+      console.log("revisionId =", revisionId, "result =", result);
+      return result;
     },
     deleteFile: async (_: any, { id }: { id: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] deleteFile :", { id, author_id });
 
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const res = await client.query(`DELETE FROM files WHERE id = $1`, [id]);
 
         if (res.rowCount === 1) {
@@ -2942,6 +2955,8 @@ export const resolvers = {
         }
       });
 
+      console.log("revisionId =", revisionId, "result =", result);
+
       return result;
     },
     deleteFiles: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
@@ -2956,7 +2971,7 @@ export const resolvers = {
 
       if (!intIds.length) return false;
 
-      return await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const res = await client.query(
           `DELETE FROM files WHERE id = ANY($1::int[])`,
           [intIds]
@@ -2976,13 +2991,17 @@ export const resolvers = {
 
         return deleted;
       });
+
+      console.log("revisionId =", revisionId, "result =", result);
+
+      return result;
     },
     renameFile: async (_: any, { id, name }: { id: string, name: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์ก่อน
       console.log("[Mutation] renameFile by:", author_id);
 
       // ✅ ใช้ transaction helper
-      const success = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const res = await client.query(
           `UPDATE files 
              SET original_name = $1, updated_at = NOW()
@@ -2994,7 +3013,7 @@ export const resolvers = {
       });
 
       // ✅ บันทึก log หลัง commit
-      if (success) {
+      if (result) {
         await addLog(
           'info',
           'file-rename',
@@ -3003,16 +3022,16 @@ export const resolvers = {
         );
       }
 
-      return success;
+      return result;
     },
     toggleBookmark: async (_: any, { postId }: { postId: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       const start = Date.now();
 
-      console.log("[toggleBookmark]", author_id, postId);
+      console.log("[toggleBookmark] :: ", author_id, postId);
 
       // ✅ ทำงานใน transaction
-      const result = await runInTransaction(author_id, async (client) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         // ตรวจว่ามี bookmark อยู่แล้วไหม
         const { rowCount: exists } = await client.query(
           `SELECT 1 FROM bookmarks WHERE post_id = $1 AND user_id = $2`,
@@ -3039,7 +3058,7 @@ export const resolvers = {
           isBookmarked = true;
         }
 
-        return { isBookmarked };
+        return isBookmarked;
       });
 
       // ✅ หลัง transaction commit → addLog สำหรับ external service (optional)
@@ -3047,12 +3066,12 @@ export const resolvers = {
         'info',
         'bookmark',
         'User toggled bookmark',
-        { author_id, postId, isBookmarked: result.isBookmarked }
+        { author_id, postId, isBookmarked: result }
       );
 
       return {
         status: true,
-        isBookmarked: result.isBookmarked,
+        isBookmarked: result,
         executionTime: `${((Date.now() - start) / 1000).toFixed(3)}s`,
       };
     },
@@ -3281,7 +3300,7 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       const normalized = phone;
 
-      await runInTransaction(author_id, async (client) => {
+      const { revisionId, result }  = await runInTransaction(author_id, async (client, ctx) => {
         // 1) Insert report -> scam_phone_reports
         await client.query(
           `
@@ -3320,6 +3339,8 @@ export const resolvers = {
 
         return rows[0];
       });
+
+      return result;
     }
   },
 };

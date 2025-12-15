@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import type { PoolClient, QueryResult, QueryResultRow } from "pg";
+import crypto from "crypto";
 
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || "localhost",
@@ -9,13 +10,11 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD || "app",
 });
 
-// helper: แปลง params เป็น string สำหรับ debug
 function formatParams(params?: any[]): string {
   if (!params) return "";
   return params.map((p, i) => `$${i + 1}=${JSON.stringify(p)}`).join(", ");
 }
 
-// ใช้สำหรับ query ปกติ (auto-acquire/auto-release)
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: any[]
@@ -23,12 +22,6 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   const start = Date.now();
   try {
     const res = await pool.query<T>(text, params);
-    const duration = Date.now() - start;
-
-    // === Print log after successful query ===
-    // console.log(
-    //   `[SQL ${duration}ms]\n${text.trim()}\nParams: ${formatParams(params)}`
-    // );
     return res;
   } catch (err: any) {
     console.error(
@@ -38,72 +31,42 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   }
 }
 
-/**
- * รันงานภายใน Transaction ให้หมดใน callback
- * - เริ่มด้วย BEGIN
- * - commit อัตโนมัติเมื่อ callback สำเร็จ
- * - rollback อัตโนมัติเมื่อ callback throw error
- * - ปล่อย client คืน pool เสมอ
- */
+export type TxContext = { revisionId: string };
+export type TxWorkResult<T> = { revisionId: string; result: T };
+
 export async function runInTransaction<T>(
   userId: string,
-  work: (client: PoolClient) => Promise<T>
-): Promise<T> {
+  work: (client: PoolClient, ctx: TxContext) => Promise<T>
+): Promise<TxWorkResult<T>> {
   const client = await pool.connect();
+  const revisionId = crypto.randomUUID();
+
   try {
     await client.query("BEGIN");
 
-    // NOTE: ระวัง SQL injection ถ้า userId มาจากภายนอก
-    await client.query(`SET LOCAL app.editor_id = '${userId}'`);
+    // ✅ ใช้ set_config แทน SET LOCAL (รองรับ $1)
+    await client.query(`SELECT set_config('app.editor_id',  $1, true)`, [userId]);
+    await client.query(`SELECT set_config('app.revision_id', $1, true)`, [revisionId]);
 
-    const result = await work(client);
+    const result = await work(client, { revisionId });
+
     await client.query("COMMIT");
-    return result;
+    return { revisionId, result };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
-    } catch {
-      // swallow rollback error
-    }
+    } catch {}
     throw err;
   } finally {
     client.release();
   }
 }
 
-/**
- * เผื่อบางกรณีอยากได้ client มาใช้เอง (ไม่เริ่ม transaction ให้)
- * - อย่าลืม client.release() เองเมื่อใช้เสร็จ
- */
 export async function getClient(): Promise<PoolClient> {
   return pool.connect();
 }
 
-// ปิด pool เวลาปิดโปรเซส (optional but nice to have)
 process.on("SIGINT", async () => {
   await pool.end().catch(() => void 0);
   process.exit(0);
 });
-
-/*
-ตัวอย่างการใช้:
-
-import { runInTransaction } from "@/lib/db";
-
-await runInTransaction("123", async (client) => {
-  const { rows } = await client.query<{ id: number }>(
-    "INSERT INTO posts (title, body) VALUES ($1,$2) RETURNING id",
-    ["hello", "world"]
-  );
-  const postId = rows[0].id;
-
-  await client.query(
-    "INSERT INTO post_revisions (post_id, title, body, note) VALUES ($1,$2,$3,$4)",
-    [postId, "hello", "world", "initial create"]
-  );
-
-  // ถ้าต้องการส่งค่ากลับ
-  return postId;
-});
-
-*/
