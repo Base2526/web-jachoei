@@ -25,6 +25,7 @@ import {
   SearchOutlined,
   HistoryOutlined,
   CloseCircleFilled,
+  PlusOutlined
 } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -502,6 +503,41 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
           <Space size={isMobile ? 4 : 8} align="center">
             {userSession && (
               <>
+                <Tooltip title={t("header.chat") || "สร้างโพสใหม่"}>
+                  <Button
+                    type="text"
+                    size={isMobile ? "small" : "middle"}
+                    onClick={() => router.push("/post/new")}
+                    icon={
+                      <span style={{ position: "relative", display: "inline-block" }}>
+                        <PlusOutlined style={{ fontSize: isMobile ? 18 : 18, color: "#000" }} />
+                        {totalUnread > 0 && (
+                          <span
+                            style={{
+                              position: "absolute",
+                              top: 10,
+                              right: -10,
+                              minWidth: 18,
+                              height: 18,
+                              padding: "0 5px",
+                              background: "#ff4d4f",
+                              borderRadius: 999,
+                              color: "#fff",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              boxShadow: "0 0 4px rgba(0, 0, 0, 0.3)",
+                            }}
+                          >
+                            {totalUnread > 99 ? "99+" : totalUnread}
+                          </span>
+                        )}
+                      </span>
+                    }
+                  />
+                </Tooltip>
                 {/* Chat */}
                 <Tooltip title={t("header.chat") || "ข้อความ"}>
                   <Button

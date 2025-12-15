@@ -71,7 +71,7 @@ function Profile({ id }: { id: string }) {
           <Descriptions.Item label="Phone">{u.phone || "-"}</Descriptions.Item>
           <Descriptions.Item label="Role">{u.role}</Descriptions.Item>
           <Descriptions.Item label="Joined">
-            {new Date(u.created_at).toLocaleString()}
+            {new Date(Number(u.created_at)).toLocaleString()}
           </Descriptions.Item>
         </Descriptions>
       </Card>
@@ -85,6 +85,7 @@ function Profile({ id }: { id: string }) {
             const firstTel =
               p.tel_numbers?.length ? p.tel_numbers[0].tel : "-";
 
+            console.log("[Profile] = ", p);
             return (
               <List.Item
                 actions={[
@@ -122,7 +123,7 @@ function Profile({ id }: { id: string }) {
                       <span style={{ fontSize: 12, opacity: 0.7 }}>
                         Created at:{" "}
                         {p.created_at
-                          ? new Date(p.created_at).toLocaleString()
+                          ? new Date( Number(p.created_at) ).toLocaleString()
                           : "-"}
                       </span>
                     </div>
