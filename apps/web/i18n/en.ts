@@ -31,6 +31,11 @@ const en = {
     noResults: "No results found for your query.",
     resultsFor: "Search results for",
   },
+
+  postPage:{
+    save: "Save",
+    create: "Create"
+  }
 };
 
 export default en;

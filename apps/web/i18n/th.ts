@@ -31,6 +31,11 @@ const th = {
     noResults: "ไม่พบผลลัพธ์ที่ตรงกับคำค้นหา",
     resultsFor: "ผลการค้นหาสำหรับ",
   },
+
+  postPage:{
+    save: "บันทึก",
+    create: "สร้างใหม่"
+  }
 };
 
 export default th;

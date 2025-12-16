@@ -8,6 +8,7 @@ import _ from "lodash";
 import dayjs from 'dayjs';
 
 import { formatDate } from "@/lib/date"
+import { useI18n } from "@/lib/i18nContext";
 
 const UPSERT = gql`
   mutation Upsert($id: ID, $data: PostInput!, $images:[Upload!], $image_ids_delete:[ID!]) {
@@ -101,6 +102,8 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
   const [form] = Form.useForm();
   const [files, setFiles] = useState<FileValue[]>([]);
   const isEdit = !!initialData?.id;
+
+  const { t } = useI18n();
 
   // console.log("[PostForm]", initialData);
 
@@ -671,9 +674,9 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           />
         </Form.Item>
 
-        <Form.Item name="status" label="Status">
+        {/* <Form.Item name="status" label="Status">
           <Select options={[{value:'public',label:'public'},{value:'unpublic',label:'unpublic'}]} />
-        </Form.Item>
+        </Form.Item> */}
 
         <Button
           type="primary"
@@ -682,7 +685,8 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
           loading={loading}
           disabled={!dirty}
         >
-          {isEdit ? 'Save' : 'Create'}
+          {/* .  */}
+          {isEdit ? t("postPage.save") : t("postPage.create") }
         </Button>
       </Form>
     </Card>
