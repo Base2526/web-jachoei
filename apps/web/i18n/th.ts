@@ -1,7 +1,7 @@
 // i18n/th.ts
 const th = {
   header: {
-    title: "PROTECT SCAMMER",
+    title: "WHOSSCAM",
 
     // 🔍 search-related
     searchPlaceholder: "ค้นหาโพสต์, ผู้ใช้, หมายเลขโทรศัพท์...",

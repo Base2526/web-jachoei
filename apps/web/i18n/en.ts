@@ -1,7 +1,7 @@
 // i18n/en.ts
 const en = {
   header: {
-    title: "PROTECT SCAMMER",
+    title: "WHOSSCAM",
 
     // 🔍 search-related
     searchPlaceholder: "Search posts, users, phone numbers...",

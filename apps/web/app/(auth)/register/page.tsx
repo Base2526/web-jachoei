@@ -1,10 +1,19 @@
-'use client';
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import { gql, useMutation } from '@apollo/client';
+"use client";
+
+import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { gql, useMutation } from "@apollo/client";
 import {
-  Card, Form, Input, Button, Checkbox, Typography, message, Progress, Space
-} from 'antd';
+  Card,
+  Form,
+  Input,
+  Button,
+  Checkbox,
+  Typography,
+  message,
+  Progress,
+  Space,
+} from "antd";
 
 const { Title, Text } = Typography;
 
@@ -14,7 +23,7 @@ const REGISTER_MUTATION = gql`
   }
 `;
 
-// ฟังก์ชันคำนวณความแข็งแรงของรหัสผ่านแบบง่าย ๆ
+// ---- password strength (เดิม) ----
 function calcStrength(pw: string) {
   let score = 0;
   if (!pw) return 0;
@@ -26,41 +35,92 @@ function calcStrength(pw: string) {
   return Math.min(score, 100);
 }
 
+// ---- username rules ----
+// แนวทางทั่วไป:
+// - 3-20 ตัวอักษร
+// - ใช้ a-z 0-9 และ _ . -
+// - ห้ามมีช่องว่าง
+// - ห้ามขึ้นต้น/ลงท้ายด้วย _ . -
+// - ห้ามมี _ . - ติดกันหลายตัว
+// - แนะนำ normalize เป็น lowercase เพื่อใช้เป็น login/unique key (กัน case collision)
+const USERNAME_MIN = 3;
+const USERNAME_MAX = 20;
+
+function normalizeUsername(input: string) {
+  return (input || "").trim().toLowerCase();
+}
+
+function validateUsername(usernameRaw: string): { ok: boolean; reason?: string } {
+  const u = (usernameRaw || "").trim();
+
+  if (!u) return { ok: false, reason: "กรุณากรอก Username" };
+
+  if (/\s/.test(u)) return { ok: false, reason: "Username ห้ามมีช่องว่าง" };
+
+  if (u.length < USERNAME_MIN)
+    return { ok: false, reason: `Username ต้องยาวอย่างน้อย ${USERNAME_MIN} ตัวอักษร` };
+
+  if (u.length > USERNAME_MAX)
+    return { ok: false, reason: `Username ต้องยาวไม่เกิน ${USERNAME_MAX} ตัวอักษร` };
+
+  // อนุญาตเฉพาะ a-z A-Z 0-9 _ . -
+  if (!/^[A-Za-z0-9._-]+$/.test(u))
+    return { ok: false, reason: "ใช้ได้เฉพาะ a-z, 0-9 และ _ . -" };
+
+  // ห้ามขึ้นต้น/ลงท้ายด้วยสัญลักษณ์
+  if (/^[._-]/.test(u) || /[._-]$/.test(u))
+    return { ok: false, reason: "ห้ามขึ้นต้นหรือจบด้วย _ . -" };
+
+  // ห้ามมีสัญลักษณ์ติดกัน เช่น ".." "__" "--" "._" "-." ฯลฯ
+  if (/[._-]{2,}/.test(u))
+    return { ok: false, reason: "ห้ามมี _ . - ติดกันหลายตัว" };
+
+  // (optional) กัน username ที่ดูเหมือนอีเมล
+  // if (u.includes("@")) return { ok: false, reason: "Username ห้ามมี @" };
+
+  return { ok: true };
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const [form] = Form.useForm();
-  const [password, setPassword] = useState('');
+
+  const [password, setPassword] = useState("");
   const strength = useMemo(() => calcStrength(password), [password]);
+
   const [mutate, { loading }] = useMutation(REGISTER_MUTATION);
 
   async function onSubmit(values: any) {
     try {
+      // normalize username เป็น lowercase ก่อนส่ง
+      const username = normalizeUsername(values.username);
+
       const payload = {
-        name: values.name.trim(),
+        username, // ✅ ใช้เป็น login
         email: values.email.trim(),
         phone: values.phone?.trim() || null,
-        password: values.password,       // ให้ backend เป็นคน hash + set cookie
-        agree: values.agree === true,    // เผื่อ backend ตรวจด้วย
-        // inviteCode: values.inviteCode || null, // ถ้ามี
+        password: values.password,
+        agree: values.agree === true,
       };
 
       const res = await mutate({ variables: { input: payload } });
       if (res.data?.registerUser) {
-        message.success('สมัครสมาชิกสำเร็จ');
-        // สมมติ backend set-cookie `user_token` แล้ว
-        router.replace('/'); // หรือ /account /dashboard ตาม flow ของคุณ
+        message.success("สมัครสมาชิกสำเร็จ");
+        router.replace("/");
       } else {
-        message.error('สมัครสมาชิกไม่สำเร็จ');
+        message.error("สมัครสมาชิกไม่สำเร็จ");
       }
     } catch (e: any) {
-      message.error(e?.message || 'เกิดข้อผิดพลาด');
+      message.error(e?.message || "เกิดข้อผิดพลาด");
     }
   }
 
   return (
-    <div style={{ display:'flex', justifyContent:'center', padding: '40px 16px' }}>
-      <Card style={{ width: 520, maxWidth: '100%' }}>
-        <Title level={3} style={{ marginBottom: 8 }}>Create your account</Title>
+    <div style={{ display: "flex", justifyContent: "center", padding: "40px 16px" }}>
+      <Card style={{ width: 520, maxWidth: "100%" }}>
+        <Title level={3} style={{ marginBottom: 8 }}>
+          Create your account
+        </Title>
         <Text type="secondary">สมัครสมาชิกเพื่อเริ่มต้นใช้งานระบบ</Text>
 
         <Form
@@ -70,45 +130,55 @@ export default function RegisterPage() {
           onFinish={onSubmit}
           initialValues={{ agree: false }}
         >
+          {/* ✅ Username */}
           <Form.Item
-            name="name"
-            label="Full name"
-            rules={[{ required: true, message: 'กรุณากรอกชื่อ' }]}
+            name="username"
+            label="Username (for login)"
+            normalize={(v) => normalizeUsername(v)}
+            rules={[
+              { required: true, message: "กรุณากรอก Username" },
+              () => ({
+                validator(_, v) {
+                  const r = validateUsername(String(v || ""));
+                  if (r.ok) return Promise.resolve();
+                  return Promise.reject(new Error(r.reason || "Username ไม่ถูกต้อง"));
+                },
+              }),
+            ]}
+            extra={
+              <Text type="secondary">
+                ใช้สำหรับ Login • 3–20 ตัว • ใช้ได้เฉพาะ a-z, 0-9 และ _ . - • ห้ามมีช่องว่าง
+              </Text>
+            }
           >
-            <Input placeholder="เช่น Somchai Jaidee" />
+            <Input placeholder="เช่น somchai.jaidee" autoCapitalize="none" autoCorrect="off" />
           </Form.Item>
 
           <Form.Item
             name="email"
             label="Email"
             rules={[
-              { required: true, message: 'กรุณากรอกอีเมล' },
-              { type: 'email', message: 'รูปแบบอีเมลไม่ถูกต้อง' },
+              { required: true, message: "กรุณากรอกอีเมล" },
+              { type: "email", message: "รูปแบบอีเมลไม่ถูกต้อง" },
             ]}
           >
-            <Input placeholder="you@example.com" />
+            <Input placeholder="you@example.com" autoCapitalize="none" />
           </Form.Item>
 
           <Form.Item
             name="phone"
             label="Phone (optional)"
-            rules={[
-              { pattern: /^[0-9+\-\s()]*$/, message: 'ตัวเลข/เครื่องหมายเท่านั้น' },
-            ]}
+            rules={[{ pattern: /^[0-9+\-\s()]*$/, message: "ตัวเลข/เครื่องหมายเท่านั้น" }]}
           >
             <Input placeholder="เช่น 0801234567" />
           </Form.Item>
-
-          {/* <Form.Item name="inviteCode" label="Invite code (optional)">
-            <Input placeholder="ถ้ามี" />
-          </Form.Item> */}
 
           <Form.Item
             name="password"
             label="Password"
             rules={[
-              { required: true, message: 'กรุณากรอกรหัสผ่าน' },
-              { min: 8, message: 'ความยาวอย่างน้อย 8 ตัวอักษร' },
+              { required: true, message: "กรุณากรอกรหัสผ่าน" },
+              { min: 8, message: "ความยาวอย่างน้อย 8 ตัวอักษร" },
             ]}
           >
             <Input.Password
@@ -118,26 +188,26 @@ export default function RegisterPage() {
           </Form.Item>
 
           <div style={{ marginTop: -8, marginBottom: 16 }}>
-            <Text type="secondary" style={{ display:'block', marginBottom: 4 }}>
+            <Text type="secondary" style={{ display: "block", marginBottom: 4 }}>
               Password strength
             </Text>
             <Progress
               percent={strength}
               showInfo={false}
-              strokeColor={strength >= 80 ? '#52c41a' : strength >= 50 ? '#faad14' : '#ff4d4f'}
+              strokeColor={strength >= 80 ? "#52c41a" : strength >= 50 ? "#faad14" : "#ff4d4f"}
             />
           </div>
 
           <Form.Item
             name="confirm"
             label="Confirm password"
-            dependencies={['password']}
+            dependencies={["password"]}
             rules={[
-              { required: true, message: 'กรุณายืนยันรหัสผ่าน' },
+              { required: true, message: "กรุณายืนยันรหัสผ่าน" },
               ({ getFieldValue }) => ({
                 validator(_, v) {
-                  if (!v || getFieldValue('password') === v) return Promise.resolve();
-                  return Promise.reject(new Error('รหัสผ่านไม่ตรงกัน'));
+                  if (!v || getFieldValue("password") === v) return Promise.resolve();
+                  return Promise.reject(new Error("รหัสผ่านไม่ตรงกัน"));
                 },
               }),
             ]}
@@ -150,16 +220,24 @@ export default function RegisterPage() {
             valuePropName="checked"
             rules={[
               {
-                validator: (_, v) => (v ? Promise.resolve() : Promise.reject(new Error('กรุณายอมรับเงื่อนไขการใช้งาน'))),
+                validator: (_, v) =>
+                  v ? Promise.resolve() : Promise.reject(new Error("กรุณายอมรับเงื่อนไขการใช้งาน")),
               },
             ]}
           >
             <Checkbox>
-              ฉันยอมรับ <a href="/terms" target="_blank">ข้อตกลงการใช้งาน</a> และ <a href="/privacy" target="_blank">นโยบายความเป็นส่วนตัว</a>
+              ฉันยอมรับ{" "}
+              <a href="/terms" target="_blank" rel="noreferrer">
+                ข้อตกลงการใช้งาน
+              </a>{" "}
+              และ{" "}
+              <a href="/privacy" target="_blank" rel="noreferrer">
+                นโยบายความเป็นส่วนตัว
+              </a>
             </Checkbox>
           </Form.Item>
 
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+          <Space style={{ width: "100%", justifyContent: "space-between" }}>
             <Text type="secondary">
               มีบัญชีแล้ว? <a href="/login">เข้าสู่ระบบ</a>
             </Text>
