@@ -106,6 +106,8 @@ export default function Page() {
   // === Facebook Login ===
   const FACEBOOK_APP_ID = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID!;
 
+  console.log("FACEBOOK_APP_ID =", process, FACEBOOK_APP_ID);
+
   const handleFacebookSuccess = async (response: any) => {
     try {
       const accessToken = response?.accessToken;
@@ -225,7 +227,7 @@ export default function Page() {
             />
 
         {/* Facebook */}
-        {/* <FacebookLogin
+        <FacebookLogin
           appId={FACEBOOK_APP_ID}
           onSuccess={handleFacebookSuccess}
           onFail={handleFacebookFail}
@@ -244,7 +246,7 @@ export default function Page() {
               Continue with Facebook
             </Button>
           )}
-        /> */}
+        />
       </Space>
 
       <Divider />

@@ -362,7 +362,6 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
           </Link>
         </div>
 
-
         {/* กลาง: Search */}
         <div
           style={{
