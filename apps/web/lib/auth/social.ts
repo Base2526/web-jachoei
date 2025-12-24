@@ -29,8 +29,8 @@ export async function verifyGoogle(accessToken: string) {
 
 export async function verifyFacebook(accessToken: string) {
   try {
-    const FB_APP_ID     = process.env.FACEBOOK_APP_ID!;
-    const FB_APP_SECRET = process.env.FACEBOOK_APP_SECRET!;
+    const FB_APP_ID     = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID!;
+    const FB_APP_SECRET = process.env.NEXT_PUBLIC_FACEBOOK_APP_SECRET!;
     
     // ตรวจสอบ token ว่าถูกต้องหรือไม่
     const debugUrl = `https://graph.facebook.com/debug_token?input_token=${accessToken}&access_token=${FB_APP_ID}|${FB_APP_SECRET}`;
