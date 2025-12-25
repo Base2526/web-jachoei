@@ -9,7 +9,9 @@ const en = {
     searchHintPrefix: "Press",
     searchHintSuffix: "to search quickly",
   },
-
+  footer: {
+    support: "Support"
+  },
   notificationPage: {
     title: "Notifications",
     tabAll: "All",

@@ -9,7 +9,9 @@ const th = {
     searchHintPrefix: "กด",
     searchHintSuffix: "เพื่อค้นหาอย่างรวดเร็ว",
   },
-
+  footer: {
+    support: "Support"
+  },
   notificationPage: {
     title: "การแจ้งเตือน",
     tabAll: "ทั้งหมด",

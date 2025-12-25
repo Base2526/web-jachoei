@@ -106,7 +106,8 @@ export default function RegisterPage() {
       const res = await mutate({ variables: { input: payload } });
       if (res.data?.registerUser) {
         message.success("สมัครสมาชิกสำเร็จ");
-        router.replace("/");
+        // router.replace("/login");
+        window.location.href = "/login";
       } else {
         message.error("สมัครสมาชิกไม่สำเร็จ");
       }

@@ -420,6 +420,24 @@ export const typeDefs = /* GraphQL */ `
     message: String!
   }
 
+  input SupportTicketInput {
+    name: String!
+    email: String!
+    phone: String
+    topic: String!
+    subject: String!
+    message: String!
+    ref: String
+    pageUrl: String
+    userAgent: String
+  }
+
+  type SupportTicketPayload {
+    ok: Boolean!
+    message: String
+    ticketId: String
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -475,5 +493,7 @@ export const typeDefs = /* GraphQL */ `
     deleteComment(id: ID!): Boolean!
 
     reportScamPhone(input: ReportScamPhoneInput!): ScamPhone!
+
+    createSupportTicket(input: SupportTicketInput!): SupportTicketPayload!
   }
 `;

@@ -1,4 +1,4 @@
-import Handlebars from "handlebars";
+import Mustache from "mustache";
 import { query } from "@/lib/db";
 
 export type EmailTemplateRow = {
@@ -38,8 +38,10 @@ export function renderEmailTemplate(
   tpl: EmailTemplateRow,
   data: Record<string, any>
 ): { subject: string; html: string; text?: string } {
-  const subject = Handlebars.compile(tpl.subject_tpl, { noEscape: true })(data);
-  const html = Handlebars.compile(tpl.html_tpl, { noEscape: true })(data);
-  const text = tpl.text_tpl ? Handlebars.compile(tpl.text_tpl, { noEscape: true })(data) : undefined;
+  // Mustache escape HTML by default (ปลอดภัย)
+  const subject = Mustache.render(tpl.subject_tpl, data);
+  const html = Mustache.render(tpl.html_tpl, data);
+  const text = tpl.text_tpl ? Mustache.render(tpl.text_tpl, data) : undefined;
+
   return { subject, html, text };
 }

@@ -121,6 +121,16 @@ function baseData(locale: string) {
   };
 }
 
+function escapeHtml(s: string) {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+
 export const resolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
@@ -1705,7 +1715,7 @@ export const resolvers = {
       web-1       |   name: 'Somkid Simajarn',
       web-1       |   picture: 'https://lh3.googleusercontent.com/a/ACg8ocJ1XvMZgNQRmpi7ceC4dIhQMd6f2AumSMhVvTXilWF8y7hVkJ8b=s96-c',
       web-1       |   provider: 'google',
-      web-1       |   provider_id: '112378752153101585347'
+      web-1       |   provider_id: 'xxxx'
       web-1       | }
       */
 
@@ -3508,6 +3518,35 @@ export const resolvers = {
       });
 
       return result;
-    }
+    },
+    createSupportTicket: async (_: any, { input }: any, ctx: any) => {
+      // ticketId แบบง่าย
+      const ticketId = `SUP-${Date.now()}`;
+
+      const subject = `[${ticketId}] ${input.topic.toUpperCase()}: ${input.subject}`;
+
+      const html = `
+        <h2>New Support Ticket</h2>
+        <p><b>Ticket:</b> ${ticketId}</p>
+        <p><b>Name:</b> ${input.name}</p>
+        <p><b>Email:</b> ${input.email}</p>
+        <p><b>Phone:</b> ${input.phone ?? "-"}</p>
+        <p><b>Topic:</b> ${input.topic}</p>
+        <p><b>Ref:</b> ${input.ref ?? "-"}</p>
+        <p><b>Page:</b> ${input.pageUrl ?? "-"}</p>
+        <p><b>User-Agent:</b> ${input.userAgent ?? "-"}</p>
+        <hr />
+        <pre style="white-space:pre-wrap">${escapeHtml(input.message)}</pre>
+      `;
+
+      await sendEmail({
+        to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
+        subject,
+        html,
+        text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
+      });
+
+      return { ok: true, message: "Received. We will reply soon.", ticketId };
+    },
   },
 };
