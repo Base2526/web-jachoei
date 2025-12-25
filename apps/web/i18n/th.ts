@@ -10,7 +10,7 @@ const th = {
     searchHintSuffix: "เพื่อค้นหาอย่างรวดเร็ว",
   },
   footer: {
-    support: "Support"
+    support: "ติดต่อฝ่ายสนับสนุน"
   },
   notificationPage: {
     title: "การแจ้งเตือน",

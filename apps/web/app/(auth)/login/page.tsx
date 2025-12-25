@@ -111,10 +111,10 @@ export default function Page() {
 
       /*
       {
-        "userID": "24884805111197908",
+        "userID": "xxxx",
         "expiresIn": 4507,
-        "accessToken": "EAAToCnQzHS4BQT0HADTZBpIrO7DzPuX22oPtEDjlZCCob8PI9ZCV9OnwTXvyuZBTqcgipkZC4W4r7b1qfkevhZBxl7XiMd1OOZAtl45uC2v88SZBBqoii9OLw49BlzhvegUUjKxi6SWiHo1aDbkOhHBl4PFbm3EZBqi3xfIbATTBZBBNs6NN3OW0Q6dQDhmtYjgBqwI1ZAgfHAhPo6DijUalN3hGRYcf3SUBPalxVvmU4Ty4ZAGMWB6JPQN0dQ0BZA0HyvsyS9ZA7yw5ZC8PAZDZD",
-        "signedRequest": "3ht6tutvTYNdh7ztabikypDuHnZgJ8njawKKsq81Ak4.eyJ1c2VyX2lkIjoiMjQ4ODQ4MDUxMTExOTc5MDgiLCJjb2RlIjoiQVFDVklIUk9NamE0TFdPSFQwRmVweFdubS1PTDFKaWFhNXpNYUt4aXp5bDhrWjcwRmMzMmVubjRjVU1qV2VDOGtFYUhpOUUzT2dSNWpTeVRWLWNQOVVCV3piM1FyYnNyZ3hiMU5XblBjMFZZcjhTR1JfcHFYYnlESGMwX3VqOXFPR2FRSEhmRmhwRTZVci1BN0NKUWdYZmpfTURROFFZM0FfOFd5NjMzQ2lFY0Y0aDZyaTN4VEwwS2ZNbWJTRm1tdzR3blhzTDY0dXVJZjBTMjF4T3MtcnJfcExiZnFMNElwUm13Ti03X2otRURhb05FY1ZVWmdnOWRmaUlqQVA5aVJYVHJXb2FKamw4RkI2ZUhKdHpRdmEtS0JnbUpCZGdYOXdLYzRoVDc2Vi1najZ5Y1hMbFB6ZkZQZlhhOWExX1Q4MThSeHFpejBKb2g0LXVlYm1QN0d0SWQ2c2NfMHhndjd0TXBKc2ZxZEl6eF9IS2N2LU9BUEFteElIbGlwMlYzaUd5R0dHdkt0ZHpvOEp4WnNqeFBUbkJPIiwiYWxnb3JpdGhtIjoiSE1BQy1TSEEyNTYiLCJpc3N1ZWRfYXQiOjE3NjY1MDQ2OTN9",
+        "accessToken": "xxx",
+        "signedRequest": "x.xxx",
         "graphDomain": "facebook",
         "data_access_expiration_time": 1774280693
       }
@@ -249,7 +249,7 @@ export default function Page() {
             /*
             {
               "name": "SK Sim",
-              "email": "android.somkid@gmail.com",
+              "email": "android.xxx@gmail.com",
               "picture": {
                   "data": {
                       "height": 51,
@@ -258,7 +258,7 @@ export default function Page() {
                       "width": 50
                   }
               },
-              "id": "24884805111197908"
+              "id": "xxxx"
           }
             */
           }}
