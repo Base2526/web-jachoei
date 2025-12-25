@@ -379,7 +379,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   input RegisterInput {
-    name: String!
+    username: String!
     email: String!
     phone: String
     password: String!
@@ -415,6 +415,11 @@ export const typeDefs = /* GraphQL */ `
     app_version: String        # 1.0.3
   }
 
+  type BasicResponse {
+    ok: Boolean!
+    message: String!
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -424,6 +429,7 @@ export const typeDefs = /* GraphQL */ `
     loginMobile(email:String!, password:String!): LoginResult!
 
     registerUser(input: RegisterInput!): Boolean!
+    verifyEmail(token: String!): BasicResponse!
 
     upsertPost(id: ID, data: PostInput!, images: [Upload!], image_ids_delete: [ID!]): Post!
     deletePost(id: ID!): Boolean!
