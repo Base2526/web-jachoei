@@ -8,7 +8,8 @@ import {
   SafetyCertificateOutlined,
   CodeOutlined,
   BookOutlined,
-  HeartOutlined
+  HeartOutlined,
+  CustomerServiceOutlined
 } from "@ant-design/icons";
 
 import Breadcrumbs from "./Breadcrumbs";
@@ -212,6 +213,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               >
                 <BookOutlined />
                 License
+              </Link>
+
+              {/* 🔹 Support */}
+              <Link
+                href="/support"
+                style={footerLinkStyle}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.background = "rgba(0,0,0,0.045)";
+                  (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(0,0,0,0.14)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).style.background = "rgba(0,0,0,0.02)";
+                  (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(0,0,0,0.08)";
+                }}
+              >
+                <CustomerServiceOutlined />
+                {t("footer.support") ?? "Support"}
               </Link>
 
               <Link

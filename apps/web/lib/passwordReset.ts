@@ -16,7 +16,54 @@ export async function createResetToken(userId: number) {
 }
 
 // ตัวอย่าง placeholder สำหรับส่งอีเมล (เปลี่ยนเป็น provider ของคุณ)
-export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {
-  console.log("[SEND RESET EMAIL] to:", toEmail, " link:", resetUrl);
-  // ใช้ SMTP/Sendgrid/SES ตามระบบคุณ
+// export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {
+//   console.log("[SEND RESET EMAIL] to:", toEmail, " link:", resetUrl);
+//   // ใช้ SMTP/Sendgrid/SES ตามระบบคุณ
+// }
+import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
+import { sendEmail } from "@/lib/mailer";
+
+function baseData(locale: string) {
+  return {
+    app_name: process.env.APP_NAME ?? "WhosScam",
+    support_url: process.env.SUPPORT_URL ?? "https://whosscam.com/support",
+    year: new Date().getFullYear(),
+    locale,
+  };
 }
+
+export async function sendPasswordResetEmail(args: {
+  to: string;
+  locale?: string;
+  userName?: string;
+  resetUrl: string;
+  expiryMinutes?: number;
+  requestIp?: string;
+  requestDevice?: string;
+  requestTime?: string;
+}) {
+  const locale = args.locale ?? "en";
+
+  // 1) load template from PG
+  const tpl = await getLatestEmailTemplate("auth.reset", locale);
+
+  // 2) render variables
+  const rendered = renderEmailTemplate(tpl, {
+    ...baseData(locale),
+    user_name: args.userName ?? args.to,
+    reset_url: args.resetUrl,
+    expiry_minutes: args.expiryMinutes ?? 30,
+    request_ip: args.requestIp ?? "-",
+    request_device: args.requestDevice ?? "-",
+    request_time: args.requestTime ?? new Date().toISOString(),
+  });
+
+  // 3) send email via SendGrid
+  await sendEmail({
+    to: args.to,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+  });
+}
+

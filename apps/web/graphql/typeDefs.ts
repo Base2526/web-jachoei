@@ -379,7 +379,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   input RegisterInput {
-    name: String!
+    username: String!
     email: String!
     phone: String
     password: String!
@@ -415,6 +415,29 @@ export const typeDefs = /* GraphQL */ `
     app_version: String        # 1.0.3
   }
 
+  type BasicResponse {
+    ok: Boolean!
+    message: String!
+  }
+
+  input SupportTicketInput {
+    name: String!
+    email: String!
+    phone: String
+    topic: String!
+    subject: String!
+    message: String!
+    ref: String
+    pageUrl: String
+    userAgent: String
+  }
+
+  type SupportTicketPayload {
+    ok: Boolean!
+    message: String
+    ticketId: String
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -424,6 +447,7 @@ export const typeDefs = /* GraphQL */ `
     loginMobile(email:String!, password:String!): LoginResult!
 
     registerUser(input: RegisterInput!): Boolean!
+    verifyEmail(token: String!): BasicResponse!
 
     upsertPost(id: ID, data: PostInput!, images: [Upload!], image_ids_delete: [ID!]): Post!
     deletePost(id: ID!): Boolean!
@@ -469,5 +493,7 @@ export const typeDefs = /* GraphQL */ `
     deleteComment(id: ID!): Boolean!
 
     reportScamPhone(input: ReportScamPhoneInput!): ScamPhone!
+
+    createSupportTicket(input: SupportTicketInput!): SupportTicketPayload!
   }
 `;

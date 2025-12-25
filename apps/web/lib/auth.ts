@@ -1,5 +1,5 @@
 import { GraphQLError } from "graphql/error";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 interface RequireAuthOptions {
   optional?: boolean;      // soft mode → ไม่ throw
@@ -81,7 +81,10 @@ export function requireAuth(ctx: any, opts: RequireAuthOptions = {}) {
   });
 }
 
-
 export function sha256Hex(input: string) {
   return createHash("sha256").update(input).digest("hex");
+}
+
+export function generateRawToken() {
+  return randomBytes(32).toString("hex");
 }

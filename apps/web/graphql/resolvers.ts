@@ -6,11 +6,12 @@ import { pubsub } from "@/lib/pubsub";
 import * as jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 import path from "path";
+import GraphQLJSON from "graphql-type-json";
 
 import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
-import { requireAuth, sha256Hex } from "@/lib/auth"
+import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
 import { addLog } from '@/lib/log/log';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -18,8 +19,11 @@ import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 // import { signUserToken } from "@/lib/auth/jwt";
 
 import { GraphQLUpload } from "graphql-upload-nextjs";
-
+import sgMail from "@sendgrid/mail";
 import { createNotification } from '@/lib/notifications/service'; 
+
+import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
+import { sendEmail } from "@/lib/mailer";
 
 export const COMMENT_ADDED = 'COMMENT_ADDED';
 export const COMMENT_UPDATED = 'COMMENT_UPDATED';
@@ -27,6 +31,18 @@ export const COMMENT_DELETED = 'COMMENT_DELETED';
 export const NOTI_CREATED   = 'NOTI_CREATED';
 
 export const INCOMING_MESSAGE  = 'INCOMING_MESSAGE';
+
+sgMail.setApiKey(process.env.NEXT_PUBLIC_SENDGRID_API_KEY!);
+
+// (async () => {
+//   const resp = await sgMail.send({
+//     to: "android.somkid@gmail.com",
+//     from: process.env.NEXT_PUBLIC_SENDGRID_FROM_EMAIL!,
+//     subject: "SendGrid test",
+//     html: "<b>Hello</b>",
+//   });
+//   console.log("=====> OK", resp[0].statusCode);
+// })();
 
 const isDev = process.env.NODE_ENV !== "production";
 const useSecureCookie = process.env.COOKIE_SECURE === "true";
@@ -96,11 +112,52 @@ function calcRisk(reportCount: number): number {
   return 10;
 }
 
+function baseData(locale: string) {
+  return {
+    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "Whosscam",
+    year: new Date().getFullYear(),
+    support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://whosscam.com/support",
+    locale,
+  };
+}
+
+function escapeHtml(s: string) {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 
 export const resolvers = {
+  JSON: GraphQLJSON,
   Upload: GraphQLUpload,
   Query: {
-    _health: () => "ok",
+    _health: async() =>{
+
+      // const locale = "en";
+
+      // // 1) ดึง template จาก DB
+      // const tpl = await getLatestEmailTemplate("auth.verify", locale);
+
+      // // 2) render
+      // const data = { ...baseData(locale) };
+      // // payload ควรมี: user_name, verify_url, expiry_minutes
+      // const rendered = renderEmailTemplate(tpl, data);
+
+      // // // 3) ส่ง email
+      // await sendEmail({
+      //   to: "android.somkid@gmail.com",
+      //   subject: rendered.subject,
+      //   html: rendered.html,
+      //   text: rendered.text,
+      // });
+
+      // console.log("_health = " , process.env.NEXT_PUBLIC_SENDGRID_API_KEY, rendered);
+      return "ok";
+    } ,
     me: async (_: any, {  }: { }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optional: true });
       console.log("[Query] me :", author_id);
@@ -1605,7 +1662,6 @@ export const resolvers = {
         user,
       };
     },
-
     loginWithSocial: async (_: any, { input }: any, ctx: any) => {
       const { provider, accessToken } = input;
 
@@ -1659,7 +1715,7 @@ export const resolvers = {
       web-1       |   name: 'Somkid Simajarn',
       web-1       |   picture: 'https://lh3.googleusercontent.com/a/ACg8ocJ1XvMZgNQRmpi7ceC4dIhQMd6f2AumSMhVvTXilWF8y7hVkJ8b=s96-c',
       web-1       |   provider: 'google',
-      web-1       |   provider_id: '112378752153101585347'
+      web-1       |   provider_id: 'xxxx'
       web-1       | }
       */
 
@@ -1756,7 +1812,7 @@ export const resolvers = {
       };
     },
     registerUser: async(_: any, { input }: any) => {
-      const { name, email, phone, password, agree } = input;
+      const { username, email, phone, password, agree } = input;
       if (!agree) throw new Error('Please accept terms');
       const { rows: exists } = await query('SELECT 1 FROM users WHERE email=$1', [email]);
       if (exists.length) throw new Error('Email already registered');
@@ -1765,34 +1821,93 @@ export const resolvers = {
       const { rows: [u] } = await query(
         `INSERT INTO users(name,email,phone,role,password_hash)
         VALUES($1,$2,$3,'Subscriber',$4) RETURNING id,email,role`,
-        [name, email, phone, password_hash]
+        [username, email, phone, password_hash]
       );
+
+      /* =========================
+        CREATE VERIFY TOKEN
+      ========================= */
+      const rawToken = generateRawToken();        // ส่งให้ user
+      const tokenHash = sha256Hex(rawToken);         // เก็บใน DB
+      const expiryMinutes = 30;
+
+      await query(
+        `INSERT INTO email_verify_tokens(user_id, token_hash, expires_at)
+        VALUES ($1, $2, now() + interval '${expiryMinutes} minutes')`,
+        [u.id, tokenHash]
+      );
+
+      const verify_url =`${process.env.NEXT_PUBLIC_BASE_URL}/verify-email?token=${rawToken}`;
+
+      /* =========================
+        SEND EMAIL (template)
+      ========================= */
+      const locale = "en";
+      const tpl = await getLatestEmailTemplate("auth.verify", locale);
+
+      const rendered = renderEmailTemplate(tpl, {
+        ...baseData(locale),
+        user_name: u.name,
+        verify_url,
+        expiry_minutes: expiryMinutes,
+      });
+
+      await sendEmail({
+        to: email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+      });
+
+      // sendMail
 
       const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
       cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: useSecureCookie && !isDev, path: '/' });
 
       return true;
     },
-    requestPasswordReset: async(_: any, { email }: { email: string }, ctx: any)=>{
+    requestPasswordReset: async (_: any, { email }: { email: string }, ctx: any) => {
       // 1) หา user จากอีเมล (อย่า leak ว่ามี/ไม่มี)
-      const { rows } = await query(`SELECT id, email FROM users WHERE email = $1`, [email]);
+      const { rows } = await query(
+        `SELECT id, email, name, language FROM users WHERE email = $1 LIMIT 1`,
+        [email]
+      );
+
       if (rows.length === 0) {
-        // กลับ true เสมอเพื่อไม่ให้เดาอีเมลง่าย
-        return true;
+        return true; // กัน enumeration
       }
+
       const user = rows[0];
 
-      // (ออปชัน) ทำ rate-limit by IP/email เพื่อลด spam
-
-      // 2) สร้าง token + insert
-      const { token } = await createResetToken(user.id);
+      // 2) สร้าง token + insert (ของคุณมีอยู่แล้ว)
+      const { token, expiresAt } = await createResetToken(user.id);
+      // ถ้า createResetToken ของคุณยังไม่ return expiresAt -> ไม่เป็นไร (ใช้ default 30 นาทีใน email ได้)
 
       // 3) สร้างลิงก์ไปหน้า /reset
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://yourapp.com";
       const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
 
-      // 4) ส่งเมล
-      await sendPasswordResetEmail(user.email, resetUrl);
+      // 4) meta สำหรับ email (optional)
+      const requestIp =
+        ctx?.ip ||
+        ctx?.req?.headers?.["x-forwarded-for"] ||
+        ctx?.req?.socket?.remoteAddress ||
+        "-";
+
+      const requestDevice = ctx?.req?.headers?.["user-agent"] || "-";
+
+      // 5) ส่งเมลผ่าน template ใน PG + SendGrid
+      await sendPasswordResetEmail({
+        to: user.email,
+        locale: user.language ?? "en",
+        userName: user.name ?? user.email,
+        resetUrl,
+        expiryMinutes: 30, // หรือคำนวณจาก expiresAt ถ้ามี
+        requestIp: String(requestIp),
+        requestDevice: String(requestDevice),
+        requestTime: new Date().toISOString(),
+      });
+
       return true;
     },
     resetPassword: async(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any)=>{
@@ -1820,7 +1935,38 @@ export const resolvers = {
 
       return true;
     },
+    verifyEmail: async (_: any, { token }: { token: string }) => {
+      const tokenHash = sha256Hex(token);
 
+      const { rows } = await query(
+        `
+        SELECT evt.id, evt.user_id
+        FROM email_verify_tokens evt
+        WHERE evt.token_hash = $1
+          AND evt.used_at IS NULL
+          AND evt.expires_at > now()
+        LIMIT 1
+        `,
+        [tokenHash]
+      );
+
+      if (!rows[0]) {
+        return { ok: false, message: "Invalid or expired token" };
+      }
+
+      const { id: tokenId, user_id } = rows[0];
+
+      await query(`UPDATE users SET is_email_verified = true WHERE id = $1`, [
+        user_id,
+      ]);
+
+      await query(
+        `UPDATE email_verify_tokens SET used_at = now() WHERE id = $1`,
+        [tokenId]
+      );
+
+      return { ok: true, message: "Email verified successfully" };
+    },
     // resolver ตัวอย่าง
     updateMe: async (_:any, { data }: { data: any }, ctx:any) => {
       const uid = requireAuth(ctx); // ต้องล็อกอิน
@@ -3372,6 +3518,35 @@ export const resolvers = {
       });
 
       return result;
-    }
+    },
+    createSupportTicket: async (_: any, { input }: any, ctx: any) => {
+      // ticketId แบบง่าย
+      const ticketId = `SUP-${Date.now()}`;
+
+      const subject = `[${ticketId}] ${input.topic.toUpperCase()}: ${input.subject}`;
+
+      const html = `
+        <h2>New Support Ticket</h2>
+        <p><b>Ticket:</b> ${ticketId}</p>
+        <p><b>Name:</b> ${input.name}</p>
+        <p><b>Email:</b> ${input.email}</p>
+        <p><b>Phone:</b> ${input.phone ?? "-"}</p>
+        <p><b>Topic:</b> ${input.topic}</p>
+        <p><b>Ref:</b> ${input.ref ?? "-"}</p>
+        <p><b>Page:</b> ${input.pageUrl ?? "-"}</p>
+        <p><b>User-Agent:</b> ${input.userAgent ?? "-"}</p>
+        <hr />
+        <pre style="white-space:pre-wrap">${escapeHtml(input.message)}</pre>
+      `;
+
+      await sendEmail({
+        to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
+        subject,
+        html,
+        text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
+      });
+
+      return { ok: true, message: "Received. We will reply soon.", ticketId };
+    },
   },
 };
