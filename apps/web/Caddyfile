@@ -1,8 +1,0 @@
-https://whosscam.com:3443 {
-  reverse_proxy localhost:3000
-  tls ./whosscam.com.pem ./whosscam.com-key.pem
-
-
-  # ถ้า WS ของคุณอยู่ที่ 8081 และ path เป็น /graphql
-  reverse_proxy /graphql* localhost:8081
-}

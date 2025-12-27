@@ -1,8 +1,0 @@
-# public/uploads/.gitignore
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
-!/.gitkeep   # อนุญาตให้ track .gitkeep เพื่อคงโฟลเดอร์ไว้
-

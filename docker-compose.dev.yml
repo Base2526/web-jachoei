@@ -25,3 +25,7 @@ services:
       - ./apps/web:/app/apps/web
       - ./packages:/app/packages
       - ./storage:/app/storage
+
+  caddy:
+    ports:
+      - "443:443"
