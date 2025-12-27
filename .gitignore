@@ -8,6 +8,7 @@ out/
 .DS_Store
 
 apps/web/certs
+apps/web/Caddyfile
 apps/web/package-lock.json
 apps/ws/package-lock.json
 apps/ws/src/db/package-lock.json
