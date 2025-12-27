@@ -67,5 +67,19 @@ services:
       - redis
       - ws
 
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - web
+      - ws
+    volumes:
+      - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
+      # แนะนำให้เก็บ cert/key ไว้ในโฟลเดอร์ certs
+      - ./apps/web/certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

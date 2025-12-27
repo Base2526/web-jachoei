@@ -10,8 +10,8 @@ services:
       WS_PATH: "/graphql"
       REDIS_URL: ${REDIS_URL}
       DATABASE_URL: postgres://app:app@postgres:5432/appdb
-    ports:
-      - "8081:8080"
+    # ports:
+    #   - "8081:8080"
     depends_on:
       - postgres
       - redis
@@ -43,11 +43,21 @@ services:
       STORAGE_DIR: /app/storage
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
       COOKIE_SECURE: ${COOKIE_SECURE}
-    ports:
-      - "80:3000"   # 👈 prod ใช้ port 80 ด้านนอก
+    # ports:
+    #   - "80:3000"   # 👈 prod ใช้ port 80 ด้านนอก
     depends_on:
       - postgres
       - redis
       - ws
     volumes:
       - ./storage:/app/storage
+
+  caddy:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./apps/web/certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
