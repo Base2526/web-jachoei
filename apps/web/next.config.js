@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    appDir: true,
+    // appDir: true,
     optimizePackageImports: ['antd'],
     externalDir: true,
   },
@@ -19,6 +19,9 @@ const nextConfig = {
     return config;
   },
   transpilePackages: ['antd'],
+
+  productionBrowserSourceMaps: false,
+  swcMinify: true,
 };
 
 export default nextConfig;

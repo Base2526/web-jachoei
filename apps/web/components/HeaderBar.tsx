@@ -12,7 +12,8 @@ import {
   message,
   AutoComplete,
   Input,
-  Modal
+  Modal,
+  Image
 } from "antd";
 import {
   UserOutlined,
@@ -338,10 +339,11 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
               // ================================
               // 📱 MOBILE → แสดงเป็น Icon
               // ================================
-              <img
+              <Image
                 src="/icons/home-mobile.svg" // ใช้ icon จริงของคุณ
                 alt="Home"
                 style={{ width: 26, height: 26 }}
+                preview={false}
               />
             ) : (
               // ================================
