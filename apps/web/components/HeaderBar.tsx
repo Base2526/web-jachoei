@@ -349,17 +349,38 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
               // ================================
               // 🖥 DESKTOP → แสดงชื่อ Title
               // ================================
-              <Text
+              <Link
+                href="/"
                 style={{
-                  color: "#000",
-                  fontSize: 18,
-                  letterSpacing: 0.5,
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  textDecoration: "none",
                 }}
+                aria-label="Go to home"
               >
-                {t("header.title")}
-              </Text>
+                <Image
+                  src="/icons/home-mobile.svg"
+                  alt="Home"
+                  width={26}
+                  height={26}
+                  style={{ width: 26, height: 26 }}
+                />
+          
+                <Text
+                  style={{
+                    color: "#000",
+                    fontSize: 18,
+                    letterSpacing: 0.5,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    lineHeight: 1,
+                    margin: 0,
+                  }}
+                >
+                  {t("header.title")}
+                </Text>
+              </Link>
             )}
           </Link>
         </div>
