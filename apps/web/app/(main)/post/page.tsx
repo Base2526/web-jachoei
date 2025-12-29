@@ -4,7 +4,7 @@ import { Descriptions, Card } from "antd";
 
 const Q = gql`query($id:ID!){ post(id:$id){ id title detail status author{ id name avatar } } }`;
 
-function View({ id }:{id:string}){
+function PostPage({ id }:{id:string}){
   const { data } = useQuery(Q,{ variables:{ id } });
   const p = data?.post;
   if (!p) return <div>Loading...</div>;
@@ -19,5 +19,5 @@ function View({ id }:{id:string}){
 }
 
 export default function Page({ params }:{ params:{ id:string }}){
-  return <View id={params.id}/>;
+  return <PostPage id={params.id}/>;
 }

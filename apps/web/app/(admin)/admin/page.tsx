@@ -3,9 +3,6 @@ import { Card, Row, Col, Statistic, Space, Button, Badge, Typography, Table, Tag
 import { UserOutlined, FileTextOutlined, FileImageOutlined, DatabaseOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
-
-// import { useSession } from '@/lib/useSession'
-
 import ThumbGrid from '@/components/ThumbGrid';
 
 const { Title } = Typography;
