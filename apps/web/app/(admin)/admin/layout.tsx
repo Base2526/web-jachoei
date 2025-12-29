@@ -1,6 +1,8 @@
 // apps/web/app/(admin)/admin/layout.tsx
 // import { cookies } from "next/headers";
 // import * as jwt from "jsonwebtoken";
+import type { Metadata } from "next";
+
 import AdminLayoutClient from "@/components/AdminLayoutClient";
 
 // --- ค่าคงที่ ---
@@ -31,6 +33,14 @@ import AdminLayoutClient from "@/components/AdminLayoutClient";
 //     return null;
 //   }
 // }
+
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 // --- Layout ---
 export default async function AdminLayout({

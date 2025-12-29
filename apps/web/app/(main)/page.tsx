@@ -561,6 +561,7 @@ function PostsList() {
   // ===== Desktop view: Table =====
   return (
     <div style={{ padding: 5 }}>
+      <>Desktop view: Table</>
       <Table
         rowKey="id"
         loading={loading}
@@ -569,16 +570,13 @@ function PostsList() {
         size="middle"
         tableLayout="fixed"
         scroll={{ x: 1100 }}
-        rowClassName={(_, index) =>
-          index % 2 === 0 ? "row-even" : "row-odd"
-        }
+        rowClassName={(_, index) => index % 2 === 0 ? "row-even" : "row-odd" }
         pagination={{
           current: page,
           pageSize,
           total,
           showSizeChanger: true,
-          showTotal: (tot, range) =>
-            `${range[0]}-${range[1]} of ${tot} items`,
+          showTotal: (tot, range) => `${range[0]}-${range[1]} of ${tot} items`,
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);
@@ -591,5 +589,27 @@ function PostsList() {
 }
 
 export default function Page() {
-  return <PostsList />;
+  const SITE_URL  = process.env.NEXT_PUBLIC_BASE_URL || 'https://whosscam.com';
+
+  return  <>
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{
+                __html: JSON.stringify({
+                  "@context": "https://schema.org",
+                  "@type": "WebSite",
+                  name: "Whosscam",
+                  alternateName: "WhosScam",
+                  url: SITE_URL,
+                  description: "ฐานข้อมูลการโกงออนไลน์",
+                  potentialAction: {
+                    "@type": "SearchAction",
+                    target: `${SITE_URL}/search?q={query}`,
+                    "query-input": "required name=query",
+                  },
+                }),
+              }}
+            />
+            <PostsList />
+          </>;
 }
