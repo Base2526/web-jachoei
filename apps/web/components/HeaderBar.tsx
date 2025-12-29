@@ -350,37 +350,46 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
               // 🖥 DESKTOP → แสดงชื่อ Title
               // ================================
               <Link
-                href="/"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 10,
-                  textDecoration: "none",
-                }}
-                aria-label="Go to home"
-              >
-                <Image
-                  src="/icons/home-mobile.svg"
-                  alt="Home"
-                  width={26}
-                  height={26}
-                  style={{ width: 26, height: 26 }}
-                />
-          
-                <Text
-                  style={{
-                    color: "#000",
-                    fontSize: 18,
-                    letterSpacing: 0.5,
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    lineHeight: 1,
-                    margin: 0,
-                  }}
-                >
-                  {t("header.title")}
-                </Text>
-              </Link>
+      href="/"
+      aria-label="Go to home"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "6px 8px",
+        textDecoration: "none",
+        lineHeight: 1,
+      }}
+    >
+      {/* ICON */}
+      <Image
+        src="/icons/home-mobile.svg"
+        alt="WHOSSCAM"
+        width={28}
+        height={28}
+        style={{
+          width: 28,
+          height: 28,
+          display: "block",
+        }}
+      />
+
+      {/* TITLE */}
+      <Text
+        style={{
+          color: "#000",
+          fontSize: 22,
+          fontWeight: 700,
+          letterSpacing: 1,
+          whiteSpace: "nowrap",
+          lineHeight: 1,
+          margin: 0,
+        }}
+      >
+        {t("header.title")}
+      </Text>
+    </Link>
+            
             )}
           </Link>
         </div>
