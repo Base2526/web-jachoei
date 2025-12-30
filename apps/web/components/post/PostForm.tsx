@@ -549,10 +549,10 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
                 key={`${number.id}-${index}`}
                 style={{
                   marginBottom: 20,
-                  borderColor: '#d9d9d9',
                   padding: '10px',
-                  borderStyle: 'dashed',
-                  marginTop: '10px'
+                  marginTop: '10px',
+                  border: "1px solid #d9d9d9",
+                  borderRadius: 6
                 }}
               >
                 <Form.Item
@@ -590,10 +590,10 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
                 key={`${account.id}-${index}`}
                 style={{
                   marginBottom: 20,
-                  borderColor: '#d9d9d9',
                   padding: '10px',
-                  borderStyle: 'dashed',
-                  marginTop: '10px'
+                  marginTop: '10px',
+                  border: "1px solid #d9d9d9",
+                  borderRadius: 6
                 }}
               >
                 <Form.Item
