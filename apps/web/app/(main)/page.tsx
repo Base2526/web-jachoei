@@ -355,17 +355,21 @@ function PostsList() {
           loading={loading}
           dataSource={items}
           rowKey="id"
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            onChange: (p, ps) => {
-              setPage(p);
-              setPageSize(ps);
-              refetch({ q: null, limit: ps, offset: (p - 1) * ps });
-            },
-          }}
+          pagination={
+            items?.length
+            ? {
+                current: page,
+                pageSize,
+                total,
+                showSizeChanger: true,
+                onChange: (p, ps) => {
+                  setPage(p);
+                  setPageSize(ps);
+                  refetch({ q: null, limit: ps, offset: (p - 1) * ps });
+                },
+              }
+            : false
+          }
           renderItem={(r: any) => (
             <List.Item style={{ padding: 8 }}>
               <Card
@@ -397,11 +401,10 @@ function PostsList() {
                       )}
                       <Text type="secondary" style={{ fontSize: 11 }}>
                         {r.created_at
-                          ? new Date(r.created_at).toLocaleString()
+                          ? new Date(Number(r.created_at)).toLocaleString()
                           : ""}
                       </Text>
                     </div>
-
                     {r.author && (
                       <div style={{ marginTop: 4 }}>
                         <Text type="secondary" style={{ fontSize: 11 }}>
@@ -561,7 +564,6 @@ function PostsList() {
   // ===== Desktop view: Table =====
   return (
     <div style={{ padding: 5 }}>
-      <>Desktop view: Table</>
       <Table
         rowKey="id"
         loading={loading}
