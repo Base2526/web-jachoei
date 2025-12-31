@@ -592,7 +592,7 @@ export const resolvers = {
     },
     myBookmarks: async (_: any, { limit = 20, offset = 0 }: any, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Query] myBookmarks :", ctx, author_id);
+      console.log("[Query] myBookmarks :",  author_id);
 
       const { rows } = await query(
         `
@@ -1969,21 +1969,19 @@ export const resolvers = {
     },
     // resolver ตัวอย่าง
     updateMe: async (_:any, { data }: { data: any }, ctx:any) => {
-      const uid = requireAuth(ctx); // ต้องล็อกอิน
-      const { name, email, phone, username, language } = data;
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const { name, phone, username, language } = data;
 
-      console.log("[Mutation] updateMe :", name, email, phone, username, language );
+      console.log("[Mutation] updateMe :", author_id, name, phone, username, language );
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
-          email = COALESCE($2, email),
-          phone = COALESCE($3, phone),
-          username = COALESCE($4, username),
-          language = COALESCE($5, language),
+          phone = COALESCE($2, phone),
+          language = COALESCE($3, language),
           updated_at = NOW()
-        WHERE id = $6
+        WHERE id = $4
         RETURNING id, name, email, phone, username, language, avatar`,
-        [name, email, phone, username, language, uid]
+        [name, phone, language, author_id]
       );
       return rows[0];
     },

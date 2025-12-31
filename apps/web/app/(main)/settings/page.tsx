@@ -432,9 +432,11 @@ export default function SettingsPage() {
         name: values.name?.trim() || '',
         phone: values.phone?.trim() || '',
         language: values.language || 'en',
-        email: values.email?.trim() || '',
+        // email: values.email?.trim() || '',
         username: values.username?.trim() || '',
       };
+
+      console.log("[payload] = ", payload);
       const res = await updateMe({ variables: { data: payload } });
       if (res?.data?.updateMe?.id) {
         message.success('Profile & Account saved');
@@ -496,7 +498,7 @@ export default function SettingsPage() {
                  {/* บัญชี */}
                 <Divider />
                 <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
-                  <Input placeholder="name@example.com"  disabled={true}/>
+                  <Input placeholder="name@example.com" disabled={true}/>
                 </Form.Item>
                 <Form.Item
                   name="username"
@@ -504,7 +506,7 @@ export default function SettingsPage() {
                   tooltip="Unique login/handle (if your system supports)"
                   rules={[{ required: true }]}
                 >
-                  <Input placeholder="username" />
+                  <Input placeholder="username" disabled={true}/>
                 </Form.Item>
                 <Form.Item name="phone" label="Phone">
                   <Input placeholder="Your phone" />
