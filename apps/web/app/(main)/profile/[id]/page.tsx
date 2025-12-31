@@ -6,6 +6,8 @@ import { MessageOutlined, DeleteOutlined, EditOutlined, CopyOutlined } from '@an
 
 import { useSessionCtx } from '@/lib/session-context';
 
+import { maskEmailKeepLength } from "@/lib/maskEmail";
+
 const Q = gql`
   query($id: ID!) {
     user(id: $id) {
@@ -67,7 +69,7 @@ function Profile({ id }: { id: string }) {
             </Avatar>
           </Descriptions.Item>
           <Descriptions.Item label="Name">{u.name}</Descriptions.Item>
-          <Descriptions.Item label="Email">{u.email || "-"}</Descriptions.Item>
+          <Descriptions.Item label="Email">{maskEmailKeepLength(u.email) || "-"}</Descriptions.Item>
           <Descriptions.Item label="Phone">{u.phone || "-"}</Descriptions.Item>
           <Descriptions.Item label="Role">{u.role}</Descriptions.Item>
           <Descriptions.Item label="Joined">
