@@ -1198,7 +1198,7 @@ export const resolvers = {
       return roots;
     },
     globalSearch: async (_: any, { q }: { q: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] globalSearch (pro) :", author_id, q);
 
       const term = (q || "").trim();
