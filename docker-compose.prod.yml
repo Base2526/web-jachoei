@@ -68,7 +68,8 @@ services:
       - redis
       - ws
     volumes:
-      - ./storage:/app/storage
+      # - ./storage:/app/storage
+      - /mnt/volume_sgp1_01/storage:/app/storage
 
   caddy:
     ports:

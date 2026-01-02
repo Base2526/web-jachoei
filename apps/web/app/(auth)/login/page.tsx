@@ -237,7 +237,7 @@ export default function Page() {
               useOneTap={false}
             />
 
-        {/* Facebook */}
+        {/* Facebook 
         <FacebookLogin
           appId={FACEBOOK_APP_ID}
           onSuccess={handleFacebookSuccess}
@@ -246,21 +246,21 @@ export default function Page() {
             // optional: ดูข้อมูล profile ถ้าต้องใช้
             console.log('FB profile', response);
 
-            /*
-            {
-              "name": "SK Sim",
-              "email": "android.xxx@gmail.com",
-              "picture": {
-                  "data": {
-                      "height": 51,
-                      "is_silhouette": false,
-                      "url": "https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=24884805111197908&height=50&width=50&ext=1769096367&hash=AT-YFyb3yDncrqKID2r7VmDJ",
-                      "width": 50
-                  }
-              },
-              "id": "xxxx"
-          }
-            */
+            
+          //   {
+          //     "name": "SK Sim",
+          //     "email": "android.xxx@gmail.com",
+          //     "picture": {
+          //         "data": {
+          //             "height": 51,
+          //             "is_silhouette": false,
+          //             "url": "https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=24884805111197908&height=50&width=50&ext=1769096367&hash=AT-YFyb3yDncrqKID2r7VmDJ",
+          //             "width": 50
+          //         }
+          //     },
+          //     "id": "xxxx"
+          // }
+            
           }}
           render={({ onClick }) => (
             <Button
@@ -274,6 +274,7 @@ export default function Page() {
             </Button>
           )}
         />
+        */}
       </Space>
 
       <Divider />
