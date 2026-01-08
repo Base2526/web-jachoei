@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import crypto, { randomUUID }  from "crypto";
 import { GraphQLError } from "graphql/error";
 import bcrypt from 'bcryptjs';
 import { query, runInTransaction } from "@/lib/db";
@@ -24,6 +24,8 @@ import { createNotification } from '@/lib/notifications/service';
 
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { sendEmail } from "@/lib/mailer";
+
+import { emitPostEvent } from "@events/emit.server";
 
 export const COMMENT_ADDED = 'COMMENT_ADDED';
 export const COMMENT_UPDATED = 'COMMENT_UPDATED';
@@ -54,13 +56,13 @@ type GraphQLUploadFile = {
   createReadStream: () => NodeJS.ReadableStream;
 };
 
-setInterval(() => {
-  const now = new Date().toISOString();
+// setInterval(() => {
+//   const now = new Date().toISOString();
 
-  console.log("[appResolvers.ts][TIME_TICK]");
-  pubsub.publish("TIME_TICK", { time: now });
+//   console.log("[appResolvers.ts][TIME_TICK]");
+//   pubsub.publish("TIME_TICK", { time: now });
 
-}, 50000);
+// }, 50000);
 
 const TOKEN_TTL_DAYS = 7;
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -136,27 +138,20 @@ export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
     _health: async() =>{
+      await emitPostEvent("post.created", {
+        postId: "result.id",
+        actorId: "author_id",
+        title: "result.title",
+        summary: undefined,
+        url: undefined,
+        revisionId: "revisionId",
+        eventId: randomUUID(),
+        occurredAt: new Date().toISOString()
+      });
 
-      // const locale = "en";
+      console.error("[health] called");
 
-      // // 1) ดึง template จาก DB
-      // const tpl = await getLatestEmailTemplate("auth.verify", locale);
-
-      // // 2) render
-      // const data = { ...baseData(locale) };
-      // // payload ควรมี: user_name, verify_url, expiry_minutes
-      // const rendered = renderEmailTemplate(tpl, data);
-
-      // // // 3) ส่ง email
-      // await sendEmail({
-      //   to: "android.somkid@gmail.com",
-      //   subject: rendered.subject,
-      //   html: rendered.html,
-      //   text: rendered.text,
-      // });
-
-      // console.log("_health = " , process.env.NEXT_PUBLIC_SENDGRID_API_KEY, rendered);
-      return "ok";
+      return `ok`;
     } ,
     me: async (_: any, {  }: { }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optional: true });
@@ -220,12 +215,16 @@ export const resolvers = {
             : false,
       }));
     },
-    postsPaged: async (_: any, { search, limit, offset }: { search?: string; limit: number; offset: number }, ctx: any) => {
+    postsPaged: async (
+      _: any,
+      { search, limit, offset }: { search?: string; limit: number; offset: number },
+      ctx: any
+    ) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] postsPaged :", author_id);
 
       const params: any[] = [];
-      let whereSql = '';
+      let whereSql = "";
 
       /* --------------------------------------
       * 🔎 SEARCH: title, phone, bank account
@@ -258,7 +257,7 @@ export const resolvers = {
       /* --------------------------------------
       * 💡 ALWAYS enforce public status
       * -------------------------------------- */
-      if (whereSql.trim() === '') {
+      if (whereSql.trim() === "") {
         whereSql = `WHERE p.status = 'public'`;
       } else {
         whereSql += ` AND p.status = 'public'`;
@@ -293,6 +292,12 @@ export const resolvers = {
           COUNT(*) OVER() AS total,
           p.*,
           row_to_json(u) AS author_json,
+
+          -- ✅ facebook permalink (จาก social_posts)
+          sp_fb.permalink_url AS fb_permalink_url,
+          sp_fb.published_at  AS fb_published_at,
+          sp_fb.status        AS fb_status,
+          sp_fb.social_post_id AS fb_social_post_id,
 
           -- images
           (
@@ -336,6 +341,12 @@ export const resolvers = {
 
         FROM posts p
         LEFT JOIN users u ON p.author_id = u.id
+
+        -- ✅ JOIN social_posts เฉพาะ facebook (แถวเดียว)
+        LEFT JOIN social_posts sp_fb
+          ON sp_fb.post_id = p.id
+        AND sp_fb.platform = 'facebook'
+
         ${whereSql}
         ORDER BY p.created_at DESC
         LIMIT $${limitIdx} OFFSET $${offsetIdx}
@@ -347,37 +358,54 @@ export const resolvers = {
       const items = rows.map((r: any) => ({
         ...r,
         author: r.author_json,
+
         images: (r.images_json || []).map((it: any) => ({
           id: it.id,
           url: buildFileUrlById(it.id),
         })),
+
         tel_numbers: (r.tel_numbers_json || []).map((t: any) => ({
           id: t.id,
           tel: t.tel,
         })),
+
         seller_accounts: (r.seller_accounts_json || []).map((s: any) => ({
           id: s.id,
           bank_id: s.bank_id,
           bank_name: s.bank_name,
           seller_account: s.seller_account,
         })),
+
         comments_count: Number(r.comments_count || 0),
         is_bookmarked: !!r.is_bookmarked,
+
+        // ✅ เพิ่ม fields สำหรับหน้า list
+        fb_permalink_url: r.fb_permalink_url ?? null,
+        fb_published_at: r.fb_published_at ?? null,
+        fb_status: r.fb_status ?? null,
+        fb_social_post_id: r.fb_social_post_id ?? null,
       }));
 
       return { items, total };
     },
     post: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true }); // อนุญาตไม่ล็อกอินได้
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
       console.log("[Query] post :", author_id);
 
-      // ใช้ $2 เป็น user id (อาจเป็น null)
+      // ✅ 1) ดึง post + author + province + is_bookmarked + social_posts (facebook)
       const { rows } = await query(
         `
         SELECT
           p.*,
           row_to_json(u) AS author_json,
           pr.name_th AS province_name,
+
+          -- ✅ social (facebook)
+          sp_fb.permalink_url AS fb_permalink_url,
+          sp_fb.published_at  AS fb_published_at,
+          sp_fb.status        AS fb_status,
+          sp_fb.social_post_id AS fb_social_post_id,
+
           -- ✅ คำนวณ is_bookmarked แบบไม่เป็น null
           CASE
             WHEN $2::uuid IS NULL THEN false
@@ -386,16 +414,25 @@ export const resolvers = {
               WHERE b.post_id = p.id AND b.user_id = $2::uuid
             )
           END AS is_bookmarked
+
         FROM posts p
         LEFT JOIN users u ON p.author_id = u.id
         LEFT JOIN provinces pr ON pr.id = p.province_id
-        WHERE p.id = $1 
+
+        -- ✅ JOIN social_posts เฉพาะ facebook (แถวเดียว)
+        LEFT JOIN social_posts sp_fb
+          ON sp_fb.post_id = p.id
+        AND sp_fb.platform = 'facebook'
+
+        WHERE p.id = $1
         `,
         [id, author_id ?? null]
       );
+
       const r = rows[0];
       if (!r) return null;
 
+      // ✅ 2) images
       const { rows: imgs } = await query(
         `
         SELECT f.id, f.relpath
@@ -407,6 +444,7 @@ export const resolvers = {
         [id]
       );
 
+      // ✅ 3) tel_numbers
       const { rows: telNumbers } = await query(
         `
         SELECT id, tel, created_at
@@ -417,6 +455,7 @@ export const resolvers = {
         [id]
       );
 
+      // ✅ 4) seller_accounts
       const { rows: sellerAccounts } = await query(
         `
         SELECT id, bank_id, bank_name, seller_account, created_at
@@ -429,17 +468,31 @@ export const resolvers = {
 
       return {
         ...r,
+
+        // ✅ เพิ่มฟิลด์ auto_publish (กัน null -> boolean เสมอ)
+        auto_publish: !!r.auto_publish,
+
         author: r.author_json,
         province_name: r.province_name || null,
-        is_bookmarked: !!r.is_bookmarked,           
+        is_bookmarked: !!r.is_bookmarked,
+
         images: (imgs || []).map((it: any) => ({
           id: it.id,
           url: buildFileUrlById(it.id),
         })),
+
         tel_numbers: telNumbers || [],
         seller_accounts: sellerAccounts || [],
+
+        // ✅ social (facebook) ที่เว็บจะใช้ทำปุ่ม "ไปที่โพสต์"
+        fb_permalink_url: r.fb_permalink_url ?? null,
+        fb_published_at: r.fb_published_at ?? null,
+        fb_status: r.fb_status ?? null,
+        fb_social_post_id: r.fb_social_post_id ?? null,
       };
     },
+
+
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] myPosts :", ctx, author_id);
@@ -1985,9 +2038,230 @@ export const resolvers = {
       );
       return rows[0];
     },
-    upsertPost: async (
+    // upsertPost: async (
+    //   _: any,
+    //   { id, data, images, image_ids_delete }: {
+    //     id?: string;
+    //     data: any;
+    //     images?: Array<Promise<GraphQLUploadFile>>;
+    //     image_ids_delete?: Array<string | number>;
+    //   },
+    //   ctx: any
+    // ) => {
+    //   const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+    //   console.log("[Mutation] upsertPost :", author_id, data, image_ids_delete);
+
+    //   const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+    //     let postId: string;
+
+    //     // ============================================================
+    //     // 1) UPSERT POSTS
+    //     // ============================================================
+    //     const commonFields = [
+    //       data.first_last_name || null,
+    //       data.id_card || null,
+    //       data.title || null,
+    //       data.transfer_amount || 0,
+    //       data.transfer_date ? new Date(data.transfer_date) : null,
+    //       data.website || null,
+    //       data.province_id || null,
+    //       data.detail || null,
+    //       data.status || "public",
+    //     ];
+
+    //     if (id) {
+    //       const { rows } = await client.query(
+    //         `UPDATE posts
+    //           SET first_last_name=$1, id_card=$2, title=$3,
+    //               transfer_amount=$4, transfer_date=$5, website=$6,
+    //               province_id=$7, detail=$8, status=$9,
+    //               updated_at=NOW()
+    //         WHERE id=$10
+    //         RETURNING id`,
+    //         [...commonFields, id]
+    //       );
+    //       postId = rows[0].id;
+    //     } else {
+    //       const { rows } = await client.query(
+    //         `INSERT INTO posts (
+    //           first_last_name, id_card, title,
+    //           transfer_amount, transfer_date, website,
+    //           province_id, detail,
+    //           status, author_id, created_at, updated_at
+    //         ) VALUES (
+    //           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW()
+    //         )
+    //         RETURNING id`,
+    //         [...commonFields, author_id]
+    //       );
+    //       postId = rows[0].id;
+    //     }
+
+    //     // ============================================================
+    //     // 2) TEL NUMBERS (insert/update/delete)
+    //     // ============================================================
+    //     if (Array.isArray(data.tel_numbers)) {
+    //       console.log(`[TEL_SYNC] Incoming tel_numbers count = ${data.tel_numbers.length}`);
+
+    //       for (const tel of data.tel_numbers) {
+    //         const mode = tel.mode?.toLowerCase();
+    //         const telId = tel.id;
+    //         const phone = tel.tel;
+    //         const post = postId;
+
+    //         console.log(
+    //           `[TEL_SYNC] mode=${mode} | id=${telId} | tel="${phone}" | postId=${post}`
+    //         );
+
+    //         if (mode === "deleted") {
+    //           console.log(
+    //             `[TEL_DELETE] DELETE FROM post_tel_numbers WHERE id=${telId} AND post_id=${post}`
+    //           );
+
+    //           await client.query(
+    //             `DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`,
+    //             [telId, post]
+    //           );
+
+    //           console.log(`[TEL_DELETE] success id=${telId}`);
+
+    //         } else if (mode === "edited") {
+    //           console.log(
+    //             `[TEL_UPDATE] UPDATE post_tel_numbers SET tel="${phone}" WHERE id=${telId} AND post_id=${post}`
+    //           );
+
+    //           await client.query(
+    //             `UPDATE post_tel_numbers SET tel=$1 WHERE id=$2 AND post_id=$3`,
+    //             [phone, telId, post]
+    //           );
+
+    //           console.log(`[TEL_UPDATE] success id=${telId}, newTel="${phone}"`);
+
+    //         } else if (mode === "new") {
+    //           console.log(
+    //             `[TEL_INSERT] INSERT INTO post_tel_numbers (post_id, tel) VALUES (${post}, "${phone}")`
+    //           );
+
+    //           await client.query(
+    //             `INSERT INTO post_tel_numbers (post_id, tel)
+    //             VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+    //             [post, phone]
+    //           );
+
+    //           console.log(`[TEL_INSERT] success tel="${phone}"`);
+    //         } else {
+    //           console.warn(`[TEL_SYNC] Unknown mode="${mode}" for id=${telId}`);
+    //         }
+    //       }
+    //     }
+
+
+    //     // ============================================================
+    //     // 3) SELLER ACCOUNTS (insert/update/delete)
+    //     // ============================================================
+    //     if (Array.isArray(data.seller_accounts)) {
+    //       for (const acc of data.seller_accounts) {
+    //         if (acc.mode === "deleted") {
+    //           await client.query(`DELETE FROM post_seller_accounts WHERE id=$1 AND post_id=$2`, [acc.id, postId]);
+    //         } else if (acc.mode === "edited") {
+    //           await client.query(
+    //             `UPDATE post_seller_accounts
+    //               SET bank_id=$1, bank_name=$2, seller_account=$3
+    //             WHERE id=$4 AND post_id=$5`,
+    //             [acc.bank_id, acc.bank_name, acc.seller_account || "", acc.id, postId]
+    //           );
+    //         } else if (acc.mode === "new") {
+    //           await client.query(
+    //             `INSERT INTO post_seller_accounts (post_id, bank_id, bank_name, seller_account)
+    //             VALUES ($1,$2,$3,$4)
+    //             ON CONFLICT DO NOTHING`,
+    //             [postId, acc.bank_id, acc.bank_name, acc.seller_account || ""]
+    //           );
+    //         }
+    //       }
+    //     }
+
+    //     // ============================================================
+    //     // 4) ลบรูปเก่า (ถ้ามี)
+    //     // ============================================================
+    //     if (image_ids_delete?.length) {
+    //       await client.query(
+    //         `DELETE FROM post_images WHERE post_id = $1 AND file_id = ANY($2::int[])`,
+    //         [postId, image_ids_delete.map((id: any) => parseInt(id, 10))]
+    //       );
+    //     }
+
+    //     // ============================================================
+    //     // 5) เพิ่มรูปใหม่ (stream)
+    //     // ============================================================
+    //     if (images?.length) {
+    //       const fileRows: any[] = [];
+
+    //       for (const pf of images) {
+    //         const upload = await pf; // GraphQLUploadFile
+
+    //         const ext = path.extname(upload.filename || "");
+    //         const renameTo = `post-${postId}-${Date.now()}${ext || ""}`;
+
+    //         const row = await persistUploadStream(upload, renameTo);
+    //         fileRows.push(row);
+    //       }
+
+    //       if (fileRows.length) {
+    //         const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
+    //         await client.query(
+    //           `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
+    //           [postId, ...fileRows.map((r) => r.id)]
+    //         );
+    //       }
+    //     }
+
+    //     // ============================================================
+    //     // 6) ดึงข้อมูลโพสต์กลับพร้อมรูป
+    //     // ============================================================
+    //     const { rows: posts } = await client.query(`SELECT * FROM posts WHERE id=$1`, [postId]);
+    //     const { rows: imgs } = await client.query(
+    //       `SELECT f.id, f.relpath
+    //         FROM post_images pi
+    //         JOIN files f ON f.id = pi.file_id
+    //         WHERE pi.post_id=$1
+    //         ORDER BY pi.id`,
+    //       [postId]
+    //     );
+
+    //     // ============================================================
+    //     // 7) LOG
+    //     // ============================================================
+    //     await addLog(
+    //       "info",
+    //       id ? "post-update" : "post-create",
+    //       id ? "User updated a post" : "User created a post",
+    //       { author_id, postId }
+    //     );
+
+    //     // ============================================================
+    //     // RETURN
+    //     // ============================================================
+    //     return {
+    //       ...posts[0],
+    //       images: imgs.map((r: any) => ({
+    //         id: r.id,
+    //         url: buildFileUrlById(r.id),
+    //       })),
+    //     };
+    //   });
+
+    //   return result;
+    // },
+
+  upsertPost: async (
       _: any,
-      { id, data, images, image_ids_delete }: {
+      {
+        id,
+        data,
+        images,
+        image_ids_delete,
+      }: {
         id?: string;
         data: any;
         images?: Array<Promise<GraphQLUploadFile>>;
@@ -1998,22 +2272,41 @@ export const resolvers = {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Mutation] upsertPost :", author_id, data, image_ids_delete);
 
+      // ✅ ให้เก็บ postId ไว้ใช้ emit หลัง commit
+      let finalPostId: string | null = null;
+      let finalTitle: string | null = null;
+      let finalSummary: string | null = null;
+      let finalUrl: string | null = null;
+      let finalAutoPublish: boolean | null = null;
+
+      // ✅ NEW: เก็บ tel_numbers ที่ “สถานะล่าสุดหลัง sync”
+      let finalTelNumbers: Array<{ id: number; tel: string }> | null = null;
+
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         let postId: string;
 
         // ============================================================
         // 1) UPSERT POSTS
         // ============================================================
+        // ✅ normalize auto_publish ให้เป็น boolean แน่นอน
+        const autoPublish =
+          typeof data.auto_publish === "boolean"
+            ? data.auto_publish
+            : data.auto_publish == null
+              ? true
+              : String(data.auto_publish).toLowerCase() === "true" || String(data.auto_publish) === "1";
+
         const commonFields = [
-          data.first_last_name || null,
-          data.id_card || null,
-          data.title || null,
-          data.transfer_amount || 0,
-          data.transfer_date ? new Date(data.transfer_date) : null,
-          data.website || null,
-          data.province_id || null,
-          data.detail || null,
-          data.status || "public",
+          data.first_last_name || null, // $1
+          data.id_card || null, // $2
+          data.title || null, // $3
+          data.transfer_amount || 0, // $4
+          data.transfer_date ? new Date(data.transfer_date) : null, // $5
+          data.website || null, // $6
+          data.province_id || null, // $7
+          data.detail || null, // $8
+          data.status || "public", // $9
+          autoPublish, // $10 ✅ NEW
         ];
 
         if (id) {
@@ -2022,8 +2315,9 @@ export const resolvers = {
               SET first_last_name=$1, id_card=$2, title=$3,
                   transfer_amount=$4, transfer_date=$5, website=$6,
                   province_id=$7, detail=$8, status=$9,
+                  auto_publish=$10,
                   updated_at=NOW()
-            WHERE id=$10
+            WHERE id=$11
             RETURNING id`,
             [...commonFields, id]
           );
@@ -2034,9 +2328,10 @@ export const resolvers = {
               first_last_name, id_card, title,
               transfer_amount, transfer_date, website,
               province_id, detail,
-              status, author_id, created_at, updated_at
+              status, auto_publish,
+              author_id, created_at, updated_at
             ) VALUES (
-              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW()
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW()
             )
             RETURNING id`,
             [...commonFields, author_id]
@@ -2047,54 +2342,38 @@ export const resolvers = {
         // ============================================================
         // 2) TEL NUMBERS (insert/update/delete)
         // ============================================================
-        if (Array.isArray(data.tel_numbers)) {
+        const hasTelNumbers = Array.isArray(data.tel_numbers);
+
+        if (hasTelNumbers) {
           console.log(`[TEL_SYNC] Incoming tel_numbers count = ${data.tel_numbers.length}`);
 
           for (const tel of data.tel_numbers) {
-            const mode = tel.mode?.toLowerCase();
+            const mode = String(tel.mode ?? "").toLowerCase();
             const telId = tel.id;
             const phone = tel.tel;
             const post = postId;
 
-            console.log(
-              `[TEL_SYNC] mode=${mode} | id=${telId} | tel="${phone}" | postId=${post}`
-            );
+            console.log(`[TEL_SYNC] mode=${mode} | id=${telId} | tel="${phone}" | postId=${post}`);
 
             if (mode === "deleted") {
-              console.log(
-                `[TEL_DELETE] DELETE FROM post_tel_numbers WHERE id=${telId} AND post_id=${post}`
-              );
-
-              await client.query(
-                `DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`,
-                [telId, post]
-              );
-
+              console.log(`[TEL_DELETE] DELETE FROM post_tel_numbers WHERE id=${telId} AND post_id=${post}`);
+              await client.query(`DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`, [telId, post]);
               console.log(`[TEL_DELETE] success id=${telId}`);
-
             } else if (mode === "edited") {
-              console.log(
-                `[TEL_UPDATE] UPDATE post_tel_numbers SET tel="${phone}" WHERE id=${telId} AND post_id=${post}`
-              );
-
-              await client.query(
-                `UPDATE post_tel_numbers SET tel=$1 WHERE id=$2 AND post_id=$3`,
-                [phone, telId, post]
-              );
-
+              console.log(`[TEL_UPDATE] UPDATE post_tel_numbers SET tel="${phone}" WHERE id=${telId} AND post_id=${post}`);
+              await client.query(`UPDATE post_tel_numbers SET tel=$1 WHERE id=$2 AND post_id=$3`, [
+                phone,
+                telId,
+                post,
+              ]);
               console.log(`[TEL_UPDATE] success id=${telId}, newTel="${phone}"`);
-
             } else if (mode === "new") {
-              console.log(
-                `[TEL_INSERT] INSERT INTO post_tel_numbers (post_id, tel) VALUES (${post}, "${phone}")`
-              );
-
+              console.log(`[TEL_INSERT] INSERT INTO post_tel_numbers (post_id, tel) VALUES (${post}, "${phone}")`);
               await client.query(
                 `INSERT INTO post_tel_numbers (post_id, tel)
                 VALUES ($1,$2) ON CONFLICT DO NOTHING`,
                 [post, phone]
               );
-
               console.log(`[TEL_INSERT] success tel="${phone}"`);
             } else {
               console.warn(`[TEL_SYNC] Unknown mode="${mode}" for id=${telId}`);
@@ -2102,22 +2381,36 @@ export const resolvers = {
           }
         }
 
+        // ✅ NEW: ดึง tel_numbers ล่าสุดจาก DB (หลัง sync) เพื่อเอาไป emit
+        let telRows: Array<{ id: number; tel: string }> = [];
+        if (hasTelNumbers) {
+          const { rows } = await client.query(
+            `SELECT id, tel
+            FROM post_tel_numbers
+            WHERE post_id=$1
+            ORDER BY id`,
+            [postId]
+          );
+          telRows = rows ?? [];
+        }
 
         // ============================================================
         // 3) SELLER ACCOUNTS (insert/update/delete)
         // ============================================================
         if (Array.isArray(data.seller_accounts)) {
           for (const acc of data.seller_accounts) {
-            if (acc.mode === "deleted") {
+            const mode = String(acc.mode ?? "").toLowerCase();
+
+            if (mode === "deleted") {
               await client.query(`DELETE FROM post_seller_accounts WHERE id=$1 AND post_id=$2`, [acc.id, postId]);
-            } else if (acc.mode === "edited") {
+            } else if (mode === "edited") {
               await client.query(
                 `UPDATE post_seller_accounts
                   SET bank_id=$1, bank_name=$2, seller_account=$3
                 WHERE id=$4 AND post_id=$5`,
                 [acc.bank_id, acc.bank_name, acc.seller_account || "", acc.id, postId]
               );
-            } else if (acc.mode === "new") {
+            } else if (mode === "new") {
               await client.query(
                 `INSERT INTO post_seller_accounts (post_id, bank_id, bank_name, seller_account)
                 VALUES ($1,$2,$3,$4)
@@ -2146,7 +2439,6 @@ export const resolvers = {
 
           for (const pf of images) {
             const upload = await pf; // GraphQLUploadFile
-
             const ext = path.extname(upload.filename || "");
             const renameTo = `post-${postId}-${Date.now()}${ext || ""}`;
 
@@ -2156,10 +2448,10 @@ export const resolvers = {
 
           if (fileRows.length) {
             const values = fileRows.map((_, i) => `($1, $${i + 2})`).join(", ");
-            await client.query(
-              `INSERT INTO post_images (post_id, file_id) VALUES ${values}`,
-              [postId, ...fileRows.map((r) => r.id)]
-            );
+            await client.query(`INSERT INTO post_images (post_id, file_id) VALUES ${values}`, [
+              postId,
+              ...fileRows.map((r) => r.id),
+            ]);
           }
         }
 
@@ -2179,91 +2471,274 @@ export const resolvers = {
         // ============================================================
         // 7) LOG
         // ============================================================
-        await addLog(
-          "info",
-          id ? "post-update" : "post-create",
-          id ? "User updated a post" : "User created a post",
-          { author_id, postId }
-        );
+        await addLog("info", id ? "post-update" : "post-create", id ? "User updated a post" : "User created a post", {
+          author_id,
+          postId,
+        });
 
         // ============================================================
         // RETURN
         // ============================================================
-        return {
+        const out: any = {
           ...posts[0],
           images: imgs.map((r: any) => ({
             id: r.id,
             url: buildFileUrlById(r.id),
           })),
         };
+
+        // ✅ ใส่ tel_numbers ในผลลัพธ์ด้วย (ถ้ามีส่งมา)
+        if (hasTelNumbers) {
+          out.tel_numbers = telRows.map((t) => ({ id: t.id, tel: t.tel }));
+        }
+
+        // ✅ เก็บค่าที่ต้องใช้หลัง commit
+        finalPostId = out.id;
+        finalTitle = out.title ?? null;
+        finalSummary = out.detail ?? null;
+        finalUrl = out.website ?? null;
+        finalAutoPublish = typeof out.auto_publish === "boolean" ? out.auto_publish : null;
+
+        // ✅ NEW: เก็บ tel_numbers ล่าสุดเพื่อ emit
+        finalTelNumbers = hasTelNumbers ? out.tel_numbers ?? [] : null;
+
+        return out;
       });
+
+      console.log("[upsertPost] = ", result);
+
+      // ============================================================
+      // ✅ EMIT EVENT (หลัง commit เท่านั้น)
+      // ============================================================
+      try {
+        const eventName = id ? "post.updated" : "post.created";
+
+        if (finalPostId) {
+          const payload: any = {
+            eventId: randomUUID(),
+            occurredAt: new Date().toISOString(),
+
+            postId: finalPostId,
+            actorId: String(author_id),
+            revisionId,
+
+            title: finalTitle ?? null,
+            summary: finalSummary ?? null,
+            url: finalUrl ?? null,
+
+            // ✅ สำคัญ: ส่ง auto_publish ให้ worker
+            auto_publish: finalAutoPublish ?? null,
+
+            images: (result?.images ?? []).map((img: any) => ({
+              id: img.id,
+              url: img.url,
+            })),
+          };
+
+          // ✅ NEW: ถ้า request มี data.tel_numbers ให้ emit tel_numbers ไปด้วย
+          if (Array.isArray(data?.tel_numbers)) {
+            payload.tel_numbers = Array.isArray(finalTelNumbers) ? finalTelNumbers : [];
+          }
+
+          console.log("[upsertPost][payload] = ", payload);
+
+          await emitPostEvent(eventName, payload);
+        }
+      } catch (e: any) {
+        console.error("[events] emit failed (ignored)", e?.message ?? e);
+      }
 
       return result;
     },
-    deletePost: async (_:any, { id }:{id:string}, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Mutation] deletePost :", ctx, author_id);
+    deletePost: async (_: any, { id }: { id: string }, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      console.log("[Mutation] deletePost :", author_id, id);
 
-      // ✅ ใช้ helper transaction function
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
-        // ลบโพสต์ใน transaction
-        const res = await client.query(`DELETE FROM posts WHERE id = $1`, [id]);
+      type PostSnap = {
+        postId: string;
+        title?: string | null;
+        summary?: string | null;
+        url?: string | null;
+        images?: Array<{ id: number | string; url: string }>;
+        auto_publish?: boolean | null;
+      };
 
-        // ✅ บันทึก log หลังลบสำเร็จ (อยู่ใน transaction เดียวกัน)
-        await addLog('info', 'post-delete', 'User deleted post', {
-          author_id,
-          postId: id,
-          affectedRows: res.rowCount,
-        });
+      const { revisionId, result } = await runInTransaction<{ ok: boolean; snap: PostSnap | null }>(
+        author_id,
+        async (client) => {
+          // ✅ 0) snapshot ก่อนลบ
+          const { rows: posts } = await client.query(
+            `SELECT id, title, detail, website, auto_publish
+            FROM posts
+            WHERE id = $1`,
+            [id]
+          );
 
-        return res.rowCount === 1;
-      });
+          if (!posts?.[0]) {
+            return { ok: false, snap: null };
+          }
 
-      return result;
+          const p = posts[0];
+
+          const { rows: imgs } = await client.query(
+            `SELECT f.id, f.relpath
+            FROM post_images pi
+            JOIN files f ON f.id = pi.file_id
+            WHERE pi.post_id = $1
+            ORDER BY pi.id`,
+            [id]
+          );
+
+          const snap: PostSnap = {
+            postId: p.id,
+            title: p.title ?? null,
+            summary: p.detail ?? null,
+            url: p.website ?? null,
+            auto_publish: p.auto_publish ?? null,
+            images: imgs.map((r: any) => ({
+              id: r.id,
+              url: buildFileUrlById(r.id),
+            })),
+          };
+
+          // ✅ 1) ลบโพสต์
+          const res = await client.query(`DELETE FROM posts WHERE id = $1`, [id]);
+
+          // ✅ 2) log
+          await addLog("info", "post-delete", "User deleted post", {
+            author_id,
+            postId: id,
+            affectedRows: res.rowCount,
+          });
+
+          const ok = (res.rowCount ?? 0) === 1;
+          return { ok, snap: ok ? snap : null };
+        }
+      );
+
+      // ✅ 3) emit หลัง commit เท่านั้น
+      try {
+        if (result.ok && result.snap) {
+          const snap = result.snap;
+          await emitPostEvent("post.deleted", {
+            eventId: randomUUID(),
+            occurredAt: new Date().toISOString(),
+
+            postId: snap.postId,
+            actorId: String(author_id),
+            revisionId,
+
+            title: snap.title ?? null,
+            summary: snap.summary ?? null,
+            url: snap.url ?? null,
+            auto_publish: snap.auto_publish ?? null,
+            images: snap.images ?? [],
+          });
+        }
+      } catch (e: any) {
+        console.error("[events] emit post.deleted failed (ignored)", e?.message ?? e);
+      }
+
+      return result.ok;
     },
     deletePosts: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Mutation] deletePosts :", ctx, author_id);
+      const { author_id } = requireAuth(ctx);
+      console.log("[Mutation] deletePosts :", author_id, ids?.length);
 
-      // ✅ validate input
       if (!Array.isArray(ids) || ids.length === 0) {
-        throw new GraphQLError("No IDs provided", {
-          extensions: { code: "BAD_USER_INPUT" },
-        });
+        throw new GraphQLError("No IDs provided", { extensions: { code: "BAD_USER_INPUT" } });
       }
 
       const validIds = ids.filter((id) => /^[0-9a-fA-F-]{36}$/.test(id));
       if (validIds.length === 0) {
-        throw new GraphQLError("Invalid UUIDs", {
-          extensions: { code: "BAD_USER_INPUT" },
-        });
+        throw new GraphQLError("Invalid UUIDs", { extensions: { code: "BAD_USER_INPUT" } });
       }
 
-      // ✅ ทำงานใน transaction พร้อมตั้งค่า app.editor_id
+      // เก็บ snapshot หลัง commit
+      let snaps: Array<{
+        postId: string;
+        title?: string | null;
+        summary?: string | null;
+        url?: string | null;
+        images?: Array<{ id: number | string; url: string }>;
+        auto_publish?: boolean | null;
+      }> = [];
+
       const { revisionId, result } = await runInTransaction<boolean>(author_id, async (client, ctx) => {
-        // 1) ลบโพสต์
-        const res = await client.query(
-          `DELETE FROM posts WHERE id = ANY($1::uuid[])`,
+        // ✅ 0) snapshot ของทุก post ก่อนลบ
+        const { rows: posts } = await client.query(
+          `SELECT id, title, detail, website, auto_publish
+          FROM posts
+          WHERE id = ANY($1::uuid[])`,
           [validIds]
         );
 
-        // rowCount อาจเป็น null/undefined → normalize เป็น number
+        if (!posts?.length) return false;
+
+        const postIds = posts.map((p: any) => p.id);
+
+        const { rows: imgs } = await client.query(
+          `SELECT pi.post_id, f.id AS file_id
+          FROM post_images pi
+          JOIN files f ON f.id = pi.file_id
+          WHERE pi.post_id = ANY($1::uuid[])
+          ORDER BY pi.id`,
+          [postIds]
+        );
+
+        const imagesByPost = new Map<string, Array<{ id: number | string; url: string }>>();
+        for (const r of imgs) {
+          const arr = imagesByPost.get(r.post_id) ?? [];
+          arr.push({ id: r.file_id, url: buildFileUrlById(r.file_id) });
+          imagesByPost.set(r.post_id, arr);
+        }
+
+        snaps = posts.map((p: any) => ({
+          postId: p.id,
+          title: p.title ?? null,
+          summary: p.detail ?? null,
+          url: p.website ?? null,
+          auto_publish: p.auto_publish ?? null,
+          images: imagesByPost.get(p.id) ?? [],
+        }));
+
+        // ✅ 1) ลบ
+        const res = await client.query(`DELETE FROM posts WHERE id = ANY($1::uuid[])`, [validIds]);
         const deletedCount = res.rowCount ?? 0;
 
-        // 2) เพิ่ม log
-        await addLog(
-          "info",                        // log level
-          "post-delete",                 // action key
-          `Deleted ${deletedCount} posts`, // message
-          {
-            userId: author_id,
-            deletedCount,
-            postIds: validIds,
-          }
-        );
+        // ✅ 2) log
+        await addLog("info", "post-delete", `Deleted ${deletedCount} posts`, {
+          userId: author_id,
+          deletedCount,
+          postIds: validIds,
+        });
 
         return deletedCount > 0;
       });
+
+      // ✅ 3) emit หลัง commit: ยิงทีละโพสต์
+      try {
+        if (result && snaps.length) {
+          for (const s of snaps) {
+            await emitPostEvent("post.deleted", {
+              eventId: randomUUID(),
+              occurredAt: new Date().toISOString(),
+
+              postId: s.postId,
+              actorId: String(author_id),
+              revisionId,
+
+              title: s.title ?? null,
+              summary: s.summary ?? null,
+              url: s.url ?? null,
+              auto_publish: s.auto_publish ?? null,
+              images: s.images ?? [],
+            });
+          }
+        }
+      } catch (e: any) {
+        console.error("[events] emit post.deleted (bulk) failed (ignored)", e?.message ?? e);
+      }
 
       return result;
     },
@@ -3408,7 +3883,6 @@ export const resolvers = {
 
       return gqlReply;
     },
-
     updateComment: async (_: any, { id, content }: any, ctx: any) => {
       const user = ctx.user;
       if (!user) throw new Error('Unauthorized');
@@ -3440,7 +3914,6 @@ export const resolvers = {
 
       return updated;
     },
-
     deleteComment: async (_: any, { id }: any, ctx: any) => {
       const user = ctx.user;
       if (!user) throw new Error('Unauthorized');

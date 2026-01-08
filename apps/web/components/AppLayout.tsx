@@ -10,6 +10,7 @@ import {
   BookOutlined,
   HeartOutlined,
   CustomerServiceOutlined,
+  RocketOutlined,
 } from "@ant-design/icons";
 
 import Breadcrumbs from "./Breadcrumbs";
@@ -38,12 +39,12 @@ const mobileFooterLinkStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  width: 38,            // touch target
-  height: 38,           // touch target
+  width: 38, // touch target
+  height: 38, // touch target
   borderRadius: 12,
   border: "1px solid rgba(0,0,0,0.08)",
   background: "rgba(0,0,0,0.02)",
-  color: "rgba(0,0,0,0.70)",
+  color: "rgba(0,0,0,0.7)",
   textDecoration: "none",
   lineHeight: 1,
   transition: "all 160ms ease",
@@ -70,12 +71,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isMobile = !screens.md;
   const year = new Date().getFullYear();
 
+  // ✅ ใส่ Roadmap เข้า footer (ใช้ i18n ถ้ามี ไม่มีก็ fallback)
   const footerLinks = [
+    { href: "/roadmap", label: "Roadmap", icon: <RocketOutlined /> },
     { href: "/terms", label: "Terms", icon: <FileTextOutlined /> },
     { href: "/privacy", label: "Privacy", icon: <SafetyCertificateOutlined /> },
     { href: "/open-source", label: "Open Source", icon: <CodeOutlined /> },
     { href: "/license", label: "License", icon: <BookOutlined /> },
-    { href: "/support", label: t("footer.support") ?? "Support", icon: <CustomerServiceOutlined /> },
+    { href: "/support", label: (t("footer.support") as string) ?? "Support", icon: <CustomerServiceOutlined /> },
     { href: "/donate", label: "Donate", icon: <HeartOutlined /> },
   ];
 
@@ -141,7 +144,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               }}
             >
               <Text style={{ color: "rgba(0,0,0,0.55)" }}>
-                <Text>© {year} {t("header.title")}</Text>
+                <Text>
+                  © {year} {String(t("header.title") ?? "WHOSSCAM")}
+                </Text>
               </Text>
 
               <Space size={8} wrap style={{ justifyContent: "center" }}>
@@ -198,9 +203,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       onMouseLeave={hoverOut}
                       aria-label={it.label}
                     >
-                      <span style={{ fontSize: 18, lineHeight: 1, display: "inline-flex" }}>
-                        {it.icon}
-                      </span>
+                      <span style={{ fontSize: 18, lineHeight: 1, display: "inline-flex" }}>{it.icon}</span>
                     </Link>
                   </Tooltip>
                 ))}
@@ -225,8 +228,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* bottom note */}
             {!isMobile && (
               <Text style={{ color: "rgba(0,0,0,0.45)", textAlign: "center" }}>
-                Some components of this website are open-source. Software is provided “AS IS” without
-                warranties. See Open Source / License for details.
+                Some components of this website are open-source. Software is provided “AS IS” without warranties. See Open
+                Source / License for details.
               </Text>
             )}
           </Space>

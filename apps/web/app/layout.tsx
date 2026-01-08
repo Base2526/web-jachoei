@@ -1,16 +1,17 @@
 import 'antd/dist/reset.css';
 import "./globals.css";
-
 import { cookies } from "next/headers";
-import type { Lang } from "@/i18n";
-import ClientProviders from "./ClientProviders";  // เราจะสร้างไฟล์นี้ใหม่
-
 import type { Metadata } from "next";
 
+import type { Lang } from "@/i18n";
+import ClientProviders from "./ClientProviders";  // เราจะสร้างไฟล์นี้ใหม่
+import { getBuildInfo } from "@/lib/buildInfo";
+
+const { buildId, buildTime } = getBuildInfo();
 export const metadata: Metadata = {
   metadataBase: new URL(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://whosscam.com'}`),
   icons: {
-    icon: "/favicon.ico",
+    icon: `/favicon.ico?v=${buildId}-${buildTime}`
   },
 };
 

@@ -4,6 +4,8 @@ export interface LogMeta {
   [key: string]: any;
 }
 
+import { writeLogServer } from "./writeLog.server";
+
 /**
  * ✅ Global helper สำหรับส่ง log ไป backend /api/logs
  * - ใช้ในทั้ง client และ server component ได้
@@ -21,6 +23,12 @@ export async function addLog(
     const body = JSON.stringify({ level, category, message, meta });
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+
+    if (typeof window === "undefined") {
+      await writeLogServer(level, category, message, meta);
+      return true;
+    }
+
 
     // ใช้ fetch แบบ relative จะทำงานทั้งบน client และ server (Next.js)
     const res = await fetch(`${baseUrl}/api/logs`, {

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000"
+    "start": "next start -p 3000",
+    "worker:social": "tsx scripts/social-worker.mjs"
   },
   "dependencies": {
     "@apollo/client": "^3.10.0",
@@ -41,6 +42,8 @@
     "react-dom": "18.2.0",
     "sharp": "^0.34.5",
     "swr": "^2.3.6",
+    "twitter-api-v2": "^1.28.0",
+    "undici": "^7.18.0",
     "uuid": "^13.0.0",
     "zustand": "^5.0.8"
   },
@@ -51,6 +54,7 @@
     "@types/node": "^20.12.12",
     "@types/pg": "^8.15.6",
     "@types/react": "^18.2.64",
+    "tsx": "^4.21.0",
     "typescript": "^5.4.0"
   }
 }

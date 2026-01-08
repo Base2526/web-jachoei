@@ -133,6 +133,34 @@ export const typeDefs = /* GraphQL */ `
     seller_accounts: [SellerAccount!]!
 
     comments_count: Int
+    auto_publish: Boolean!
+
+    # ---------------------------
+    # ✅ Social (Facebook)
+    # ---------------------------
+
+    """
+    ลิงก์ไปยังโพสต์บน Facebook Page
+    ใช้สำหรับปุ่ม "ดูโพสต์บน Facebook"
+    """
+    fb_permalink_url: String
+
+    """
+    เวลาที่โพสต์ถูก publish จริงบน Facebook (ISO string)
+    """
+    fb_published_at: String
+
+    """
+    สถานะจาก social_posts
+    เช่น PENDING | PUBLISHED | FAILED | DELETED
+    """
+    fb_status: String
+
+    """
+    ID ของโพสต์บน Facebook (page_post_id)
+    ใช้ลบ/อัปเดตในอนาคต
+    """
+    fb_social_post_id: String
   }
 
   type Chat { id: ID!, name: String, is_group: Boolean!, created_at: String! }
@@ -370,6 +398,8 @@ export const typeDefs = /* GraphQL */ `
     tel_numbers: [TelNumberInput!]
     seller_accounts: [SellerAccountInput!]
     status: PostStatus!
+
+    auto_publish: Boolean
   }
 
   input MyProfileInput {

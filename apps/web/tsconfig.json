@@ -10,12 +10,10 @@
     "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./*"
-      ],
-      "@core/*": [
-        "../../packages/graphql-core/src/*"
-      ]
+      "@/*": ["./*"],
+      "@core/*": ["../../packages/graphql-core/src/*"],
+      "@events/*": ["../../packages/events/*"],
+      "@social/*": ["../../packages/social-queue/*"]
     },
     "strict": true,
     "allowJs": true,

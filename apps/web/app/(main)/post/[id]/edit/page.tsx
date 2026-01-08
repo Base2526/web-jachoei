@@ -25,7 +25,13 @@ const Q_POST = gql`
       id
       first_last_name
       created_at
+      auto_publish
       author { avatar created_at email id name phone role }
+
+      fb_permalink_url
+      fb_published_at
+      fb_status
+      fb_social_post_id
     }
   }
 `;
@@ -41,6 +47,9 @@ export default function Page(){
 
   const post = data?.post;
   if (!post) return <div>Not found</div>
+
+
+  console.log("[POST] = ", post);
 
   return (
     <PostForm
