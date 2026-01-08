@@ -15,7 +15,9 @@ services:
 
   web:
     command: >
-      sh -c "npm ci && npm run dev"
+      sh -c "npm ci && 
+             npm --prefix ../../packages/social-queue ci &&
+             npm run dev"
     environment:
       NODE_ENV: development
       COOKIE_SECURE: ${COOKIE_SECURE}
@@ -29,3 +31,15 @@ services:
   caddy:
     ports:
       - "443:443"
+
+  social-worker:
+    # command: >
+    #   sh -c "npm ci &&
+    #          npm --prefix ../../packages/social-queue ci &&
+    #          npm run worker:social"
+    # command: npm run worker:social
+    working_dir: /app/apps/web
+    command: sh -c "npm ci && npm run worker:social"
+    volumes:
+      - .:/app
+      - /app/apps/web/node_modules

@@ -339,12 +339,26 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
               // ================================
               // 📱 MOBILE → แสดงเป็น Icon
               // ================================
-              <Image
-                src="/icons/home-mobile.svg" // ใช้ icon จริงของคุณ
-                alt="Home"
-                style={{ width: 26, height: 26 }}
-                preview={false}
-              />
+              <Avatar size={35} shape="circle" alt="WHOSSCAM">
+                <img
+                  src="/icons/icon.svg"
+                  width={35}
+                  height={35}
+                  alt="WHOSSCAM"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    height: "100%",
+                    // borderRadius: "50%",
+                    objectFit: "cover",
+                    transform: "scale(1.25)",
+                    transformOrigin: "center",
+                  }}
+                  loading="eager"
+                  decoding="async"
+                />
+              </Avatar>
+
             ) : (
               // ================================
               // 🖥 DESKTOP → แสดงชื่อ Title
@@ -362,17 +376,25 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
       }}
     >
       {/* ICON */}
-      <Image
-        src="/icons/home-mobile.svg"
-        alt="WHOSSCAM"
-        width={28}
-        height={28}
-        style={{
-          width: 28,
-          height: 28,
-          display: "block",
-        }}
-      />
+      <Avatar size={50} shape="circle" alt="WHOSSCAM">
+        <img
+          src="/icons/icon.svg"
+          width={50}
+          height={50}
+          alt="WHOSSCAM"
+          style={{
+            display: "block",
+            width: "100%",
+            height: "100%",
+            // borderRadius: "50%",
+            objectFit: "cover",
+            transform: "scale(1.25)",
+            transformOrigin: "center",
+          }}
+          loading="eager"
+          decoding="async"
+        />
+      </Avatar>
 
       {/* TITLE */}
       <Text

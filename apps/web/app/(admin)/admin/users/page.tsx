@@ -97,7 +97,11 @@ function UsersList(){
     { title:'Email', dataIndex:'email' },
     { title:'Phone', dataIndex:'phone' },
     { title:'Role', dataIndex:'role', render:roleTag },
-    { title:'Created', dataIndex:'created_at' },
+    {
+      title: 'Created',
+      dataIndex: 'created_at',
+      render: (d: string) => new Date( Number(d) ).toLocaleString(),
+    },
     {
       title:'Actions',
       render:(_:any,r:any)=>(

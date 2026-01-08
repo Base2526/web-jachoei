@@ -44,6 +44,11 @@ const Q_POST = gql`
         phone
         role
       }
+
+      fb_permalink_url
+      fb_published_at
+      fb_status
+      fb_social_post_id
     }
   }
 `;
@@ -122,6 +127,8 @@ export default function Page() {
   }
 
   const post = data?.post ?? null;
+
+  console.log("[POST] = ", post);
 
   // ❗ ตรงนี้คือ key: ให้ PostView handle loading/skeleton
   return (

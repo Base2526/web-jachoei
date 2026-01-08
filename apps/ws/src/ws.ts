@@ -26,22 +26,11 @@ useServer(
         // keepAlive: 12000,
 
         onSubscribe: async (ctx, msg) => {
-            /*
-            // 1) ดึง token จาก Cookie ก่อน
-            const req = ctx.extra.request; // IncomingMessage
-            const cookieHeader = req.headers?.cookie || "";
-            const cookies = parseCookie(cookieHeader || "");
-            let token = cookies[USER_COOKIE] || "";
-            */
-
             const req = ctx.extra.request; // IncomingMessage
             const cookieHeader = req.headers?.cookie || "";
             const cookies = parseCookie(cookieHeader || "");
             const token = cookies[USER_COOKIE] || "";
-
             try {
-
-                console.log("[onSubscribe] = ", token);
                 const user = jwt.verify(token, JWT_SECRET);
                 if (!user) {
                     return [

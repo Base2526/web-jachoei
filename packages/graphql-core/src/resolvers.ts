@@ -28,25 +28,13 @@ export const coreResolvers = {
     },
   },
   Subscription: {
-    // time: {
-    //   // ไม่ต้องใช้ withFilter (ให้มัน broadcast ทุกคนก่อน)
-    //   subscribe: () => {
-    //     console.log("[Subscription.time] subscribe");
-    //     return pubsub.asyncIterator(topicTime);
-    //   },
-    //   resolve: (payload: any) => {
-    //     console.log("[Subscription.time.resolve]", payload);
-    //     return payload.time;   // คืนค่าตรง field time
-    //   }
-    // },
     time: {
       subscribe: withFilter(
         (_:any, { }:{ }) =>{
-          console.log("[packages][graphql-core][resolvers][time]");
           return  pubsub.asyncIterator(topicTime);
         },
         (payload, variables) => {
-          console.log("[graphql-core withFilter : time] ", payload , variables );
+          // console.log("[graphql-core withFilter : time] ", payload , variables );
           return payload.time;
         }
       )
@@ -78,8 +66,6 @@ export const coreResolvers = {
         (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicUser(chat_id)),
         (payload, variables) => {
           console.log("[graphql-core withFilter : messageDeleted]");
-          // return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
-
           return payload.asyncIterator(topicChat(variables?.chat_id));
         }
       )
@@ -95,7 +81,6 @@ export const coreResolvers = {
         }
       ),
     },
-
     commentAdded: {
       subscribe: withFilter(
         () => pubsub.asyncIterator(COMMENT_ADDED),
@@ -122,7 +107,6 @@ export const coreResolvers = {
         }
       ),
     },
-
     incomingMessage: {
       subscribe: withFilter(
         () => pubsub.asyncIterator(INCOMING_MESSAGE),

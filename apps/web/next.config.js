@@ -15,25 +15,52 @@ const nextConfig = {
     optimizePackageImports: ['antd'],
     externalDir: true,
   },
+  // ✅ Cache header สำหรับ SVG
+  async headers() {
+    return [
+      {
+        source: "/:path*\\.svg",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
    // ✅ Remove console.* in production (via SWC)
   // - by default removes: console.log/info/debug
   // - keeps: console.error/warn (recommended)
   compiler: isProd
     ? {
-        removeConsole: {
-          exclude: [ /*"error", "warn"*/ ],
-        },
+        // removeConsole: {
+        //   exclude: [ /*"error", "warn"*/ ],
+        // },
+        removeConsole: true,
       }
     : undefined,
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     // alias ไปที่แพ็กเกจ core (src) เพื่อ dev-hot-reload
     config.resolve.alias['@core'] = path.resolve(__dirname, '../../packages/graphql-core/src');
+
+    // ✅ กันไฟล์ server-only เผลอถูก bundle ฝั่ง client
+    // (ถ้า client ไป import เข้า จะให้มัน fail เร็ว ๆ หรือ ignore)
+    if (!isServer) {
+      config.resolve.alias["@social/queue.server"] = false;
+      config.resolve.alias["@social/pubsub.server"] = false;
+    }
+
     return config;
   },
-  transpilePackages: ['antd'],
+  transpilePackages: [ "antd", "events", "social-queue" ],
 
   productionBrowserSourceMaps: false,
   swcMinify: true,
+  env: {
+    NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
+  },
+  
 };
 
 export default nextConfig;

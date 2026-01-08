@@ -3,6 +3,8 @@ import { query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+import { writeLogServer } from "@/lib/log/writeLog.server";
+
 // GET /admin/api/logs?q=&level=&category=&page=&pageSize=
 export async function GET(req: NextRequest){
   const { searchParams } = new URL(req.url);
@@ -48,8 +50,12 @@ export async function POST(req: NextRequest){
      VALUES ($1,$2,$3,$4,$5) RETURNING *`,
     [ level, category, message, JSON.stringify(meta), user_id ]
   );
+
+  await writeLogServer(level, category, message, meta ?? {});
+
   return NextResponse.json(row, { status: 201 });
 }
+
 
 // DELETE /admin/api/logs  -> purge by filter (careful; requires either level/category/q to be set)
 // export async function DELETE(req: NextRequest){

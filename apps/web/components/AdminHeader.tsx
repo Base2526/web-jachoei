@@ -7,7 +7,8 @@ import {
   FileImageOutlined,
   DatabaseOutlined,
   LogoutOutlined,
-  SnippetsOutlined 
+  SnippetsOutlined,
+  EnvironmentOutlined
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/useSession'
@@ -20,8 +21,10 @@ export default function AdminHeader() {
     { text: 'Posts', icon: <FileTextOutlined />, href: '/admin/posts', badge: 2 },
     { text: 'Users', icon: <UserOutlined />, href: '/admin/users', badge: 3 },
     { text: 'Files', icon: <FileImageOutlined />, href: '/admin/files', badge: 5 },
+    { text: 'Social Queue', icon: <DatabaseOutlined />, href: '/admin/queue', badge: 0 },
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
     { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },
+    { text: 'ENV', icon: <EnvironmentOutlined />, href: '/admin/env', badge: 0 },
   ];
   const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()
   async function onLogout() {
