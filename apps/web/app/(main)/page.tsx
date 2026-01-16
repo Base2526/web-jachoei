@@ -14,9 +14,11 @@ import {
   Grid,
   List,
   Card,
+  Modal,
+  Divider,
 } from "antd";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CommentOutlined,
   EditOutlined,
@@ -25,6 +27,9 @@ import {
   PhoneOutlined,
   BankOutlined,
   FacebookFilled,
+  ShareAltOutlined,
+  CopyOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
 
 import ThumbGrid from "@/components/ThumbGrid";
@@ -195,6 +200,150 @@ function FacebookIconAction({ r }: { r: any }) {
   );
 }
 
+/** =========================
+ *  Share helpers + component
+ *  ========================= */
+type SharePayload = {
+  url: string;
+  title: string;
+  text: string;
+};
+
+function buildSharePayload(r: any, baseUrl: string): SharePayload {
+  const url = `${baseUrl}/post/${r.id}`;
+  const title = r?.title ? String(r.title) : "Jachoei";
+  const detail = r?.detail ? String(r.detail).replace(/\s+/g, " ").trim() : "";
+  const text = detail ? `${title}\n\n${detail.slice(0, 180)}${detail.length > 180 ? "..." : ""}` : title;
+
+  return { url, title, text };
+}
+
+async function copyToClipboard(text: string) {
+  if (!text) return;
+  // clipboard API needs https/localhost
+  await navigator.clipboard.writeText(text);
+}
+
+function ShareActionButton({ r, baseUrl }: { r: any; baseUrl: string }) {
+  const [open, setOpen] = useState(false);
+  const payload = useMemo(() => buildSharePayload(r, baseUrl), [r, baseUrl]);
+
+  const openFacebookShare = (shareUrl: string) => {
+    const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
+    window.open(fb, "_blank", "noopener,noreferrer");
+  };
+
+  const handleShare = async (e: any) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+
+    try {
+      // ✅ Native share (mobile)
+      const nav: any = navigator as any;
+      if (nav?.share) {
+        await nav.share({
+          title: payload.title,
+          text: payload.text,
+          url: payload.url,
+        });
+        return;
+      }
+
+      // ✅ fallback modal
+      setOpen(true);
+    } catch (err: any) {
+      // ผู้ใช้กด cancel จะ throw บาง browser → ไม่ต้อง error
+      if (String(err?.name || "").toLowerCase().includes("abort")) return;
+      setOpen(true);
+    }
+  };
+
+  return (
+    <>
+      <Tooltip title="Share">
+        <Button
+          type="text"
+          size="small"
+          icon={<ShareAltOutlined />}
+          onClick={handleShare}
+        />
+      </Tooltip>
+
+      <Modal
+        open={open}
+        onCancel={() => setOpen(false)}
+        title="Share post"
+        footer={null}
+        destroyOnClose
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <Text strong>{payload.title}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {payload.url}
+              </Text>
+            </div>
+          </div>
+
+          <Divider style={{ margin: "8px 0" }} />
+
+          <Space wrap>
+            <Button
+              icon={<LinkOutlined />}
+              onClick={async () => {
+                try {
+                  await copyToClipboard(payload.url);
+                  message.success("Copied link");
+                } catch {
+                  message.error("Copy failed (clipboard permission)");
+                }
+              }}
+            >
+              Copy link
+            </Button>
+
+            <Button
+              icon={<CopyOutlined />}
+              onClick={async () => {
+                try {
+                  await copyToClipboard(`${payload.title}\n${payload.url}`);
+                  message.success("Copied text");
+                } catch {
+                  message.error("Copy failed (clipboard permission)");
+                }
+              }}
+            >
+              Copy text
+            </Button>
+
+            <Button
+              icon={<FacebookFilled />}
+              onClick={() => openFacebookShare(payload.url)}
+            >
+              Share to Facebook
+            </Button>
+
+            <Button
+              onClick={() => {
+                window.open(payload.url, "_blank", "noopener,noreferrer");
+              }}
+            >
+              Open link
+            </Button>
+          </Space>
+
+          <div style={{ marginTop: 10 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Tip: บนมือถือจะเปิด native share ให้เอง ถ้าเครื่องรองรับ
+            </Text>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 function PostsList() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -203,6 +352,11 @@ function PostsList() {
   const [pageSize, setPageSize] = useState(10);
 
   const { user } = useSessionCtx();
+
+  // ✅ base url สำหรับแชร์ (client-only)
+  const BASE_URL =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "https://jachoei.com");
 
   const { data, loading, refetch } = useQuery(Q_POSTS_PAGED, {
     variables: { q: null, limit: pageSize, offset: (page - 1) * pageSize },
@@ -263,8 +417,6 @@ function PostsList() {
                     </Tag>
                   )}
 
-                 
-
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {ts ? new Date(Number(ts)).toLocaleString() : ""}
                   </Text>
@@ -280,21 +432,7 @@ function PostsList() {
                     </Text>
                   </div>
                 )}
-
-                 {/* ✅ FB status tag (optional) */}
-                  {/* {r.fb_status && (
-                    <Tag color={fbStatusColor(r.fb_status)} style={{ marginRight: 0 }}>
-                      FB: {String(r.fb_status).toUpperCase()}
-                    </Tag>
-                  )} */}
-
-                  {/* <FacebookIconAction r={r} /> */}
               </div>
-
-              {/* ✅ Facebook icon (clickable only if PUBLISHED) */}
-              {/* <div style={{ marginTop: 2 }}>
-                <FacebookIconAction r={r} />
-              </div> */}
             </div>
           </div>
         );
@@ -361,10 +499,11 @@ function PostsList() {
     {
       title: "Action",
       fixed: "right" as const,
-      width: 190,
+      width: 230,
       render: (_: any, r: any) => (
         <Space size={4}>
-          {/* ✅ FB icon also in action row (optional) */}
+         
+          {/* ✅ FB icon (clickable only if PUBLISHED) */}
           <FacebookIconAction r={r} />
 
           {user?.id !== r.author?.id && (
@@ -402,6 +541,9 @@ function PostsList() {
               </Badge>
             </Link>
           </Tooltip>
+
+           {/* ✅ Share */}
+          <ShareActionButton r={r} baseUrl={BASE_URL} />
         </Space>
       ),
     },
@@ -448,23 +590,11 @@ function PostsList() {
                         </Link>
 
                         <div style={{ marginTop: 4 }}>
-                          {/* {r.status && (
-                            <Tag color={statusColor(r.status)} style={{ marginRight: 6 }}>
-                              {r.status}
-                            </Tag>
-                          )} */}
-                          {/* {r.fb_status && (
-                            <Tag color={fbStatusColor(r.fb_status)} style={{ marginRight: 6 }}>
-                              FB: {String(r.fb_status).toUpperCase()}
-                            </Tag>
-                          )} */}
                           <Text type="secondary" style={{ fontSize: 11 }}>
                             {r.created_at ? new Date(Number(r.created_at)).toLocaleString() : ""}
                           </Text>
                         </div>
                       </div>
-
-                      
                     </div>
 
                     {r.author && (
@@ -527,6 +657,7 @@ function PostsList() {
                       }}
                     >
                       <Space size={4}>
+                      
                         {user?.id !== r.author?.id && (
                           <BookmarkButton postId={r.id} defaultBookmarked={r?.is_bookmarked ?? false} />
                         )}
@@ -554,10 +685,10 @@ function PostsList() {
                             </Link>
                           </Tooltip>
                         )}
+
                         {/* ✅ Facebook icon (clickable only if PUBLISHED) */}
                         <FacebookIconAction r={r} />
                       </Space>
-
 
                       <Tooltip title={`Comments (${r.comments_count || 0})`}>
                         <Link href={`/post/${r.id}`} prefetch={false}>
@@ -565,7 +696,10 @@ function PostsList() {
                             <Button type="text" size="small" icon={<CommentOutlined />} />
                           </Badge>
                         </Link>
+                        {/* ✅ Share */}
+                        <ShareActionButton r={r} baseUrl={BASE_URL} />
                       </Tooltip>
+
                       
                     </div>
                   </div>
@@ -608,7 +742,7 @@ function PostsList() {
 }
 
 export default function Page() {
-  const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://whosscam.com";
+  const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
   return (
     <>
@@ -618,8 +752,8 @@ export default function Page() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "WebSite",
-            name: "Whosscam",
-            alternateName: "WhosScam",
+            name: "Jachoei",
+            alternateName: "Jachoei",
             url: SITE_URL,
             description: "ฐานข้อมูลการโกงออนไลน์",
             potentialAction: {

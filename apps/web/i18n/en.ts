@@ -1,7 +1,7 @@
 // i18n/en.ts
 const en = {
   header: {
-    title: "WHOSSCAM",
+    title: "JACHOEI",
 
     // 🔍 search-related
     searchPlaceholder: "Search posts, users, phone numbers...",
@@ -40,7 +40,7 @@ const en = {
   },
 
   roadmap: {
-    pageTitle: "whosscam.com Product Roadmap",
+    pageTitle: "Jachoei.com Product Roadmap",
     subtitle: "A development plan to make reports trustworthy, easy to use, and exportable as evidence packages.",
     language: "Language",
     overview: "Overview",
@@ -84,6 +84,9 @@ const en = {
     suggest7: "Analytics Dashboard",
     suggest8: "API / Webhook for partners",
   },
+  breadcrumbs :{
+    home: "Home"
+  }
 };
 
 export default en;

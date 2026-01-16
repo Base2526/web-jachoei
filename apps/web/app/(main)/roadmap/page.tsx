@@ -45,7 +45,7 @@ function statusIcon(status: Status) {
 
 export default function RoadmapRedBoxContent() {
   const labels = {
-    pageTitle: "Roadmap การพัฒนาระบบ whosscam.com",
+    pageTitle: "Roadmap การพัฒนาระบบ jachoei.com",
     subtitle: "แผนพัฒนาระบบเพื่อให้การรับเรื่องร้องเรียนมีความน่าเชื่อถือ ใช้งานง่าย และพร้อมใช้เป็นหลักฐาน",
     done: "เสร็จแล้ว",
     inProgress: "กำลังทำ",

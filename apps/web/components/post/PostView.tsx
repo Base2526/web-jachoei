@@ -14,6 +14,7 @@ import {
   Row,
   Col,
   Grid,
+  Modal,
 } from 'antd';
 import Link from 'next/link';
 import {
@@ -22,6 +23,8 @@ import {
   EditOutlined,
   CopyOutlined,
   FacebookFilled,
+  ShareAltOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 
 import type { PostRecord } from './PostForm';
@@ -43,6 +46,149 @@ type Props = {
   cloning?: boolean;
 };
 
+/** =========================
+ *  Share helpers
+ *  ========================= */
+type SharePayload = {
+  url: string;
+  title: string;
+  text: string;
+};
+
+function buildSharePayload(post: any, baseUrl: string): SharePayload {
+  const url = `${baseUrl}/post/${post?.id}`;
+  const title = post?.title ? String(post.title) : 'Jachoei';
+  const detail = post?.detail ? String(post.detail).replace(/\s+/g, ' ').trim() : '';
+  const text = detail
+    ? `${title}\n\n${detail.slice(0, 180)}${detail.length > 180 ? '...' : ''}`
+    : title;
+
+  return { url, title, text };
+}
+
+async function copyToClipboard(text: string) {
+  await navigator.clipboard.writeText(text);
+}
+
+function ShareActionButton({ post, baseUrl, isMobile }: { post: any; baseUrl: string; isMobile: boolean }) {
+  const [open, setOpen] = React.useState(false);
+
+  const payload = React.useMemo(() => buildSharePayload(post, baseUrl), [post, baseUrl]);
+
+  const openFacebookShare = (shareUrl: string) => {
+    const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
+    window.open(fb, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleShare = async (e: any) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+
+    try {
+      const nav: any = navigator as any;
+
+      // ✅ Native share (มือถือ/บาง desktop)
+      if (nav?.share) {
+        await nav.share({
+          title: payload.title,
+          text: payload.text,
+          url: payload.url,
+        });
+        return;
+      }
+
+      // ✅ Fallback modal
+      setOpen(true);
+    } catch (err: any) {
+      // ผู้ใช้กด cancel บาง browser จะ throw AbortError
+      if (String(err?.name || '').toLowerCase().includes('abort')) return;
+      setOpen(true);
+    }
+  };
+
+  return (
+    <>
+      <Tooltip title="Share">
+        <Button
+          type="text"
+          size={isMobile ? 'small' : 'middle'}
+          icon={<ShareAltOutlined />}
+          onClick={handleShare}
+        />
+      </Tooltip>
+
+      <Modal
+        open={open}
+        onCancel={() => setOpen(false)}
+        title="Share post"
+        footer={null}
+        destroyOnClose
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <Typography.Text strong>{payload.title}</Typography.Text>
+            <div style={{ marginTop: 6 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {payload.url}
+              </Typography.Text>
+            </div>
+          </div>
+
+          <Space wrap>
+            <Button
+              icon={<LinkOutlined />}
+              onClick={async () => {
+                try {
+                  await copyToClipboard(payload.url);
+                  message?.success?.('Copied link'); // safeguard if message is not available
+                } catch {
+                  // fallback to antd message if available
+                }
+              }}
+            >
+              Copy link
+            </Button>
+
+            <Button
+              icon={<CopyOutlined />}
+              onClick={async () => {
+                try {
+                  await copyToClipboard(`${payload.title}\n${payload.url}`);
+                } catch {}
+              }}
+            >
+              Copy text
+            </Button>
+
+            <Button icon={<FacebookFilled />} onClick={() => openFacebookShare(payload.url)}>
+              Share to Facebook
+            </Button>
+
+            <Button
+              onClick={() => {
+                window.open(payload.url, '_blank', 'noopener,noreferrer');
+              }}
+            >
+              Open link
+            </Button>
+          </Space>
+
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Tip: บนมือถือจะเปิด native share ให้เองถ้าเครื่องรองรับ
+          </Typography.Text>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+/**
+ * IMPORTANT:
+ * ใช้ message ของ antd ต้อง import message
+ */
+import { message } from 'antd';
+import React from 'react';
+
 export default function PostView({
   post,
   loading,
@@ -56,6 +202,11 @@ export default function PostView({
   const screens = useBreakpoint();
   const isMobile = !screens.md;
 
+  // ✅ base url สำหรับแชร์ (client-only)
+  const BASE_URL =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : 'https://jachoei.com');
+
   if (!post) {
     return (
       <Card loading={loading} title={title ?? 'Post [x]'}>
@@ -67,7 +218,7 @@ export default function PostView({
   const telNumbers = (post as any).tel_numbers || [];
   const sellerAccounts = (post as any).seller_accounts || [];
 
-  // ✅ NEW: Facebook icon behavior
+  // ✅ Facebook icon behavior
   const fbStatus = String((post as any).fb_status ?? '').toUpperCase();
   const fbPermalinkUrl = String((post as any).fb_permalink_url ?? '').trim();
   const isFbPublished = fbStatus === 'PUBLISHED' && !!fbPermalinkUrl;
@@ -98,7 +249,9 @@ export default function PostView({
       }}
       extra={
         <Space size={isMobile ? 4 : 8} wrap>
-          {/* ✅ NEW: Facebook icon (click new tab only if PUBLISHED + permalink_url exists) */}
+         
+
+          {/* ✅ Facebook icon (click new tab only if PUBLISHED + permalink_url exists) */}
           <Tooltip
             title={
               isFbPublished
@@ -144,7 +297,7 @@ export default function PostView({
                 <Button
                   type="text"
                   size={isMobile ? 'small' : 'middle'}
-                  onClick={() => onClone?.((post as any)?.id)}
+                  onClick={() => onClone?.(String((post as any)?.id))}
                   loading={cloning}
                   icon={<CopyOutlined />}
                 />
@@ -178,6 +331,9 @@ export default function PostView({
               </Popconfirm>
             </>
           )}
+
+           {/* ✅ Share (เหมือนหน้าบน) */}
+          <ShareActionButton post={post} baseUrl={BASE_URL} isMobile={isMobile} />
         </Space>
       }
     >

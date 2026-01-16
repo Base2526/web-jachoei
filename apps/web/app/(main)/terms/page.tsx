@@ -8,7 +8,9 @@ const { Title, Paragraph, Text } = Typography;
 export default function TermsPage() {
   const { t } = useI18n();
 
+  
   return (
+    <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
     <Typography>
       <Title level={2}>Terms & Conditions</Title>
       <Paragraph>
@@ -42,5 +44,6 @@ export default function TermsPage() {
         This Terms & Conditions page applies to all users of the website and services.
       </Paragraph>
     </Typography>
+    </div>
   );
 }

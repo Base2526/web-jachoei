@@ -116,9 +116,9 @@ function calcRisk(reportCount: number): number {
 
 function baseData(locale: string) {
   return {
-    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "Whosscam",
+    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "Jachoei",
     year: new Date().getFullYear(),
-    support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://whosscam.com/support",
+    support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://jachoei.com/support",
     locale,
   };
 }
@@ -2884,149 +2884,128 @@ export const resolvers = {
 
       return result;
     },
-    // createChat: async (_:any, { name, isGroup, memberIds }:{name?:string, isGroup:boolean, memberIds:string[]}, ctx:any) => {
-    //   const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-    //   console.log("[Mutation] createChat :", ctx, author_id);
-
-    //   // ✅ ใช้ transaction ครอบทุกขั้นตอน
-    //   return await runInTransaction(author_id, async (client) => {
-    //     // 1) สร้าง chat ใหม่
-    //     const { rows } = await client.query(
-    //       `INSERT INTO chats (name, is_group, created_by)
-    //       VALUES ($1,$2,$3)
-    //       RETURNING *`,
-    //       [name || null, isGroup, author_id]
-    //     );
-    //     const chat = rows[0];
-
-    //     // 2) เพิ่มสมาชิกทั้งหมด (รวม creator)
-    //     const allMembers = Array.from(new Set([author_id, ...memberIds]));
-    //     for (const uid of allMembers) {
-    //       await client.query(
-    //         `INSERT INTO chat_members (chat_id, user_id)
-    //         VALUES ($1,$2)
-    //         ON CONFLICT DO NOTHING`,
-    //         [chat.id, uid]
-    //       );
-    //     }
-
-    //     // 3) ดึงข้อมูลสมาชิกและผู้สร้าง
-    //     const mem = await client.query(
-    //       `SELECT u.* 
-    //         FROM chat_members m
-    //         JOIN users u ON m.user_id = u.id
-    //         WHERE m.chat_id = $1`,
-    //       [chat.id]
-    //     );
-    //     const creator = await client.query(`SELECT * FROM users WHERE id=$1`, [chat.created_by]);
-
-    //     // ✅ 4) บันทึก log (อยู่นอก query หลักแต่ยังใน transaction)
-    //     await addLog('info', 'chat-create', 'Chat created', {
-    //       chatId: chat.id,
-    //       userId: author_id,
-    //       members: allMembers.length,
-    //     });
-
-    //     // ✅ 5) คืนค่าผลลัพธ์
-    //     return {
-    //       ...chat,
-    //       created_by: creator.rows[0],
-    //       members: mem.rows,
-    //     };
-    //   });
-    // },
-
     createChat: async (
       _: any,
       { name, isGroup, memberIds }: { name?: string; isGroup: boolean; memberIds: string[] },
       ctx: any
     ) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const { author_id } = requireAuth(ctx);
       console.log("[Mutation] createChat :", author_id);
 
-      // ✅ 1) รันทุกอย่างใน transaction (สร้าง chat + members + log)
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
-        // 1) สร้าง chat ใหม่
-        const { rows } = await client.query(
-          `INSERT INTO chats (name, is_group, created_by)
-          VALUES ($1,$2,$3)
-          RETURNING *`,
-          [name || null, isGroup, author_id]
-        );
-        const chat = rows[0];
+      const { result } = await runInTransaction(author_id, async (client, ctx) => {
+        // 1) normalize members (รวม creator)
+        const incoming = Array.isArray(memberIds) ? memberIds.filter(Boolean) : [];
+        const allMembers = Array.from(new Set([author_id, ...incoming]));
 
-        // 2) เพิ่มสมาชิกทั้งหมด (รวม creator)
-        const allMembers = Array.from(new Set([author_id, ...memberIds]));
+        // 2) directKey สำหรับ 1:1
+        let directKey: string | null = null;
+
+        if (!isGroup) {
+          if (allMembers.length !== 2) {
+            throw new Error("1:1 chat ต้องมีสมาชิก 2 คน (รวมผู้สร้าง)");
+          }
+          const [a, b] = [...allMembers].sort();
+          directKey = `${a}:${b}`;
+        }
+
+        // 3) INSERT / UPSERT กันซ้ำ
+        // no-op update เพื่อให้ RETURNING ทำงาน โดยไม่ต้องมี updated_at
+        const { rows: chatRows } = await client.query(
+          `
+          INSERT INTO chats (name, is_group, created_by, direct_key)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (direct_key)
+          DO UPDATE SET direct_key = chats.direct_key
+          RETURNING *, (xmax = 0) AS is_new
+          `,
+          [
+            isGroup ? (name || null) : null, // 1:1 ไม่ตั้ง name (กันสับสน)
+            isGroup,
+            author_id,
+            directKey,
+          ]
+        );
+
+        const chat = chatRows[0];
+        const isNew = !!chat.is_new;
+
+        // 4) เพิ่มสมาชิก
         for (const uid of allMembers) {
           await client.query(
-            `INSERT INTO chat_members (chat_id, user_id)
-            VALUES ($1,$2)
-            ON CONFLICT DO NOTHING`,
+            `
+            INSERT INTO chat_members (chat_id, user_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+            `,
             [chat.id, uid]
           );
         }
 
-        // 3) ดึงข้อมูลสมาชิกและผู้สร้าง
+        // 5) ดึง creator + members
+        const creator = await client.query(`SELECT * FROM users WHERE id = $1`, [chat.created_by]);
+
         const mem = await client.query(
-          `SELECT u.* 
-            FROM chat_members m
-            JOIN users u ON m.user_id = u.id
-            WHERE m.chat_id = $1`,
+          `
+          SELECT u.*
+          FROM chat_members m
+          JOIN users u ON m.user_id = u.id
+          WHERE m.chat_id = $1
+          `,
           [chat.id]
         );
-        const creator = await client.query(
-          `SELECT * FROM users WHERE id = $1`,
-          [chat.created_by]
-        );
 
-        // 4) บันทึก log
-        await addLog('info', 'chat-create', 'Chat created', {
+        // 6) log
+        await addLog("info", "chat-create", isNew ? "Chat created" : "Chat reused", {
           chatId: chat.id,
           userId: author_id,
+          isGroup,
+          directKey,
           members: allMembers.length,
+          isNew,
         });
 
-        // 5) คืนค่าผลลัพธ์ (ใช้เป็น response และใช้สร้าง noti ต่อ)
         return {
-          ...chat,                 // id, name, is_group, created_by (เป็น uuid จาก table)
-          created_by: creator.rows[0], // override ให้ field created_by เป็น object user (ตามที่คุณใช้ใน GraphQL)
-          members: mem.rows,       // [{ id, name, ... }]
+          ...chat,
+          is_new: isNew,
+          created_by: creator.rows[0],
+          members: mem.rows,
         };
       });
 
-      // ✅ 2) สร้าง Notification ให้สมาชิกคนอื่น (อยู่นอก transaction → ไม่โดน rollback ถ้า noti พลาด)
-      const chat = result; // แค่ rename ให้สั้น
-      const creatorUser = chat.created_by; // user object
+      // ✅ Notification นอก txn (ส่งเฉพาะสร้างใหม่จริง)
+      const chat = result as any;
+      const creatorUser = chat.created_by;
       const members = chat.members as any[];
 
-      // member คนอื่นที่ไม่ใช่คนสร้าง
       const recipients = members.filter((m: any) => m.id !== author_id);
 
-      await Promise.all(
-        recipients.map((m: any) =>
-          createNotification({
-            user_id: m.id,
-            type: 'CHAT_CREATED',
-            title: chat.is_group
-              ? `คุณถูกเพิ่มในกลุ่ม "${chat.name || ''}"`
-              : `เริ่มแชทใหม่กับ ${creatorUser.name}`,
-            message: chat.is_group
-              ? `${creatorUser.name} สร้างห้องและเพิ่มคุณเข้ากลุ่ม`
-              : `${creatorUser.name} เริ่มคุยกับคุณ`,
-            entity_type: 'chat',
-            entity_id: chat.id,
-            data: {
-              chat_id: chat.id,
-              chat_name: chat.name,
-              is_group: chat.is_group,
-              actor_id: creatorUser.id,
-              actor_name: creatorUser.name,
-            },
-          })
-        )
-      );
+      if (chat.is_new) {
+        await Promise.all(
+          recipients.map((m: any) =>
+            createNotification({
+              user_id: m.id,
+              type: "CHAT_CREATED",
+              title: chat.is_group
+                ? `คุณถูกเพิ่มในกลุ่ม "${chat.name || ""}"`
+                : `เริ่มแชทใหม่กับ ${creatorUser.name}`,
+              message: chat.is_group
+                ? `${creatorUser.name} สร้างห้องและเพิ่มคุณเข้ากลุ่ม`
+                : `${creatorUser.name} เริ่มคุยกับคุณ`,
+              entity_type: "chat",
+              entity_id: chat.id,
+              data: {
+                chat_id: chat.id,
+                chat_name: chat.name,
+                is_group: chat.is_group,
+                actor_id: creatorUser.id,
+                actor_name: creatorUser.name,
+              },
+            })
+          )
+        );
+      }
 
-      // ✅ 3) คืนค่า chat ตามเดิม (เดิมคุณ return object นี้อยู่แล้ว)
+      delete chat.is_new;
       return chat;
     },
     addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}, ctx:any) => {

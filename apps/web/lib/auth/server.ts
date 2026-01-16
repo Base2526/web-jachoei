@@ -2,6 +2,10 @@ import "server-only";                 // ป้องกันโดน import �
 import { cookies } from "next/headers";
 import { verifyTokenString, USER_COOKIE, ADMIN_COOKIE, JWTPayload } from "./token";
 
+// lib/auth/server.ts
+import { getServerSession } from "next-auth";
+import { authOptions } from "./options";
+
 export function verifyUserSession(): JWTPayload | null {
   const token = cookies().get(USER_COOKIE)?.value;
   const payload = verifyTokenString(token);
@@ -19,3 +23,6 @@ export function verifyAdminSession(): JWTPayload | null {
   // if (!payload?.role) return null;
   return payload;
 }
+
+
+export const getAuthSession = () => getServerSession(authOptions);

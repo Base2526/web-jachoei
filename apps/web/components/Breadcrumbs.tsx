@@ -5,14 +5,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
 
+import { useI18n } from "@/lib/i18nContext";
+
 export default function Breadcrumbs() {
   const pathname = usePathname() || "/";
   // ตัด query/hash แล้ว split เป็น segment
   const segments = pathname.split("?")[0].split("#")[0].split("/").filter(Boolean);
 
+  const { t } = useI18n();
+
   // สร้าง items เป็น [{title, href?}]
   const items = [
-    { title: <Link href="/">Home</Link> },
+    { title: <Link href="/">{t("breadcrumbs.home")}</Link> },
     ...segments.map((seg, idx) => {
       const href = "/" + segments.slice(0, idx + 1).join("/");
       // ทำให้สวยขึ้นนิดหน่อย (เช่น [id] => id, เปลี่ยน - เป็น space, ตัวแรกใหญ่)
