@@ -131,6 +131,3 @@ docker compose up web ws redis --build
 
 ---
 
-
-[1]: https://raw.githubusercontent.com/Base2526/web-jachoei/develop/README.md "raw.githubusercontent.com"
-
