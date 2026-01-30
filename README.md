@@ -1,5 +1,5 @@
 # 🚨 PROJECT JACHOEI
-### web-jachoei / next-apollo-pg-ws
+### web-jachoei
 
 > A modern full-stack monorepo for Web, API, Realtime, and Mobile applications
 
