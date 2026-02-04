@@ -1,0 +1,39 @@
+/* กล่องรูปใน chat */
+.chat-image-tile {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #eee;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  line-height: 0;
+  font-size: 0;
+}
+
+/* ให้ wrapper ของ antd Image fill กล่อง */
+.chat-image-tile .ant-image {
+  position: absolute;
+  inset: 0;          /* top:0 right:0 bottom:0 left:0 */
+  display: block;
+}
+
+/* ให้ตัว img ข้างใน fill กล่อง แบบไม่เหลือขอบขาว */
+.chat-image-tile .ant-image-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  vertical-align: bottom; /* กัน baseline gap */
+}
+
+/* overlay เวลา +more รูป */
+.chat-image-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.65));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 600;
+}

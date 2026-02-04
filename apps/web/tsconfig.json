@@ -10,9 +10,10 @@
     "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"],
+      "@core/*": ["../../packages/graphql-core/src/*"],
+      "@events/*": ["../../packages/events/*"],
+      "@social/*": ["../../packages/social-queue/*"]
     },
     "strict": true,
     "allowJs": true,
@@ -32,9 +33,12 @@
     "app",
     "graphql",
     "lib",
+    "utils",
     "components",
+    "store",
     "next-env.d.ts",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules"

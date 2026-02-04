@@ -1,4 +1,3 @@
-node_modules/
 **/node_modules/
 .env
 .env.*
@@ -7,3 +6,17 @@ dist/
 build/
 out/
 .DS_Store
+
+apps/web/certs
+apps/web/Caddyfile
+apps/web/package-lock.json
+apps/ws/package-lock.json
+apps/ws/src/db/package-lock.json
+
+packages/graphql-core/package-lock.json
+packages/realtime/package-lock.json
+
+/storage/*
+!/storage/.gitkeep
+
+RN/MyApp/node_modules

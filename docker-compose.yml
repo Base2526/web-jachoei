@@ -1,12 +1,12 @@
-# version: "3.9"
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
-      POSTGRES_DB: ${POSTGRES_DB:-appdb}
-    ports: ["5432:5432"]
+      POSTGRES_USER: ${POSTGRES_USER?missing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?missing}
+      POSTGRES_DB: ${POSTGRES_DB?missing}
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -16,33 +16,34 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
-    ports: ["5050:80"]
-    depends_on: [postgres]
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    # ports:
+    #   - "6379:6379"
 
   ws:
+    # base config ใช้ร่วมกัน
     image: node:20-alpine
     working_dir: /app/apps/ws
-    command: sh -c "npm ci && npm --prefix ../../packages/realtime ci && npm --prefix ../../packages/graphql-core ci && npm run dev"
     environment:
       WS_PORT: "8080"
       WS_PATH: "/graphql"
       REDIS_URL: ${REDIS_URL}
-      NODE_ENV: development
-    ports: ["8080:8080"]
-    volumes:
-      - ./apps/ws:/app/apps/ws
-      - ./packages:/app/packages
+      DATABASE_URL: postgres://app:app@postgres:5432/appdb
+    depends_on:
+      - postgres
+      - redis
 
   web:
     image: node:20-alpine
     working_dir: /app/apps/web
-    # command: sh -c "npm ci && npm run dev -w"
-    command: sh -c "npm ci && npm run dev"
     environment:
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
       NEXT_PUBLIC_GRAPHQL_HTTP: ${NEXT_PUBLIC_GRAPHQL_HTTP}
       NEXT_PUBLIC_GRAPHQL_WS: ${NEXT_PUBLIC_GRAPHQL_WS}
       POSTGRES_HOST: ${POSTGRES_HOST}
@@ -51,12 +52,59 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_URL: ${REDIS_URL}
-      NODE_ENV: development
-    ports: ["3000:3000"]
+      STORAGE_DIR: /app/storage
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      NEXT_PUBLIC_FACEBOOK_APP_ID: ${NEXT_PUBLIC_FACEBOOK_APP_ID}
+      NEXT_PUBLIC_FACEBOOK_APP_SECRET: ${NEXT_PUBLIC_FACEBOOK_APP_SECRET}
+      NEXT_PUBLIC_SENDGRID_API_KEY: ${NEXT_PUBLIC_SENDGRID_API_KEY}
+      NEXT_PUBLIC_SENDGRID_FROM_EMAIL: ${NEXT_PUBLIC_SENDGRID_FROM_EMAIL}
+      NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL}
+      NEXT_PUBLIC_WEB_NAME: ${WEB_NAME}
+    depends_on:
+      - postgres
+      - redis
+      - ws
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - web
+      - ws
     volumes:
-      - ./apps/web:/app/apps/web
-      - ./packages:/app/packages
-    depends_on: [postgres, redis, ws]
+      - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
+      # แนะนำให้เก็บ cert/key ไว้ในโฟลเดอร์ certs
+      - ./apps/web/certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  social-worker:
+    image: node:20-alpine
+    # image: myapp-web:latest
+    working_dir: /app/apps/web
+    environment:
+      NODE_ENV: development
+      REDIS_URL: ${REDIS_URL}
+
+      # DB (แนะนำใส่ให้ worker ใช้ตรง ๆ)
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # Social
+      FB_PAGE_ID: ${FB_PAGE_ID}
+      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
+
+      SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
+      SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
+      SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
+
+    depends_on:
+      - postgres
+      - redis
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

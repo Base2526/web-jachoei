@@ -1,0 +1,45 @@
+services:
+  ws:
+    command: >
+      sh -c "npm ci &&
+             npm --prefix ../../packages/realtime ci &&
+             npm --prefix ../../packages/graphql-core ci &&
+             npm run dev"
+    environment:
+      NODE_ENV: development
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./apps/ws:/app/apps/ws
+      - ./packages:/app/packages
+
+  web:
+    command: >
+      sh -c "npm ci && 
+             npm --prefix ../../packages/social-queue ci &&
+             npm run dev"
+    environment:
+      NODE_ENV: development
+      COOKIE_SECURE: ${COOKIE_SECURE}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      - ./storage:/app/storage
+
+  caddy:
+    ports:
+      - "443:443"
+
+  social-worker:
+    # command: >
+    #   sh -c "npm ci &&
+    #          npm --prefix ../../packages/social-queue ci &&
+    #          npm run worker:social"
+    # command: npm run worker:social
+    working_dir: /app/apps/web
+    command: sh -c "npm ci && npm run worker:social"
+    volumes:
+      - .:/app
+      - /app/apps/web/node_modules

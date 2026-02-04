@@ -1,14 +1,33 @@
 import 'antd/dist/reset.css';
-import { Layout } from 'antd';
-import React from 'react';
+import "./globals.css";
+import { cookies } from "next/headers";
+import type { Metadata } from "next";
 
-export default function RootLayout({ children }: { children: React.ReactNode }){
+import type { Lang } from "@/i18n";
+import ClientProviders from "./ClientProviders";  // เราจะสร้างไฟล์นี้ใหม่
+import { getBuildInfo } from "@/lib/buildInfo";
+
+const { buildId, buildTime } = getBuildInfo();
+export const metadata: Metadata = {
+  metadataBase: new URL(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://whosscam.com'}`),
+  icons: {
+    icon: `/favicon.ico?v=${buildId}-${buildTime}`
+  },
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = cookies();
+  const langCookie = cookieStore.get("lang")?.value as Lang | undefined;
+  const lang: Lang = langCookie === "en" ? "en" : "th";
+
   return (
-    <html lang="en"><body>
-      <Layout style={{minHeight:'100vh'}}>
-        <Layout.Header style={{color:'#fff'}}>Simple Realtime Starter</Layout.Header>
-        <Layout.Content style={{padding:24}}>{children}</Layout.Content>
-      </Layout>
-    </body></html>
+    <html lang={lang}>
+      <body>
+        {/* ส่ง lang ให้ ClientProviders */}
+        <ClientProviders lang={lang}>
+          {children}
+        </ClientProviders>
+      </body>
+    </html>
   );
 }
