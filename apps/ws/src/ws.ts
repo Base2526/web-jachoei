@@ -16,7 +16,7 @@ const PATH = "/graphql";// process.env.WS_PATH || "/graphql";
 const USER_COOKIE = "USER_COOKIE";
 const JWT_SECRET = process.env.JWT_SECRET || "changeme_secret";
 
-const wss = new WebSocketServer({ port: PORT, path: PATH });
+const wss = new WebSocketServer({ /*host: "0.0.0.0",*/   port: PORT, path: PATH });
 useServer(
     { 
         schema,
@@ -26,11 +26,15 @@ useServer(
         // keepAlive: 12000,
 
         onSubscribe: async (ctx, msg) => {
+
+            console.log("[WS] onSubscribe", msg);
+
             const req = ctx.extra.request; // IncomingMessage
             const cookieHeader = req.headers?.cookie || "";
             const cookies = parseCookie(cookieHeader || "");
             const token = cookies[USER_COOKIE] || "";
             try {
+                console.log("[WS][jwt]", token, JWT_SECRET, cookieHeader);
                 const user = jwt.verify(token, JWT_SECRET);
                 if (!user) {
                     return [

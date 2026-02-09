@@ -163,7 +163,7 @@ export const resolvers = {
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
     // resolver: posts
     posts: async (_: any, { search }: { search?: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
       console.log("[Query] posts :", author_id);
 
       const params: any[] = [];
@@ -220,7 +220,7 @@ export const resolvers = {
       { search, limit, offset }: { search?: string; limit: number; offset: number },
       ctx: any
     ) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
       console.log("[Query] postsPaged :", author_id);
 
       const params: any[] = [];
@@ -389,7 +389,7 @@ export const resolvers = {
       return { items, total };
     },
     post: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
       console.log("[Query] post :", author_id);
 
       // ✅ 1) ดึง post + author + province + is_bookmarked + social_posts (facebook)
@@ -882,13 +882,13 @@ export const resolvers = {
       return { items: itemsRes.rows, total };
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
       console.log("[Query] user", id, author_id);
 
       return await getUserById(id);
     },
     postsByUserId: async (_: any, { user_id }: { user_id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
       console.log("[Query] postsByUserId :", author_id, "target:", user_id);
 
       const params: any[] = [user_id];
@@ -1251,7 +1251,7 @@ export const resolvers = {
       return roots;
     },
     globalSearch: async (_: any, { q }: { q: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, { optionalWeb: true });
+      const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
       console.log("[Query] globalSearch (pro) :", author_id, q);
 
       const term = (q || "").trim();
@@ -1477,7 +1477,7 @@ export const resolvers = {
 
       const since = cursor || "1970-01-01T00:00:00Z";
 
-      const { rows } = await ctx.pg.query(
+      const { rows } = await query(
         `
         SELECT *
         FROM scam_phones_summary
@@ -1610,6 +1610,7 @@ export const resolvers = {
         updated_at: r.updated_at, // = MAX(created_at)
         is_deleted: false,        // ตอนนี้ table ไม่มี field นี้
         post_ids: r.post_ids,
+        ctx
       }));
     },
   },

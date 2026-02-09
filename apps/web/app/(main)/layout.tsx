@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import type { Metadata } from "next";
 import AppLayout from "@/components/AppLayout";
 
-const SITE_NAME = "Jachoei";
+const SITE_NAME = "จ่าเฉย (JACHOEI)";
 const SITE_URL  = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -12,12 +12,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const seo = {
     th: {
-      title: "Jachoei — ตรวจสอบการโกงออนไลน์",
+      title: "จ่าเฉย (Jachoei) — ตรวจสอบการโกงออนไลน์",
       desc:
         "ฐานข้อมูลการโกงออนไลน์ ตรวจสอบเบอร์โทร บัญชีธนาคาร ลิงก์ และชื่อเพจ จากรายงานผู้ใช้งานจริง",
     },
     en: {
-      title: "Jachoei — Online Scam Database",
+      title: "จ่าเฉย (Jachoei) — Online Scam Database",
       desc:
         "Search and report online scams. Check phone numbers, bank accounts, links, and pages from community reports.",
     },

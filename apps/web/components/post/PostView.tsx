@@ -57,7 +57,7 @@ type SharePayload = {
 
 function buildSharePayload(post: any, baseUrl: string): SharePayload {
   const url = `${baseUrl}/post/${post?.id}`;
-  const title = post?.title ? String(post.title) : 'Jachoei';
+  const title = post?.title ? String(post.title) : 'จ่าเฉย (Jachoei)';
   const detail = post?.detail ? String(post.detail).replace(/\s+/g, ' ').trim() : '';
   const text = detail
     ? `${title}\n\n${detail.slice(0, 180)}${detail.length > 180 ? '...' : ''}`

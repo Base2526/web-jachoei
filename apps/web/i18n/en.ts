@@ -1,7 +1,7 @@
 // i18n/en.ts
 const en = {
   header: {
-    title: "JACHOEI",
+    title: "จ่าเฉย (JACHOEI)",
 
     // 🔍 search-related
     searchPlaceholder: "Search posts, users, phone numbers...",

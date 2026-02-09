@@ -313,7 +313,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               <Text style={{ color: "rgba(0,0,0,0.55)" }}>
                 <Text>
-                  © {year} {String(t("header.title") ?? "JACHOEI")}
+                  © {year} {String(t("header.title") ?? "จ่าเฉย (JACHOEI)")}.
                 </Text>
               </Text>
 

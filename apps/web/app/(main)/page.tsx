@@ -211,7 +211,7 @@ type SharePayload = {
 
 function buildSharePayload(r: any, baseUrl: string): SharePayload {
   const url = `${baseUrl}/post/${r.id}`;
-  const title = r?.title ? String(r.title) : "Jachoei";
+  const title = r?.title ? String(r.title) : "จ่าเฉย (Jachoei)";
   const detail = r?.detail ? String(r.detail).replace(/\s+/g, " ").trim() : "";
   const text = detail ? `${title}\n\n${detail.slice(0, 180)}${detail.length > 180 ? "..." : ""}` : title;
 
@@ -752,8 +752,8 @@ export default function Page() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "WebSite",
-            name: "Jachoei",
-            alternateName: "Jachoei",
+            name: "จ่าเฉย (Jachoei)",
+            alternateName: "จ่าเฉย (Jachoei)",
             url: SITE_URL,
             description: "ฐานข้อมูลการโกงออนไลน์",
             potentialAction: {

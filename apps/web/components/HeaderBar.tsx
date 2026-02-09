@@ -339,12 +339,12 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
               // ================================
               // 📱 MOBILE → แสดงเป็น Icon
               // ================================
-              <Avatar size={35} shape="circle" alt="JACHOEI">
+              <Avatar size={35} shape="circle" alt="จ่าเฉย (JACHOEI)">
                 <img
                   src="/icons/icon.svg"
                   width={35}
                   height={35}
-                  alt="JACHOEI"
+                  alt="จ่าเฉย (JACHOEI)"
                   style={{
                     display: "block",
                     width: "100%",
@@ -376,12 +376,12 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
       }}
     >
       {/* ICON */}
-      <Avatar size={50} shape="circle" alt="JACHOEI">
+      <Avatar size={50} shape="circle" alt="จ่าเฉย (JACHOEI)">
         <img
           src="/icons/icon.svg"
           width={50}
           height={50}
-          alt="JACHOEI"
+          alt="จ่าเฉย (JACHOEI)"
           style={{
             display: "block",
             width: "100%",
