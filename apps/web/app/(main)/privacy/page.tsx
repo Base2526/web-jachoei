@@ -10,6 +10,7 @@ export default function PrivacyPage() {
   const { t } = useI18n();
 
   return (
+    <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
     <Typography>
       <Title level={2}>Privacy Policy</Title>
       <Paragraph>
@@ -49,5 +50,6 @@ export default function PrivacyPage() {
         in accordance with this Privacy Policy.
       </Paragraph>
     </Typography>
+    </div>
   );
 }

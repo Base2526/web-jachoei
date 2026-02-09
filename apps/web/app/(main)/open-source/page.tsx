@@ -9,6 +9,7 @@ export default function OpenSourcePage() {
   const { t } = useI18n();
 
   return (
+    <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
     <Typography>
       <Title level={2}>Open Source</Title>
       <Paragraph>
@@ -39,5 +40,6 @@ export default function OpenSourcePage() {
         may be subject to separate commercial terms.
       </Paragraph>
     </Typography>
+    </div>
   );
 }

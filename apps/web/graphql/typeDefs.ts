@@ -307,6 +307,7 @@ export const typeDefs = /* GraphQL */ `
     updated_at: String!     # iso time, ใช้สำหรับ sync
     is_deleted: Boolean!
     post_ids: [ID!]!        # post ที่เกี่ยวข้องกับเบอร์นี้
+    ctx: JSON
   }
 
   type ScamPhoneSnapshotPage {

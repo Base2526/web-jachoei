@@ -4,20 +4,20 @@ import { cookies } from 'next/headers';
 import type { Metadata } from "next";
 import AppLayout from "@/components/AppLayout";
 
-const SITE_NAME = "Whosscam";
-const SITE_URL  = process.env.NEXT_PUBLIC_BASE_URL || "https://whosscam.com";
+const SITE_NAME = "จ่าเฉย (JACHOEI)";
+const SITE_URL  = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
 export async function generateMetadata(): Promise<Metadata> {
   const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
 
   const seo = {
     th: {
-      title: "Whosscam — ตรวจสอบการโกงออนไลน์",
+      title: "จ่าเฉย (Jachoei) — ตรวจสอบการโกงออนไลน์",
       desc:
         "ฐานข้อมูลการโกงออนไลน์ ตรวจสอบเบอร์โทร บัญชีธนาคาร ลิงก์ และชื่อเพจ จากรายงานผู้ใช้งานจริง",
     },
     en: {
-      title: "Whosscam — Online Scam Database",
+      title: "จ่าเฉย (Jachoei) — Online Scam Database",
       desc:
         "Search and report online scams. Check phone numbers, bank accounts, links, and pages from community reports.",
     },
@@ -33,7 +33,7 @@ export async function generateMetadata(): Promise<Metadata> {
     alternates: { canonical: SITE_URL },
     openGraph: {
       type: "website",
-      siteName: SITE_NAME,          // ⭐ Whosscam
+      siteName: SITE_NAME,          
       title: seo.title,
       description: seo.desc,
       url: SITE_URL,

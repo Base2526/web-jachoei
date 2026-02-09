@@ -9,7 +9,7 @@ import { getBuildInfo } from "@/lib/buildInfo";
 
 const { buildId, buildTime } = getBuildInfo();
 export const metadata: Metadata = {
-  metadataBase: new URL(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://whosscam.com'}`),
+  metadataBase: new URL(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://jachoei.com'}`),
   icons: {
     icon: `/favicon.ico?v=${buildId}-${buildTime}`
   },

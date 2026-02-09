@@ -45,6 +45,7 @@ export default function DonatePage() {
   };
 
   return (
+    <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
       <Title level={2} style={{ marginBottom: 0 }}>
         Donate
@@ -118,5 +119,6 @@ export default function DonatePage() {
         </Space>
       </Card>
     </Space>
+    </div>
   );
 }

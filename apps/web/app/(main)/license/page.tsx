@@ -9,6 +9,7 @@ const { Title, Paragraph, Link } = Typography;
 export default function LicensePage() {
   const { t } = useI18n();
   return (
+    <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
     <Typography>
       <Title level={2}>License</Title>
       <Paragraph>
@@ -43,5 +44,6 @@ export default function LicensePage() {
         THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
       </Paragraph>
     </Typography>
+    </div>
   );
 }
