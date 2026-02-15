@@ -27,6 +27,10 @@ import { sendEmail } from "@/lib/mailer";
 
 import { emitPostEvent } from "@events/emit.server";
 
+import { phoneResolvers } from "@/graphql/phoneBlock";
+
+import { normalizeAccountNo } from "@/lib/phone";
+
 export const COMMENT_ADDED = 'COMMENT_ADDED';
 export const COMMENT_UPDATED = 'COMMENT_UPDATED';
 export const COMMENT_DELETED = 'COMMENT_DELETED';
@@ -131,7 +135,6 @@ function escapeHtml(s: string) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-
 
 export const resolvers = {
   JSON: GraphQLJSON,
@@ -1613,6 +1616,119 @@ export const resolvers = {
         ctx
       }));
     },
+    searchBankAccounts: async (
+      _: any,
+      { q, limit = 20 }: { q: string; limit: number },
+      ctx: any
+    ) => {
+      console.log("[Query] searchBankAccounts", { q, limit });
+
+      const term = String(q || "").trim();
+      if (!term) return [];
+
+      const safeLimit = Math.min(Math.max(limit || 20, 1), 50);
+      const qNorm = normalizeAccountNo(term);
+
+      const mapRow = (r: any) => {
+        const masked = maskAccount(r.account_no || r.account_norm);
+
+        const lastReportISO = r.last_report_at
+          ? new Date(r.last_report_at).toISOString()
+          : null;
+
+        const updatedISO = r.updated_at
+          ? new Date(r.updated_at).toISOString()
+          : lastReportISO;
+
+        return {
+          id: `${r.bank_name}:${r.account_norm}`,
+          entity_id: `${r.bank_name}:${r.account_norm}`,
+          ids: [],
+
+          bank_name: r.bank_name,
+          account_no_masked: masked,
+          report_count: Number(r.report_count || 0),
+          last_report_at: lastReportISO,
+
+          // ✅ client fields
+          account: masked,
+          risk_level:
+            r.risk_level != null
+              ? Number(r.risk_level)
+              : calcRisk(Number(r.report_count || 0)),
+          tags: [],
+          updated_at: updatedISO,
+
+          // ✅ ไม่มีคอลัมน์ใน DB ก็คืน default ไปเลย
+          is_deleted: false,
+          post_ids: [],
+          ctx: null,
+        };
+      };
+
+      // -------------------------
+      // case 1) query เป็นเลข -> exact + prefix
+      // -------------------------
+      if (qNorm.length > 0) {
+        const { rows } = await query(
+          `
+          SELECT
+            bank_name,
+            account_norm,
+            account_no,
+            report_count,
+            last_report_at,
+            risk_level,
+            updated_at
+          FROM scam_bank_accounts_summary
+          WHERE
+                account_norm = $1
+            OR  account_norm LIKE ($1 || '%')
+          ORDER BY
+            CASE WHEN account_norm = $1 THEN 0 ELSE 1 END,
+            report_count DESC,
+            last_report_at DESC NULLS LAST
+          LIMIT $2
+          `,
+          [qNorm, safeLimit]
+        );
+
+        return rows.map(mapRow);
+      }
+
+      // -------------------------
+      // case 2) ไม่ใช่เลข -> bank_name prefix
+      // -------------------------
+      const likePrefix = `${term}%`;
+
+      const { rows } = await query(
+        `
+        SELECT
+          bank_name,
+          account_norm,
+          account_no,
+          report_count,
+          last_report_at,
+          risk_level,
+          updated_at
+        FROM scam_bank_accounts_summary
+        WHERE bank_name ILIKE $1
+        ORDER BY report_count DESC, last_report_at DESC NULLS LAST
+        LIMIT $2
+        `,
+        [likePrefix, safeLimit]
+      );
+
+      return rows.map(mapRow);
+    },
+
+    // ✅ alias: ให้ client เรียก searchScamBankAccounts ได้ (ไปใช้ตัวเดิม)
+    searchScamBankAccounts: async (_: any, { q, limit }: { q: string; limit: number }, ctx: any) => {
+      return resolvers.Query.searchBankAccounts(_, { q, limit }, ctx);
+    },
+
+
+    ...phoneResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -3999,5 +4115,96 @@ export const resolvers = {
 
       return { ok: true, message: "Received. We will reply soon.", ticketId };
     },
+
+    reportBankAccount: async (_: any, { input }: any, ctx: any) => {
+      const {
+        bank_name,
+        account_no,
+        note,
+        client_id,
+        device_model,
+        os_version,
+        app_version,
+      } = input;
+
+      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+
+      const bankName = String(bank_name || "").trim();
+      const accRaw = String(account_no || "").trim();
+      const accNorm = normalizeAccountNo(accRaw);
+
+      if (!bankName || !accNorm) {
+        throw new GraphQLError("bank_name and account_no are required", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      const { result } = await runInTransaction(author_id || null, async (client: any) => {
+        // 1) insert report (กันยิงซ้ำด้วย client_id unique)
+        try {
+          await client.query(
+            `
+            INSERT INTO scam_bank_account_reports
+              (bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version)
+            VALUES
+              ($1,$2,$3,$4,$5,$6,$7,$8)
+            `,
+            [bankName, accRaw, accNorm, note || null, client_id, device_model || null, os_version || null, app_version || null]
+          );
+        } catch (e: any) {
+          // ถ้า client_id ซ้ำ -> ถือว่า idempotent: ไปอ่าน summary คืนได้เลย
+          const msg = String(e?.message || "");
+          const isDup = msg.includes("scam_bank_account_reports_client_id_ux") || msg.includes("duplicate key");
+          if (!isDup) throw e;
+        }
+
+        // 2) trigger จะ upsert summary แล้ว -> read summary กลับ
+        const { rows } = await client.query(
+          `
+          SELECT
+            bank_name,
+            account_no,
+            account_norm,
+            report_count,
+            last_report_at,
+            risk_level,
+            updated_at
+          FROM scam_bank_accounts_summary
+          WHERE bank_name = $1 AND account_norm = $2
+          LIMIT 1
+          `,
+          [bankName, accNorm]
+        );
+
+        const s = rows[0];
+        if (!s) {
+          // safety fallback (ไม่น่าเกิด)
+          return {
+            bank_name: bankName,
+            account_no_masked: maskAccount(accNorm),
+            account_norm: accNorm,
+            report_count: 1,
+            last_report_at: new Date().toISOString(),
+            risk_level: 10,
+            updated_at: new Date().toISOString(),
+          };
+        }
+
+        return {
+          bank_name: s.bank_name,
+          account_no_masked: maskAccount(s.account_no || s.account_norm),
+          account_norm: s.account_norm,
+          report_count: Number(s.report_count || 0),
+          last_report_at: s.last_report_at ? new Date(s.last_report_at).toISOString() : null,
+          risk_level: Number(s.risk_level || calcRisk(Number(s.report_count || 0))),
+          updated_at: s.updated_at ? new Date(s.updated_at).toISOString() : new Date().toISOString(),
+        };
+      });
+
+      return result;
+    },
+
+
+    ...phoneResolvers.Mutation
   },
 };

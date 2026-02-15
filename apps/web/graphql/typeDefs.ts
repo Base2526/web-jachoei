@@ -283,13 +283,24 @@ export const typeDefs = /* GraphQL */ `
 
   type SearchBankAccountResult {
     id: ID!
-    entity_id: ID!        # เอาไว้ /bank/[id] หรือ /account/[id]
-    ids: [ID!]! 
+    entity_id: ID!
+    ids: [ID!]!
+
     bank_name: String!
     account_no_masked: String!
     report_count: Int!
     last_report_at: String
+
+    # ✅ client fields
+    account: String
+    risk_level: Int
+    tags: [String!]!
+    updated_at: String
+    is_deleted: Boolean!
+    post_ids: [ID!]!
+    ctx: JSON
   }
+
 
   type GlobalSearchResult {
     posts: [SearchPostResult!]!
@@ -319,6 +330,76 @@ export const typeDefs = /* GraphQL */ `
     cursor: String
     items: [ScamPhone!]!
   }
+
+  # =========================
+  # Types
+  # =========================
+  type PhoneSafetyStatus {
+    phone: String!
+    phone_normalized: String!
+
+    # ของฉัน
+    my_blocked: Boolean!
+    my_blocked_at: String
+
+    # community (ไม่บอกว่าใคร)
+    blocked_by_count: Int!
+    last_blocked_at: String
+
+    report_count: Int!
+    last_report_at: String
+
+    risk_level: Int!
+    updated_at: String!
+  }
+
+  input BlockPhoneInput {
+    phone: String!
+    note: String
+    postId: ID
+  }
+
+  input UnblockPhoneInput {
+    phone: String!
+  }
+
+  type BlockPhonePayload {
+    ok: Boolean!
+    status: PhoneSafetyStatus!
+  }
+
+  # =========================
+  # Bank account (Search + Report)
+  # =========================
+
+  type ScamBankAccount {
+    bank_name: String!
+    account_no_masked: String!
+    account_norm: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+  }
+
+  input ReportBankAccountInput {
+    bank_name: String!
+    account_no: String!
+    note: String
+    client_id: String!         # UUID v4
+    device_model: String
+    os_version: String
+    app_version: String
+  }
+
+  # =========================
+  # ✅ Union for client (ใช้ __typename)
+  # =========================
+  union SearchType =
+      SearchPostResult
+    | SearchUserResult
+    | SearchPhoneReportResult
+    | SearchBankAccountResult
 
   type Query {
     _health: String!
@@ -369,6 +450,18 @@ export const typeDefs = /* GraphQL */ `
     scamPhonesDelta(sinceVersion: String!, cursor: String, limit: Int! = 1000): ScamPhoneDeltaPage!
     # ใช้ manual search (เหมือน globalSearch แต่เฉพาะเบอร์)
     searchScamPhones(q: String!, limit: Int! = 20): [ScamPhone!]!
+
+
+    phoneSafetyStatus(phone: String!): PhoneSafetyStatus!
+    myBlockedPhones(limit: Int = 50, offset: Int = 0): [PhoneSafetyStatus!]!
+
+    # exact + prefix (ตัวเลขล้วน) + (option) bank_name prefix
+    searchBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
+
+    searchScamBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
+
+    # (optional) unified search array (client ใช้ __typename)
+    globalSearchUnified(q: String!, limit: Int! = 20): [SearchType!]!
   }
 
   input TelNumberInput {
@@ -526,5 +619,11 @@ export const typeDefs = /* GraphQL */ `
     reportScamPhone(input: ReportScamPhoneInput!): ScamPhone!
 
     createSupportTicket(input: SupportTicketInput!): SupportTicketPayload!
+
+
+    blockPhone(input: BlockPhoneInput!): BlockPhonePayload!
+    unblockPhone(input: UnblockPhoneInput!): BlockPhonePayload!
+
+    reportBankAccount(input: ReportBankAccountInput!): ScamBankAccount!
   }
 `;
